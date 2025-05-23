@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.log
+
+# Virtual environment
+.venv/
+env/
+venv/
+ENV/
+
+# IDE/editor
+.vscode/
+.idea/
+.DS_Store
+
+# Django
+db.sqlite3
+/media/
+/staticfiles/
+/*.sqlite3
+
+# Compiled
+*.so
+*.pyd
+*.pyc
+*.pyo
+
+# Jupyter (if any)
+.ipynb_checkpoints/
+
+# Mac/Windows
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# System files
+*.bak
