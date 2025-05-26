@@ -94,8 +94,9 @@ Click 🚀 to generate plot and PK summary.
 ---
 
 ## 📷 Screenshots
+![image](https://github.com/user-attachments/assets/453624a7-32f9-4a61-b698-95fb54822880)
+![image](https://github.com/user-attachments/assets/0018bf28-18e8-49cd-ae66-5fdf01892656)
 
-![PK Simulator UI](./screenshots/simulation.png)
 
 ---
 
