@@ -24,6 +24,7 @@ def parse_odes(ode_text: str) -> Dict[str, Any]:
     compartments: List[str] = []
     parameters = set()
 
+    print("Python Parser Called")
     # Clean and split input into lines
     lines = [line.strip() for line in ode_text.strip().split('\n') if line.strip()]
 
