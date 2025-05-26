@@ -3,97 +3,180 @@
 <head>
   {% load static %}
   <meta charset="UTF-8">
-  <title>PK Simulator - Dosing</title>
-  <link rel="stylesheet" href="{% static 'simulator/css/style.css' %}">
+  <title>PK Simulator</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <script defer src="{% static 'simulator/js/dosing.js' %}"></script>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 2rem; max-width: 800px; margin: auto; }
-    .dose-card {
-      background: #f8fbff;
-      border-left: 5px solid #4A90E2;
-      padding: 12px;
-      margin-bottom: 12px;
-      border-radius: 8px;
+    .dropdown-menu {
+      max-height: 200px;
+      overflow-y: auto;
     }
-    .dose-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    button { cursor: pointer; }
   </style>
-  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
-<body>
-  <h2>🧮 ODE System</h2>
-  <textarea id="ode-input" rows="5" style="width:100%;">
-  dCdt = -kel * C - kon * C * R + koff * CR
-  dRdt = -kon * C * R + koff * CR + kdeg * CR
-  dCRdt = kon * C * R - koff * CR - kint * CR
-  </textarea>
-  <br>
-  <button onclick="parseODE()">🧠 Parse Equations</button>
+<body class="bg-light">
 
-  <h3>🧬 Initial Values</h3>
-  <div id="init-values"></div>
+<div class="container my-4">
 
-  <h3>⚙️ Parameter Values</h3>
-  <div id="param-values"></div>
+  <!-- ODE 입력 영역 -->
+  <h5>🧮 ODE Systems</h5>
+  <div class="mb-3">
+    <textarea id="ode-input" class="form-control" rows="6" placeholder="e.g., dCdt = -kel*C"></textarea>
+    <button class="btn btn-outline-secondary btn-sm mt-2" onclick="parseODE()">🔍 Parse</button>
+  </div>
 
-  <h2>🧪 Dosing Input for PK Simulation</h2>
+  <!-- Value Setting & Dosing -->
+  <div class="row">
+    <!-- 초기값 & 파라미터 값 -->
+    <div class="col-md-6">
+      <h4>⚙️ Value Settings</h4>
+      <div class="row">
+        <div class="col-6">
+          <h6>Initial Values</h6>
+          <div id="init-values" class="row g-2"></div>
+        </div>
+        <div class="col-6">
+          <h6>Parameter Values</h6>
+          <div id="param-values" class="row g-1 flex-column"></div>
+        </div>
+      </div>
+    </div>
 
-  <!-- 🚀 Dosing 입력 폼 -->
-  <form id="dose-form">
-    <label>
-      Compartment:
-      <input type="text" id="compartment" required>
-    </label>
-    <br>
-    <label>
-      Type:
-      <select id="type">
-        <option value="bolus">IV Bolus</option>
-        <option value="infusion">IV Infusion</option>
-      </select>
-    </label>
-    <br>
-    <label>
-      Amount:
-      <input type="number" id="amount" min="0" step="any" required>
-    </label>
-    <br>
-    <label>
-      Start Time:
-      <input type="number" id="start_time" min="0" step="any" required>
-    </label>
-    <br>
-    <label id="duration-label" style="display: none;">
-      Infusion Duration:
-      <input type="number" id="duration" min="0" step="any">
-    </label>
-    <br>
-    <label>
-      Repeat every (hours):
-      <input type="number" id="repeat_every" min="0" step="any">
-    </label>
-    <br>
-    <label>
-      Repeat until (hours):
-      <input type="number" id="repeat_until" min="0" step="any">
-    </label>
-    <br><br>
-    <button type="submit">➕ Add Dose</button>
-  </form>
+    <!-- Dosing 입력 -->
+    <div class="col-md-6">
+      <h4>💉 Dosing</h4>
+      <form id="dose-form">
+        <div class="row mb-2">
+          <div class="col-6">
+            <label>Compartment</label>
+            <select id="compartment" class="form-select" required>
+              <!-- JS로 compartment option 추가됨 -->
+            </select>
+          </div>
+          <div class="col-6">
+            <label>Type</label>
+            <select class="form-select" id="type">
+              <option value="bolus">IV Bolus</option>
+              <option value="infusion">IV Infusion</option>
+            </select>
+          </div>
+        </div>
+        <div class="row mb-2">
+          <div class="col-6">
+            <label>Amount</label>
+            <input type="number" class="form-control" id="amount" step="any">
+          </div>
+          <div class="col-6">
+            <label>Start Time</label>
+            <input type="number" class="form-control" id="start_time" step="any">
+          </div>
+        </div>
+        <div class="row mb-2" id="duration-label" style="display:none;">
+          <div class="col-6">
+            <label>Infusion Duration</label>
+            <input type="number" class="form-control" id="duration" step="any">
+          </div>
+        </div>
+        <div class="row mb-2">
+          <div class="col-6">
+            <label>Repeat every (h)</label>
+            <input type="number" class="form-control" id="repeat_every" step="any">
+          </div>
+          <div class="col-6">
+            <label>Repeat until (h)</label>
+            <input type="number" class="form-control" id="repeat_until" step="any">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary w-100 mb-2">➕ Add Dose</button>
+      </form>
 
-  <hr>
+      <div>
+        <h6>Registered Doses</h6>
+        <div id="dose-list" class="table-responsive"></div>
+      </div>
+    </div>
+  </div>
 
-  <!-- 💉 등록된 dose 목록 -->
-  <h2>💉 Registered Doses</h2>
-  <div id="dose-list"></div>
-  <h2>📈 Simulation Result</h2>
-  <div id="plot" style="width: 100%; height: 500px;"></div>
-  <br>
-<button id="simulate-btn" style="margin-top: 20px;">🚀 Run Simulation</button>
+  <!-- Simulation Settings -->
+  <h4 class="mt-5">🕒 Simulation Settings</h4>
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label for="sim-start-time" class="form-label">Start Time (h)</label>
+      <input type="number" id="sim-start-time" class="form-control" value="0" step="0.1">
+    </div>
+    <div class="col-md-4">
+      <label for="sim-end-time" class="form-label">End Time (h)</label>
+      <input type="number" id="sim-end-time" class="form-control" value="48" step="0.1">
+    </div>
+    <div class="col-md-4">
+      <label for="sim-steps" class="form-label"># of Time Points</label>
+      <input type="number" id="sim-steps" class="form-control" value="200" min="10" max="1000">
+    </div>
+
+    <div class="col-md-12">
+      <label class="form-label">Simulate Compartments</label>
+      <div class="d-flex align-items-start">
+        <!-- 드롭다운 메뉴 -->
+        <div class="dropdown me-2" style="width: 50%;">
+          <button class="btn btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown">
+            Select Compartments
+          </button>
+          <ul class="dropdown-menu w-100" id="sim-compartments-menu">
+            <!-- 체크박스 항목은 JS에서 삽입 -->
+          </ul>
+        </div>
+
+        <!-- 배지를 감싸는 박스 -->
+        <div id="selected-comp-badges" class="form-control d-flex flex-wrap align-items-center" 
+            style="height: auto; min-height: 38px; overflow-y: auto;">
+          <!-- 배지는 JS에서 삽입 -->
+        </div>
+      </div>
+      <small class="text-muted">Multiple selections supported</small>
+    </div>
+
+    <div class="col-md-12 mt-2">
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="log-scale">
+        <label class="form-check-label" for="log-scale">Use log scale for Y-axis</label>
+      </div>
+    </div>
+
+    <div class="col-md-12">
+      <button id="simulate-btn" class="btn btn-danger w-100 mt-2">🚀 Run Simulation</button>
+    </div>
+  </div>
+
+  <hr class="my-4">
+
+  <!-- 결과 출력 -->
+  <div class="row">
+    <div class="col-md-8">
+      <h4>📈 Simulation Result</h4>
+      <div id="plot" style="height: 500px;"></div>
+    </div>
+    <div class="col-md-4">
+      <h4>📊 PK Profile Summary</h4>
+      <div id="pk-summary" class="table-responsive"></div>
+    </div>
+  </div>
+
+</div>
+
 </body>
-</html>
 
+<style>
+  #selected-comp-badges .badge {
+    background-color: #6c757d;
+    margin: 2px;
+    font-size: 0.8rem;
+  }
+
+  #selected-comp-badges .badge:hover {
+    background-color: #495057;
+  }
+</style>
+
+</html>
