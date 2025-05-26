@@ -1,116 +1,149 @@
-from typing import List, Dict
+from typing import Callable, Dict, List, Sequence, Union
 import numpy as np
+import pandas as pd
+from sympy import lambdify, symbols, Expr
 from scipy.integrate import solve_ivp
-import sympy as sp
 
 
-def simulate_custom_ode(
-    equations_str: str,
+def generate_rhs_function(
+    equations: Dict[str, Expr],
     compartments: List[str],
-    parameters: Dict[str, float],
-    initials: Dict[str, float],
-    doses: List[Dict],
-    t_start: float = 0,
-    t_end: float = 48,
-    t_points: int = 200
-) -> Dict[str, Dict[str, float]]:
-    # 1. Define symbols
-    t = sp.Symbol("t")
-    sym_vars = {c: sp.Symbol(f"{c}_var") for c in compartments}  # avoid name conflict
-    sym_params = {p: sp.Symbol(p) for p in parameters}
-    all_symbols = {**sym_vars, **sym_params}
+    parameters: List[str]
+) -> Callable:
+    """
+    Generate a numerical RHS function for solve_ivp using sympy.lambdify.
 
-    # 2. Parse equations
-    dydt_exprs = []
-    lines = equations_str.strip().split("\n")
-    for line in lines:
-        lhs, rhs = line.split("=")
-        comp_name = lhs.strip()[1:-2]  # "dCdt" → "C"
-        expr = sp.sympify(rhs.strip(), locals=all_symbols)
-        dydt_exprs.append((comp_name, expr))
+    Parameters
+    ----------
+    equations : dict
+        Mapping from compartment name to sympy expression.
+    compartments : list
+        List of compartment names.
+    parameters : list
+        List of parameter names.
 
-    # 3. Lambdify RHS expressions
-    ordered_comps = [c for c, _ in dydt_exprs]
+    Returns
+    -------
+    Callable
+        A function f(t, y, param_values) that computes dy/dt.
+    """
+    y_syms = symbols(compartments)
+    param_syms = symbols(parameters)
+
     rhs_funcs = [
-        sp.lambdify(
-            [t] + list(sym_vars.values()) + list(sym_params.values()),
-            expr,
-            modules="numpy"
-        )
-        for _, expr in dydt_exprs
+        lambdify((y_syms, param_syms), equations[comp], modules='numpy')
+        for comp in compartments
     ]
 
-    comp_index = {c: i for i, c in enumerate(ordered_comps)}
+    def dydt(t, y, param_values):
+        return [
+            rhs_func(y, param_values)
+            for rhs_func in rhs_funcs
+        ]
 
-    # 4. Define dydt
-    def dydt(t_val, y):
-        dydt_out = np.zeros_like(y)
+    return dydt
 
-        args = [t_val] + list(y) + [parameters[p] for p in sym_params]
 
-        for i, f in enumerate(rhs_funcs):
-            dydt_out[i] = f(*args)
+def solve_ode_system(
+    equations: Dict[str, Expr],
+    compartments: List[str],
+    parameters: List[str],
+    init_values: Dict[str, float],
+    param_values: Dict[str, float],
+    t_span: Sequence[float],
+    t_eval: Union[Sequence[float], np.ndarray],
+    doses: List[Dict] = None
+) -> pd.DataFrame:
+    """
+    Solve ODE system using scipy.solve_ivp and return result as DataFrame.
 
-        # 5. Apply dosing
-        for d in doses:
-            comp = d["compartment"]
-            if comp not in comp_index:
-                continue
-            i = comp_index[comp]
+    Parameters
+    ----------
+    equations : dict
+        Compartment → sympy expression mapping.
+    compartments : list
+        Compartment names.
+    parameters : list
+        Parameter names.
+    init_values : dict
+        Initial values for each compartment.
+    param_values : dict
+        Parameter values.
+    t_span : list
+        [start, end] time.
+    t_eval : list
+        Evaluation time points.
+    doses : list
+        List of dosing instructions (bolus/infusion).
 
-            # Bolus dosing
-            if d["type"] == "bolus" and np.isclose(t_val, d["start_time"], atol=1e-2):
-                dydt_out[i] += d["amount"]
+    Returns
+    -------
+    pd.DataFrame
+        Time-course of each compartment.
+    """
+    dydt = generate_rhs_function(equations, compartments, parameters)
 
-            # Infusion dosing
-            elif d["type"] == "infusion":
-                dur = d.get("duration", 0)
-                if d["start_time"] <= t_val <= d["start_time"] + dur:
-                    rate = d["amount"] / dur if dur > 0 else 0
-                    dydt_out[i] += rate
+    applied_bolus = set()
+    y0 = [init_values[c] for c in compartments]
+    p_vals = [param_values[p] for p in parameters]
 
-            # Repeated dosing
-            if d.get("repeat_every") and d.get("repeat_until"):
-                rep = d["repeat_every"]
-                until = d["repeat_until"]
-                if d["type"] == "bolus":
-                    times = np.arange(d["start_time"], until + 0.01, rep)
-                    if any(np.isclose(t_val, rt, atol=1e-2) for rt in times):
-                        dydt_out[i] += d["amount"]
-                elif d["type"] == "infusion":
-                    reps = np.arange(d["start_time"], until + 0.01, rep)
-                    for r_start in reps:
-                        if r_start <= t_val <= r_start + dur:
-                            rate = d["amount"] / dur if dur > 0 else 0
-                            dydt_out[i] += rate
+    def is_dose_time(t, start, every=None, until=None):
+        if every is not None and until is not None:
+            if t < start or t > until:
+                return False
+            return np.isclose((t - start) % every, 0, atol=1e-6)
+        return np.isclose(t, start, atol=1e-6)
 
-        return dydt_out
+    def wrapped_dydt(t, y):
+        dy = dydt(t, y, p_vals)
 
-    # 6. Initial values
-    y0 = [initials.get(c, 0.0) for c in ordered_comps]
-    t_eval = np.linspace(t_start, t_end, t_points)
+        if doses:
+            for dose in doses:
+                comp = dose["compartment"]
+                idx = compartments.index(comp)
+                typ = dose["type"]
+                amount = dose["amount"]
+                start = dose["start_time"]
+                duration = dose.get("duration", 0)
+                every = dose.get("repeat_every")
+                until = dose.get("repeat_until")
 
-    # 7. Solve
-    sol = solve_ivp(dydt, (t_start, t_end), y0, t_eval=t_eval)
+                if typ == "bolus":
+                    key = (comp, round(t, 4))  # ← 소수 4째자리까지 기준으로 동일 t 방지
+                    if key in applied_bolus:
+                        continue
+                    if is_dose_time(t, start, every, until):
+                        print(f"✅ Inject bolus {amount} into {comp} at t={t:.3f}")
+                        y[idx] += amount
+                        applied_bolus.add(key)
 
-    # 8. Return result + PK summary
-    result = {"Time": sol.t.tolist()}
-    pk_summary = {}
+                elif typ == "infusion":
+                    # 시간 구간 내부인지 확인
+                    infusion_times = []
+                    if every is not None and until is not None:
+                        t_dose = start
+                        while t_dose <= until:
+                            infusion_times.append((t_dose, t_dose + duration))
+                            t_dose += every
+                    else:
+                        infusion_times.append((start, start + duration))
 
-    for i, c in enumerate(ordered_comps):
-        conc_list = sol.y[i].tolist()
-        result[c] = conc_list
-        pk_summary[c] = compute_pk_metrics(sol.t, conc_list)
+                    for t0, t1 in infusion_times:
+                        if t0 <= t <= t1:
+                            dy[idx] += amount / duration
+                            break
 
-    return {"profile": result, "pk": pk_summary}
+        return dy
 
-def compute_pk_metrics(time: List[float], conc: List[float]) -> Dict[str, float]:
-    conc_array = np.array(conc)
-    time_array = np.array(time)
-    
-    cmax = np.max(conc_array)
-    tmax = float(time_array[np.argmax(conc_array)])
-    auc = float(np.trapz(conc_array, time_array))  # 선형 trapezoid integration
+    sol = solve_ivp(
+        fun=wrapped_dydt,
+        t_span=tuple(t_span),
+        y0=y0,
+        t_eval=t_eval,
+        vectorized=False
+    )
 
-    return {"Cmax": cmax, "Tmax": tmax, "AUC": auc}
+    df = pd.DataFrame(sol.y.T, columns=compartments)
+    df.insert(0, 'Time', sol.t)
 
+    return df
