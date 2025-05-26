@@ -113,7 +113,6 @@ def solve_ode_system(
                     if key in applied_bolus:
                         continue
                     if is_dose_time(t, start, every, until):
-                        print(f"✅ Inject bolus {amount} into {comp} at t={t:.3f}")
                         y[idx] += amount
                         applied_bolus.add(key)
 
