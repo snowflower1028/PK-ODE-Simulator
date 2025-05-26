@@ -151,20 +151,38 @@
 
   <hr class="my-4">
 
-  <!-- 결과 출력 -->
-  <div class="row">
-    <div class="col-md-8">
-      <h4>📈 Simulation Result</h4>
-      <div id="plot" style="height: 500px;"></div>
+  <!-- Simulation Result & PK Summary -->
+  <div class="row mt-5">
+    <!-- Left: Plot -->
+    <div class="col-lg-8 mb-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <h5 class="card-title">📈 Simulation Result</h5>
+          <div id="plot-placeholder" class="text-muted text-center py-5">
+            <i class="bi bi-graph-up" style="font-size: 2rem;"></i><br>
+            Simulation results will appear here.
+          </div>
+          <div id="plot" style="height: 500px; display: none;"></div>
+        </div>
+      </div>
     </div>
-    <div class="col-md-4">
-      <h4>📊 PK Profile Summary</h4>
-      <div id="pk-summary" class="table-responsive"></div>
+
+    <!-- Right: PK Summary -->
+    <div class="col-lg-4 mb-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <h5 class="card-title">📊 PK Profile Summary</h5>
+          <div id="pk-summary-placeholder" class="text-muted text-center py-5">
+            <i class="bi bi-bar-chart-line" style="font-size: 2rem;"></i><br>
+            Summary table will be displayed after simulation.
+          </div>
+          <div id="pk-summary" style="display: none;"></div>
+        </div>
+      </div>
     </div>
   </div>
 
 </div>
-
 </body>
 
 <style>

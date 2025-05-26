@@ -122,6 +122,9 @@ function plotSimulationResult(data, logScale, selectedComps) {
   const time = data["Time"];
   const traces = [];
 
+  document.getElementById("plot-placeholder").style.display = "none";
+  document.getElementById("plot").style.display = "block";
+
   for (const key of selectedComps) {
     if (!(key in data)) continue;
     traces.push({
@@ -139,7 +142,9 @@ function plotSimulationResult(data, logScale, selectedComps) {
       title: "Concentration",
       type: logScale ? "log" : "linear"
     },
-    legend: { orientation: "h" }
+    legend: { orientation: "h" },
+    paper_bgcolor: "#f8f9fa00",  // Bootstrap bg-light
+    plot_bgcolor: "#f8f9fa00"
   };
 
   Plotly.newPlot("plot", traces, layout);
@@ -267,31 +272,43 @@ function displayPKSummary(pk) {
   container.innerHTML = "";
 
   const table = document.createElement("table");
-  table.className = "table table-sm table-striped table-bordered";
+  table.className = "table";  // ✅ 이 스타일만 사용하면 됩니다
 
-  const header = `
-    <thead class="table-light">
-      <tr>
-        <th>Compartment</th>
-        <th>C<sub>max</sub></th>
-        <th>T<sub>max</sub> (h)</th>
-        <th>AUC</th>
-      </tr>
-    </thead>
+  // thead
+  const thead = document.createElement("thead");
+  thead.innerHTML = `
+    <tr>
+      <th scope="col">#</th>
+      <th scope="col">Compartment</th>
+      <th scope="col">C<sub>max</sub></th>
+      <th scope="col">T<sub>max</sub> (h)</th>
+      <th scope="col">AUC</th>
+    </tr>
   `;
 
-  const rows = Object.entries(pk).map(([comp, metrics]) => `
-    <tr>
+  // tbody
+  const tbody = document.createElement("tbody");
+  Object.entries(pk).forEach(([comp, metrics], idx) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <th scope="row">${idx + 1}</th>
       <td>${comp}</td>
       <td>${metrics.Cmax?.toFixed(4) ?? "-"}</td>
       <td>${metrics.Tmax?.toFixed(2) ?? "-"}</td>
       <td>${metrics.AUC?.toFixed(2) ?? "-"}</td>
-    </tr>
-  `).join("");
+    `;
+    tbody.appendChild(row);
+  });
 
-  table.innerHTML = header + `<tbody>${rows}</tbody>`;
+  table.appendChild(thead);
+  table.appendChild(tbody);
   container.appendChild(table);
+
+  // Show/hide placeholders
+  document.getElementById("pk-summary-placeholder").style.display = "none";
+  container.style.display = "block";
 }
+
 
 function updateSelectedBadges() {
   const container = document.getElementById("selected-comp-badges");
@@ -307,3 +324,54 @@ function updateSelectedBadges() {
     container.appendChild(badge);
   });
 }
+
+function renderDoses() {
+  const container = document.getElementById("dose-list");
+  container.innerHTML = "";
+
+  if (doseList.length === 0) {
+    container.innerHTML = "<p class='text-muted'>No doses registered.</p>";
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.className = "table table-sm table-bordered table-striped";
+  table.innerHTML = `
+    <thead class="table-light">
+      <tr>
+        <th>#</th>
+        <th>Compartment</th>
+        <th>Type</th>
+        <th>Amount</th>
+        <th>Start Time</th>
+        <th>Duration</th>
+        <th>Repeat every</th>
+        <th>Repeat until</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${doseList.map((dose, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td>${dose.compartment}</td>
+          <td>${dose.type}</td>
+          <td>${dose.amount}</td>
+          <td>${dose.start_time}</td>
+          <td>${dose.type === "infusion" ? dose.duration : "-"}</td>
+          <td>${dose.repeat_every || "-"}</td>
+          <td>${dose.repeat_until || "-"}</td>
+          <td>
+            <button class="btn btn-sm btn-outline-danger" onclick="removeDose(${i})">🗑️</button>
+          </td>
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
+  container.appendChild(table);
+}
+
+window.removeDose = function(index) {
+  doseList.splice(index, 1);
+  renderDoses();
+};
