@@ -1,4 +1,5 @@
 const doseList = [];
+let observedData = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("dose-form");
@@ -24,6 +25,51 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target.classList.contains("sim-comp-checkbox")) {
       updateSelectedBadges();
     }
+  });
+  document.getElementById("obs-upload").addEventListener("change", function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (event) {
+      const lines = event.target.result.split("\n").filter(Boolean);
+      const header = lines[0].split(",");
+      const timeIdx = header.findIndex(h => h.trim().toLowerCase() === "time");
+      
+      if (timeIdx === -1) {
+        alert("CSV에 'Time' 열이 필요합니다.");
+        return;
+      }
+
+      const obs = {};
+      header.forEach((h, idx) => {
+        if (idx === timeIdx) return;
+        obs[h.trim()] = [];
+      });
+
+      const time = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(",");
+        if (values.length <= timeIdx) continue;
+        time.push(parseFloat(values[timeIdx]));
+
+        header.forEach((h, idx) => {
+          if (idx === timeIdx) return;
+          const val = parseFloat(values[idx]);
+          if (!isNaN(val)) {
+            obs[h.trim()].push(val);
+          } else {
+            obs[h.trim()].push(null);
+          }
+        });
+      }
+
+      observedData = { Time: time, ...obs };
+      alert("✅ Observed data loaded!");
+    };
+
+    reader.readAsText(file);
   });
 
   form.addEventListener("submit", e => {
@@ -125,6 +171,7 @@ function plotSimulationResult(data, logScale, selectedComps) {
   document.getElementById("plot-placeholder").style.display = "none";
   document.getElementById("plot").style.display = "block";
 
+  // Simulated data
   for (const key of selectedComps) {
     if (!(key in data)) continue;
     traces.push({
@@ -135,6 +182,21 @@ function plotSimulationResult(data, logScale, selectedComps) {
     });
   }
 
+  // Observed data overlay
+  if (observedData && observedData.Time) {
+    for (const key in observedData) {
+      if (key === "Time") continue;
+      traces.push({
+        x: observedData.Time,
+        y: observedData[key],
+        mode: "markers",
+        name: key + " (obs)",
+        marker: { symbol: "circle", size: 6 },
+        type: "scatter"
+      });
+    }
+  }
+
   const layout = {
     title: "Concentration-Time Profile",
     xaxis: { title: "Time (hr)" },
@@ -143,13 +205,12 @@ function plotSimulationResult(data, logScale, selectedComps) {
       type: logScale ? "log" : "linear"
     },
     legend: { orientation: "h" },
-    paper_bgcolor: "#f8f9fa00",  // Bootstrap bg-light
+    paper_bgcolor: "#f8f9fa00",
     plot_bgcolor: "#f8f9fa00"
   };
 
   Plotly.newPlot("plot", traces, layout);
 }
-
 
 function parseODE() {
   const text = document.getElementById("ode-input").value;
