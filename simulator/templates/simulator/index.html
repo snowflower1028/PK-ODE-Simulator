@@ -24,7 +24,27 @@
   <h5>🧮 ODE Systems</h5>
   <div class="mb-3">
     <textarea id="ode-input" class="form-control" rows="6" placeholder="e.g., dCdt = -kel*C"></textarea>
-    <button class="btn btn-outline-secondary btn-sm mt-2" onclick="parseODE()">🔍 Parse</button>
+  </div>
+
+  <!-- Parse ODEs, Show Processed ODEs Button -->
+  <div class="d-flex gap-2 mb-2">
+    <button class="btn btn-outline-secondary btn-sm" onclick="parseODE()">🔍 Parse</button>
+    <button class="btn btn-outline-info btn-sm" onclick="showProcessedModal()">📄 Show Processed ODEs</button>
+  </div>
+
+  <!-- Modal shows processed ODEs -->
+  <div class="modal fade" id="processedModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">📄 Processed ODEs</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="modal-body">
+          <!-- JS에서 채워짐 -->
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Value Setting & Dosing -->
