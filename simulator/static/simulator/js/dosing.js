@@ -218,18 +218,23 @@ function parseODE() {
 
   const compartments = new Set();
   const rhsExpressions = [];
+  const paramDefinitions = {};
 
   lines.forEach(line => {
     const [lhs, rhs] = line.split("=").map(s => s.trim());
     const match = lhs.match(/^d([A-Za-z0-9_]+)dt$/);
+
     if (match) {
       compartments.add(match[1]);
       rhsExpressions.push(rhs);
+    } else if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(lhs)) {
+      paramDefinitions[lhs] = rhs;
     }
   });
 
   const parameters = new Set();
 
+  // 1차로 우변 기호 추출
   rhsExpressions.forEach(rhs => {
     const symbols = rhs.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
     symbols.forEach(sym => {
@@ -239,8 +244,30 @@ function parseODE() {
     });
   });
 
+  // paramDefinition 중 compartment 또는 시간(t)에 의존하는 것 치환 처리
+  const odeLines = lines.filter(line => line.startsWith("d"));
+  let substitutedODE = odeLines.join("\n");
+
+  for (const [p, expr] of Object.entries(paramDefinitions)) {
+    const usesDynamic =
+      [...compartments].some(c => expr.includes(c)) || expr.includes("t");
+    if (usesDynamic) {
+      const safeExpr = `(${expr})`;
+      const regex = new RegExp(`\\b${p}\\b`, "g");
+      substitutedODE = substitutedODE.replace(regex, safeExpr);
+      parameters.delete(p); // 계산에서 제외
+    }
+  }
+
+  // 최종 ODE 문자열을 textarea에 재삽입 (optional)
+  document.getElementById("ode-input").value = substitutedODE;
+
   renderSymbolInputs([...compartments], [...parameters]);
+
+  window._compartments = [...compartments];
+  window._parameters = [...parameters];
 }
+
 
 function renderSymbolInputs(compList, paramList) {
   const initDiv = document.getElementById("init-values");
