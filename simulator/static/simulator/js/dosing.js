@@ -2,9 +2,7 @@ const doseList = [];
 let observedData = null;
 
 // 수식으로 정의된 파라미터 저장
-const derivedExpressions = {
-  Kd: "koff / kon"
-};
+const derivedExpressions = {};
 
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("dose-form");
