@@ -1,6 +1,11 @@
 const doseList = [];
 let observedData = null;
 
+// 수식으로 정의된 파라미터 저장
+const derivedExpressions = {
+  Kd: "koff / kon"
+};
+
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("dose-form");
   const doseContainer = document.getElementById("dose-list");
@@ -259,13 +264,14 @@ function parseODE() {
     }
   }
 
-  // 최종 ODE 문자열을 textarea에 재삽입 (optional)
-  document.getElementById("ode-input").value = substitutedODE;
+  // 최종 ODE 문자열을 textarea에 재삽입 (optional) 안 하는게 좋을 것 같아 주석처리함 -> modal로 보여줌줌
+  // document.getElementById("ode-input").value = substitutedODE;
 
   renderSymbolInputs([...compartments], [...parameters]);
-
+  
   window._compartments = [...compartments];
   window._parameters = [...parameters];
+  window._processedODE = substitutedODE;
 }
 
 
@@ -315,11 +321,22 @@ function renderSymbolInputs(compList, paramList) {
     const input = document.createElement("input");
     input.type = "number";
     input.step = "any";
-    input.value = "0.1";
     input.name = `param_${p}`;
     input.id = `param_${p}`;
     input.className = "form-control form-control-sm";
     input.style.flex = "1";
+
+    // 수식 기반 파라미터 처리
+  if (derivedExpressions[p]) {
+    const expr = derivedExpressions[p];
+    wrapper.innerHTML = `
+      <div class="form-control-plaintext ps-2" title="Auto-calculated">
+        <i class="bi bi-calculator"></i> <strong>${p}</strong> = ${expr}
+      </div>
+    `;
+    paramDiv.appendChild(wrapper);
+    return; // input 안 만듦
+  }
 
     wrapper.appendChild(label);
     wrapper.appendChild(input);
@@ -457,6 +474,27 @@ function renderDoses() {
     </tbody>
   `;
   container.appendChild(table);
+}
+
+function showProcessedModal() {
+  const modalBody = document.getElementById("modal-body");
+
+  const compBadges = window._compartments.map(c => `<span class="badge bg-primary me-1">${c}</span>`).join("");
+  const paramBadges = window._parameters.map(p => `<span class="badge bg-secondary me-1">${p}</span>`).join("");
+
+  const processedODE = window._processedODE || "ODE not parsed yet";
+
+  modalBody.innerHTML = `
+    <h6><i class="bi bi-box"></i> Compartments</h6>
+    <div class="mb-3">${compBadges}</div>
+    <h6><i class="bi bi-sliders"></i> Parameters</h6>
+    <div class="mb-3">${paramBadges}</div>
+    <h6><i class="bi bi-file-code"></i> Processed ODEs</h6>
+    <pre class="bg-light p-2 rounded small">${processedODE}</pre>
+  `;
+
+  const modal = new bootstrap.Modal(document.getElementById("processedModal"));
+  modal.show();
 }
 
 window.removeDose = function(index) {
