@@ -100,7 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // 시뮬레이션 실행
 document.getElementById("simulate-btn").onclick = () => {
-  const odeText = document.getElementById("ode-input").value;
+  const odeText = window._processedODE || document.getElementById("ode-input").value.trim();
   const simStart = parseFloat(document.getElementById("sim-start-time").value);
   const simEnd = parseFloat(document.getElementById("sim-end-time").value);
   const simSteps = parseInt(document.getElementById("sim-steps").value);
@@ -217,63 +217,31 @@ function plotSimulationResult(data, logScale, selectedComps) {
 
 function parseODE() {
   const text = document.getElementById("ode-input").value;
-  const lines = text.split("\n").map(line => line.trim()).filter(Boolean);
 
-  const compartments = new Set();
-  const rhsExpressions = [];
-  const paramDefinitions = {};
+  fetch("/parse/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": getCSRFToken()
+    },
+    body: JSON.stringify({ text })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.status !== "ok") return alert("Parse failed");
+    
+    const { compartments, parameters, processed_ode, derived_expressions } = data.data;
 
-  lines.forEach(line => {
-    const [lhs, rhs] = line.split("=").map(s => s.trim());
-    const match = lhs.match(/^d([A-Za-z0-9_]+)dt$/);
+    window._compartments = compartments;
+    window._parameters = parameters;
+    window._processedODE = processed_ode;
+    window._derivedExpressions = derived_expressions;
 
-    if (match) {
-      compartments.add(match[1]);
-      rhsExpressions.push(rhs);
-    } else if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(lhs)) {
-      paramDefinitions[lhs] = rhs;
-    }
+    renderSymbolInputs(compartments, parameters, derived_expressions);
   });
-
-  const parameters = new Set();
-
-  // 1차로 우변 기호 추출
-  rhsExpressions.forEach(rhs => {
-    const symbols = rhs.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
-    symbols.forEach(sym => {
-      if (!compartments.has(sym)) {
-        parameters.add(sym);
-      }
-    });
-  });
-
-  // paramDefinition 중 compartment 또는 시간(t)에 의존하는 것 치환 처리
-  const odeLines = lines.filter(line => line.startsWith("d"));
-  let substitutedODE = odeLines.join("\n");
-
-  for (const [p, expr] of Object.entries(paramDefinitions)) {
-    const usesDynamic =
-      [...compartments].some(c => expr.includes(c)) || expr.includes("t");
-    if (usesDynamic) {
-      const safeExpr = `(${expr})`;
-      const regex = new RegExp(`\\b${p}\\b`, "g");
-      substitutedODE = substitutedODE.replace(regex, safeExpr);
-      parameters.delete(p); // 계산에서 제외
-    }
-  }
-
-  // 최종 ODE 문자열을 textarea에 재삽입 (optional) 안 하는게 좋을 것 같아 주석처리함 -> modal로 보여줌줌
-  // document.getElementById("ode-input").value = substitutedODE;
-
-  renderSymbolInputs([...compartments], [...parameters]);
-  
-  window._compartments = [...compartments];
-  window._parameters = [...parameters];
-  window._processedODE = substitutedODE;
 }
 
-
-function renderSymbolInputs(compList, paramList) {
+function renderSymbolInputs(compList, paramList, derivedList) {
   const initDiv = document.getElementById("init-values");
   const paramDiv = document.getElementById("param-values");
 

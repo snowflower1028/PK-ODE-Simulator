@@ -15,12 +15,12 @@ def generate_rhs_function(
 
     Parameters
     ----------
-    equations : dict
-        Mapping from compartment name to sympy expression.
+    equations : str
+        ODE system as a string.
     compartments : list
         List of compartment names.
-    parameters : list
-        List of parameter names.
+    parameters : dict
+        Mapping from parameter name to its value.
 
     Returns
     -------
@@ -29,18 +29,16 @@ def generate_rhs_function(
     """
     y_syms = symbols(compartments)
     param_syms = symbols(parameters)
-
+    
+    # 각 컴파트먼트별 방정식 추출
     rhs_funcs = [
         lambdify((y_syms, param_syms), equations[comp], modules='numpy')
         for comp in compartments
     ]
-
+    
     def dydt(t, y, param_values):
-        return [
-            rhs_func(y, param_values)
-            for rhs_func in rhs_funcs
-        ]
-
+        return [rhs_func(y, param_values) for rhs_func in rhs_funcs]
+    
     return dydt
 
 
@@ -63,8 +61,8 @@ def solve_ode_system(
         Compartment → sympy expression mapping.
     compartments : list
         Compartment names.
-    parameters : list
-        Parameter names.
+    parameters : dict
+        Mapping from parameter name to its value.
     init_values : dict
         Initial values for each compartment.
     param_values : dict
