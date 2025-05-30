@@ -1,67 +1,74 @@
-from typing import Dict, List, Any
-from sympy import symbols, sympify, Expr
 import re
+from typing import List, Dict
+from sympy.parsing.sympy_parser import parse_expr
+from sympy import symbols, sqrt, sympify
 
 
-def parse_odes(ode_text: str) -> Dict[str, Any]:
-    """
-    Parse a set of ODE equations given as a multiline string and extract compartments, parameters, and expressions.
+def parse_ode_input(text: str) -> Dict:
+    lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
+    compartments = set()
+    rhs_expressions = []
+    param_definitions = {}
 
-    Parameters
-    ----------
-    ode_text : str
-        Multiline string of ODEs where each line follows the format 'd<CompartmentName>dt = <Expression>'.
+    # 수식 내 특수 문자 치환        
+    text = text.replace("^", "**")
+    lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
 
-    Returns
-    -------
-    Dict[str, Any]
-        A dictionary with the following keys:
-        - 'equations': Dict[str, Expr], mapping of compartment name to sympy expression
-        - 'compartments': List[str], list of compartment names
-        - 'parameters': List[str], list of parameter names
-    """
-    equations: Dict[str, Expr] = {}
-    compartments: List[str] = []
-    parameters = set()
+    # 1. 좌변 구문 분석
+    for line in lines:
+        if "=" not in line:
+            continue
+        lhs, rhs = map(str.strip, line.split("=", 1))
+        match = re.match(r"^d([A-Za-z0-9_]+)dt$", lhs)
+        if match:
+            comp = match.group(1)
+            compartments.add(comp)
+            rhs_expressions.append(rhs)
+        elif re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", lhs):
+            param_definitions[lhs] = rhs
 
-    print("Python Parser Called")
-    # Clean and split input into lines
-    lines = [line.strip() for line in ode_text.strip().split('\n') if line.strip()]
+    # 2. 우변에서 등장한 모든 symbol 추출
+    all_rhs_symbols = set()
+    for rhs in rhs_expressions:
+        all_rhs_symbols.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", rhs))
+
+    parameters = all_rhs_symbols - compartments
+
+    # 3. 동적 파라미터 추출 및 ODE 내 수식 치환
+    substituted_ode_lines = []
+    derived_expr = {}
 
     for line in lines:
-        if '=' not in line:
-            continue  # Skip invalid lines
-        lhs, rhs = map(str.strip, line.split('=', 1))
+        if "=" not in line:
+            continue
+        lhs, rhs = map(str.strip, line.split("=", 1))
+        match = re.match(r"^d([A-Za-z0-9_]+)dt$", lhs)
+        if match:
+            # 수식 파라미터 치환
+            for p, expr in param_definitions.items():
+                if any(c in expr for c in compartments) or "t" in expr:
+                    rhs = re.sub(rf"\b{p}\b", f"({expr})", rhs)
+                    derived_expr[p] = expr
+                    parameters.discard(p)
+            substituted_ode_lines.append(f"{lhs} = {rhs}")
 
-        # Extract compartment name from left-hand side (e.g., dCdt → C)
-        match = re.match(r'd([a-zA-Z_][a-zA-Z0-9_]*)dt', lhs)
-        if not match:
-            raise ValueError(f"Invalid LHS format in line: {line}")
-        comp_name = match.group(1)
-        compartments.append(comp_name)
+    processed_ode = "\n".join(substituted_ode_lines)
 
-        # Convert RHS to sympy expression
-        expr = sympify(rhs)
-        equations[comp_name] = expr
+    # 4. sympy용 symbol 테이블 생성
+    symbol_table = {s: symbols(s) for s in compartments.union(parameters)}
+    symbol_table['sqrt'] = sqrt  # 함수 등록
 
-    # Identify parameters by subtracting compartments from all symbols
-    all_symbols = set().union(*[expr.free_symbols for expr in equations.values()])
-    compartment_syms = set(symbols(compartments))
-    parameters = all_symbols - compartment_syms
+    # 5. sympy로 파싱된 ODE dict 생성
+    equations = {}
+    for line in substituted_ode_lines:
+        lhs, rhs = map(str.strip, line.split("=", 1))
+        comp = re.match(r"^d([A-Za-z0-9_]+)dt$", lhs).group(1)
+        equations[comp] = parse_expr(rhs, local_dict=symbol_table)
 
     return {
-        "equations": equations,
-        "compartments": compartments,
-        "parameters": sorted([str(p) for p in parameters])
+        "compartments": sorted(compartments),
+        "parameters": sorted(parameters),
+        "derived_expressions": derived_expr,
+        "processed_ode": processed_ode,
+        "equations": equations
     }
-
-
-if __name__ == "__main__":
-    ode_text = """
-    dCdt = -kel * C - kon * C * R + koff * CR
-    dRdt = -kon * C * R + koff * CR + kdeg * CR
-    dCRdt = kon * C * R - koff * CR - kint * CR
-    """
-    parsed = parse_odes(ode_text)
-    print(parsed)
-

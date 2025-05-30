@@ -1,10 +1,11 @@
 from django.http import JsonResponse
+from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render
 import numpy as np
 import json
 
-from .parser import parse_odes
+from .parser import parse_ode_input
 from .solver import solve_ode_system
 from .analyzer import analyze_pk
 
@@ -16,7 +17,6 @@ def simulate(request):
             data = json.loads(request.body)
 
             # 1. 사용자 입력에서 수식 및 값 추출
-            ode_text = data.get("equations", "")
             init_values = data.get("initials", {})
             param_values = data.get("parameters", {})
             t_start = float(data.get("t_start", 0))
@@ -24,12 +24,16 @@ def simulate(request):
             t_steps = int(data.get("t_steps", 200))
             t_eval = np.linspace(t_start, t_end, t_steps)
             doses = data.get("doses", [])
-            
-            # 2. 수식 파싱 (parser.py 사용)
-            parsed = parse_odes(ode_text)
-            equations = parsed["equations"]
-            compartments = parsed["compartments"]
-            parameters = parsed["parameters"]
+
+            # 2. 수식 파싱 (parser.py 사용, JavaScript에서 전달된 ODE 텍스트)
+            # parse_ode_input은 equation 텍스트만 파싱
+            parsed = parse_ode_input(data.get("equations", ""))
+
+            print(parsed)
+
+            equations = parsed["equations"]             # dict
+            compartments = parsed["compartments"]       # list
+            parameters = parsed["parameters"]           # list
 
             # 3. solver.py 사용하여 시뮬레이션 수행
             df = solve_ode_system(
@@ -67,6 +71,23 @@ def simulate(request):
 
     else:
         return JsonResponse({"status": "error", "message": "Invalid request method"})
+
+@require_POST
+def parse_ode_view(request):
+    import json
+    data = json.loads(request.body)
+    ode_text = data.get("text", "")
+
+    parsed = parse_ode_input(ode_text)
+    equations_for_response = {k: str(v) for k, v in parsed["equations"].items()}
+
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            **parsed,
+            "equations": equations_for_response
+        }
+    })
 
 def index(request):
     return render(request, "simulator/index.html")
