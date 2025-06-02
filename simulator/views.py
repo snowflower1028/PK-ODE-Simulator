@@ -29,8 +29,6 @@ def simulate(request):
             # parse_ode_input은 equation 텍스트만 파싱
             parsed = parse_ode_input(data.get("equations", ""))
 
-            print(parsed)
-
             equations = parsed["equations"]             # dict
             compartments = parsed["compartments"]       # list
             parameters = parsed["parameters"]           # list

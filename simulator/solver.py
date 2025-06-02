@@ -15,8 +15,8 @@ def generate_rhs_function(
 
     Parameters
     ----------
-    equations : str
-        ODE system as a string.
+    equations : Dict[str, Expr]
+        ODE system as a dictionary mapping compartment names to their equations.
     compartments : list
         List of compartment names.
     parameters : dict
