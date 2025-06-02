@@ -87,6 +87,18 @@ def parse_ode_view(request):
         }
     })
 
+@require_POST
+def fit(request):
+    try:
+        data   = json.loads(request.body)
+        from .fitting import fit as run_fit
+        res    = run_fit(data)
+        return JsonResponse({"status":"ok", "data":res})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return JsonResponse({"status":"error", "message":str(e)})
+
+
 def index(request):
     return render(request, "simulator/index.html")
 
