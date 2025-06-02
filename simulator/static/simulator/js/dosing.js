@@ -1,9 +1,6 @@
 const doseList = [];
 let observedData = null;
 
-// 수식으로 정의된 파라미터 저장
-const derivedExpressions = {};
-
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("dose-form");
   const doseContainer = document.getElementById("dose-list");
@@ -100,12 +97,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // 시뮬레이션 실행
 document.getElementById("simulate-btn").onclick = () => {
-  const odeText = window._processedODE || document.getElementById("ode-input").value.trim();
+  // const odeText = window._processedODE || document.getElementById("ode-input").value.trim();
+  const odeText = document.getElementById("ode-input").value.trim();
   const simStart = parseFloat(document.getElementById("sim-start-time").value);
   const simEnd = parseFloat(document.getElementById("sim-end-time").value);
   const simSteps = parseInt(document.getElementById("sim-steps").value);
 
-  const logScale = document.getElementById("log-scale").checked;
+  const logScale = document.getElementById("log-scale").checked;  
 
   const simSelect = document.getElementById("sim-compartments");
   const selectedComps = Array.from(document.querySelectorAll(".sim-comp-checkbox"))
@@ -242,100 +240,79 @@ function parseODE() {
 }
 
 function renderSymbolInputs(compList, paramList, derivedList) {
-  const initDiv = document.getElementById("init-values");
+  const initDiv  = document.getElementById("init-values");
   const paramDiv = document.getElementById("param-values");
-
-  initDiv.innerHTML = "";
+  initDiv.innerHTML  = "";
   paramDiv.innerHTML = "";
 
-  // 초기값 영역
+  /* 초기값 입력창 ----------------------------- */
   compList.forEach(c => {
-    const wrapper = document.createElement("div");
-    wrapper.className = "d-flex align-items-center mb-2";
+    const wrap  = document.createElement("div");
+    wrap.className = "d-flex align-items-center mb-2";
 
-    const label = document.createElement("label");
-    label.textContent = `${c}:`;
-    label.setAttribute("for", `init_${c}`);
-    label.className = "mb-0 me-2 text-end";
-    label.style.width = "70px";
-
-    const input = document.createElement("input");
-    input.type = "number";
-    input.step = "any";
-    input.value = "1.0";
-    input.name = `init_${c}`;
-    input.id = `init_${c}`;
-    input.className = "form-control form-control-sm";
-    input.style.flex = "1";
-
-    wrapper.appendChild(label);
-    wrapper.appendChild(input);
-    initDiv.appendChild(wrapper);
-  });
-
-  // 파라미터 영역
-  paramList.forEach(p => {
-    const wrapper = document.createElement("div");
-    wrapper.className = "d-flex align-items-center mb-2";
-
-    const label = document.createElement("label");
-    label.textContent = `${p}:`;
-    label.setAttribute("for", `param_${p}`);
-    label.className = "mb-0 me-2 text-end";
-    label.style.width = "70px";
-
-    const input = document.createElement("input");
-    input.type = "number";
-    input.step = "any";
-    input.name = `param_${p}`;
-    input.id = `param_${p}`;
-    input.className = "form-control form-control-sm";
-    input.style.flex = "1";
-
-    // 수식 기반 파라미터 처리
-  if (derivedExpressions[p]) {
-    const expr = derivedExpressions[p];
-    wrapper.innerHTML = `
-      <div class="form-control-plaintext ps-2" title="Auto-calculated">
-        <i class="bi bi-calculator"></i> <strong>${p}</strong> = ${expr}
-      </div>
+    wrap.innerHTML = `
+      <label for="init_${c}" class="mb-0 me-2 text-end" style="width:70px;">${c}:</label>
+      <input type="number" step="any" value="1.0"
+             id="init_${c}" name="init_${c}"
+             class="form-control form-control-sm flex-grow-1">
     `;
-    paramDiv.appendChild(wrapper);
-    return; // input 안 만듦
-  }
-
-    wrapper.appendChild(label);
-    wrapper.appendChild(input);
-    paramDiv.appendChild(wrapper);
+    initDiv.appendChild(wrap);
   });
 
+  /* (A) 실제 입력 파라미터 -------------------- */
+  paramList.forEach(p => {
+    const row = document.createElement("div");
+    row.className = "d-flex align-items-center mb-2";
+    row.innerHTML = `
+      <label for="param_${p}" class="mb-0 me-2 text-end" style="width:70px;">${p}:</label>
+      <input type="number" step="any"
+             id="param_${p}" name="param_${p}"
+             class="form-control form-control-sm flex-grow-1">
+    `;
+    paramDiv.appendChild(row);
+  });
+
+  /* (B) 자동 계산 파라미터(derived) ----------------------------- */
+  Object.entries(derivedList)
+    .filter(([k]) => !paramList.includes(k))
+    .forEach(([k, expr]) => {
+      const div   = document.createElement("div");
+      div.className = "derived-box";
+      div.title = "Auto-calculated";
+
+      // 아이콘 + 이름 + 수식(<code> 태그)
+      div.innerHTML =
+        `<i class="bi bi-calculator"></i> <strong>${k}</strong> = ` +
+        `<code>${expr}</code>`;
+
+      paramDiv.appendChild(div);
+    });
+
+  /* ▼ 나머지 UI 재생성 로직은 유지 ▼ */
   const doseSelect = document.getElementById("compartment");
   doseSelect.innerHTML = "";
   compList.forEach(c => {
     const opt = document.createElement("option");
-    opt.value = c;
-    opt.textContent = c;
+    opt.value = c; opt.textContent = c;
     doseSelect.appendChild(opt);
   });
 
-  // simulate compartments (checkbox 메뉴)
   const simMenu = document.getElementById("sim-compartments-menu");
   simMenu.innerHTML = "";
   compList.forEach(c => {
-    const li = document.createElement("li");
-    li.innerHTML = `
-      <label class="dropdown-item">
-        <input type="checkbox" class="form-check-input me-2 sim-comp-checkbox" value="${c}" checked>
-        ${c}
-      </label>
-    `;
-    simMenu.appendChild(li);
+    simMenu.insertAdjacentHTML("beforeend", `
+      <li>
+        <label class="dropdown-item">
+          <input type="checkbox" class="form-check-input me-2 sim-comp-checkbox" value="${c}" checked>
+          ${c}
+        </label>
+      </li>`);
   });
 
   updateSelectedBadges();
 
-  window._compartments = compList;
-  window._parameters = paramList;
+  window._compartments = compList;   // 재확인
+  window._parameters   = paramList;  // 입력 파라미터만!
 }
 
 function displayPKSummary(pk) {
