@@ -10,12 +10,13 @@ from .solver import solve_ode_system
 from .parser import parse_ode_input
 
 
-def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, comps, initials, obs_sets, doses):
+def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, comps, initials, obs_sets, doses, weighting):
     """
     Residuals function for least_squares.
     - equations_callable: Lambdified function for the ODE system.
     - all_parameters: List of all parameter names in order.
     - doses: List of dosing information.
+    - weighting: 'none', '1/Y', or '1/Y2'
     """
     # 1. 현재 추정치로 전체 파라미터 딕셔너리 재구성
     fit_param = dict(zip(fit_keys, vec))
@@ -40,21 +41,33 @@ def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, c
             param_values=all_param_values,
             t_span=[t_start, t_end],
             t_eval=t_eval,
-            doses=doses # Dosing 정보 전달
+            doses=doses
         )
 
         # 4. 각 관찰 컬럼에 대한 잔차 계산
         for col in obs_df.columns:
-            if col.lower() == "time" or col not in sim_df.columns:
-                continue
+            if col.lower() == "time" or col not in sim_df.columns: continue
             
             observed_values = obs_df[col].to_numpy()
             simulated_values = sim_df[col].to_numpy()
             
-            # NaN 값 등 유효하지 않은 데이터 제외
             valid_indices = ~np.isnan(observed_values)
-            if np.any(valid_indices):
-                res_all.extend(simulated_values[valid_indices] - observed_values[valid_indices])
+            if not np.any(valid_indices): continue
+
+            # --- 가중치 적용 로직 ---
+            raw_residuals = simulated_values[valid_indices] - observed_values[valid_indices]
+            
+            if weighting == '1/Y':
+                # 분모가 0이 되는 것을 방지하기 위해 np.maximum 사용
+                weights = 1.0 / np.maximum(np.abs(observed_values[valid_indices]), 1e-9)
+                weighted_residuals = raw_residuals * weights
+            elif weighting == '1/Y2':
+                weights = 1.0 / np.maximum(np.abs(observed_values[valid_indices]**2), 1e-9)
+                weighted_residuals = raw_residuals * weights
+            else: # 'none' 또는 다른 값일 경우
+                weighted_residuals = raw_residuals
+
+            res_all.extend(weighted_residuals)
 
     if not res_all:
         return np.array([1e6] * len(vec)) # 문제가 발생하여 잔차 계산이 안 된 경우
@@ -96,6 +109,7 @@ def fit(data: dict) -> dict:
     fit_keys   = data["fit_params"]
     param_bounds_dict = data.get("bounds", {})
     doses      = data.get("doses", [])   # Dosing 정보
+    weighting  = data.get("weighting", "none")  # 가중치 방식
 
     fixed_param = {k: v for k, v in full_param.items() if k not in fit_keys}
     p0 = np.array([full_param[k] for k in fit_keys], dtype=float)
@@ -115,36 +129,34 @@ def fit(data: dict) -> dict:
     result = least_squares(
         _residuals,
         p0,
-        kwargs=dict( # _residuals 함수에 전달될 인자들
+        kwargs=dict(
             fit_keys=fit_keys,
             fixed_param=fixed_param,
-            equations_callable=equations_callable, # 수정됨
-            all_parameters=all_parameters,         # 수정됨 (순서 정보)
-            comps=all_compartments,                # 수정됨
+            equations_callable=equations_callable,
+            all_parameters=all_parameters,
+            comps=all_compartments,
             initials=initials,
             obs_sets=obs_sets,
-            doses=doses                            # 수정됨
+            doses=doses,
+            weighting=weighting
         ),
         bounds=actual_bounds,
-        verbose=0 # 서버 콘솔 출력을 원하면 2로 변경
+        verbose=0 # 0: silent, 1: print summary, 2: print all iterations
     )
 
     fitted_params = dict(zip(fit_keys, result.x))
 
     # 6) (선택 사항) 최종 파라미터로 SSR 다시 계산
     # 이 부분은 _residuals 함수를 재활용하여 단순화 가능
-    final_residuals = _residuals(result.x, fit_keys, fixed_param, equations_callable, all_parameters, all_compartments, initials, obs_sets, doses)
-    total_ssr = np.sum(np.square(final_residuals))
-
+    final_residuals_unweighted = _residuals(result.x, fit_keys, fixed_param, equations_callable, all_parameters, all_compartments, initials, obs_sets, doses, weighting='none') # <-- weighting='none'으로 강제
+    total_ssr = np.sum(np.square(final_residuals_unweighted))
 
     # 최종 반환값
     return {
-        "params"      : fitted_params,
-        "cost"        : result.cost,       # 0.5 * sum_sq_residuals
-        "ssr_total"   : total_ssr,
-        # "ssr_list"  : ssr_list, # 개별 SSR 계산 로직은 필요시 추가
-        "nfev"        : result.nfev,
-        "message"     : result.message,
-        "status_code" : result.status,
+        "params": fitted_params,
+        "cost": result.cost, # 가중된 잔차 기반의 cost
+        "ssr_total": total_ssr, # 가중되지 않은 SSR (Goodness-of-fit 지표)
+        "nfev": result.nfev,
+        "message": result.message,
+        "status_code": result.status,
     }
-

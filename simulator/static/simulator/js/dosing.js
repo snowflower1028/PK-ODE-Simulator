@@ -475,7 +475,7 @@ function openFittingSettingsModal() {
             const currentValue = paramValueEl ? paramValueEl.value : 'N/A';
 
             const div = document.createElement('div');
-            div.className = 'form-check mb-1';
+            div.className = 'form-check';
             div.innerHTML = `
                 <input class="form-check-input modal-fit-param-cb" type="checkbox" value="${p_name}" id="modal_fit_${p_name}">
                 <label class="form-check-label" for="modal_fit_${p_name}">
@@ -538,7 +538,8 @@ function handleStartFitting() {
 
     const fitProgressSection = document.getElementById('fit-progress-section');
     const startFittingBtn = document.getElementById('start-fitting-btn');
-    
+    const weightingScheme = document.querySelector('input[name="fitWeighting"]:checked')?.value || 'none';
+
     const selectedFitParams = [];
     document.querySelectorAll('#modal-param-list .modal-fit-param-cb:checked').forEach(cb => {
         selectedFitParams.push(cb.value);
@@ -595,6 +596,7 @@ function handleStartFitting() {
         fit_params: selectedFitParams,
         bounds: bounds, // 생성한 bounds 객체 전달
         observed: selObs,
+        weighting: weightingScheme,
         doses: doseList,
         t_start: +document.getElementById("sim-start-time").value,
         t_end: +document.getElementById("sim-end-time").value,
@@ -704,11 +706,18 @@ function renderFitSummary(dict, cost) {
     .map(([k, v]) => `<tr><td>${k}</td><td>${typeof v === 'number' ? v.toPrecision(6) : v}</td></tr>`)
     .join("");
   box.innerHTML = `
-    <table class="table table-sm table-bordered mb-2">
-      <thead class="table-light"><tr><th>Parameter</th><th>Value</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <p class="small text-muted mb-0">Cost (SSR/2): ${typeof cost === 'number' ? cost.toPrecision(6) : cost}</p>`;
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-2">
+        <thead class="table-light">
+            <tr>
+                <th>Parameter</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p class="small text-muted mb-0 text-end">Cost (SSR/2): ${typeof cost === 'number' ? cost.toPrecision(6) : cost}</p>`; // text-end로 오른쪽 정렬
   card.style.display = "block";
 }
 window.renderFitSummary = renderFitSummary;
@@ -848,8 +857,8 @@ function displayPKSummary(pkData) {
     summaryDiv.innerHTML = `<div class="placeholder-text">No PK summary data available.</div>`;
     return;
   }
-  const rows = pkArray.map((entry, i) => {
-    const compartmentName = entry.compartment || `Comp ${i+1}`;
+  const rows = pkArray.map((entry) => {
+    const compartmentName = entry.compartment || `N/A`;
     return `
     <tr>
       <td>${compartmentName}</td>
@@ -861,11 +870,14 @@ function displayPKSummary(pkData) {
   }).join("");
   summaryDiv.innerHTML = `
     <div class="table-responsive">
-      <table class="table table-sm table-hover">
+      <table class="table table-sm table-hover"> 
         <thead class="table-light">
           <tr>
-            <th>Compartment</th><th>C<sub>max</sub></th><th>T<sub>max</sub> (h)</th>
-            <th>AUC<sub>last</sub></th><th>Half-life (h)</th>
+            <th>Compartment</th>
+            <th>C<sub>max</sub></th>
+            <th>T<sub>max</sub> (h)</th>
+            <th>AUC<sub>last</sub></th>
+            <th>Half-life (h)</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
