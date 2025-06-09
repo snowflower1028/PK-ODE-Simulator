@@ -163,8 +163,8 @@ def _build_eq(proc_lines, symtbl):
 # 6. 메인 엔트리
 # ───────────────────────────────────────────────
 def parse_ode_input(text: str) -> Dict[str, Any]:
-    lines                 = _preprocess(text)
-    ode_rows, param_rows  = _classify(lines)
+    lines                   = _preprocess(text)
+    ode_rows, param_rows    = _classify(lines)
 
     comps, param_syms, symtbl = _initial_symbols(ode_rows, param_rows)
     parsed_defs, graph, rev   = _parse_param_defs(param_rows, symtbl)
@@ -177,16 +177,18 @@ def parse_ode_input(text: str) -> Dict[str, Any]:
     proc_lines  = _substitute_odes(ode_rows, derived_exprs, symtbl)
     equations   = _build_eq(proc_lines, symtbl)
 
+    # 최종 반환 딕셔너리. lambdify 관련 키는 제거됨.
     return {
         "compartments"        : sorted(comps),
         "parameters"          : sorted(base_params),
         "derived_expressions" : derived_exprs,
         "processed_ode"       : "\n".join(proc_lines),
-        "equations"           : equations
+        "equations"           : equations,
     }
 
+
 # ───────────────────────────────────────────────
-# 7. 간단 테스트 (직접 실행시)
+# test code
 # ───────────────────────────────────────────────
 if __name__ == "__main__":
     txt = """
