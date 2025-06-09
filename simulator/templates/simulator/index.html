@@ -408,6 +408,36 @@
         font-weight: 500;
         color: var(--apple-text-primary);
     }
+
+    #modal-param-list {
+      /* 기존 스타일 (필요시) */
+      max-height: 280px; /* 여러 열로 표시되므로 최대 높이를 약간 조정할 수 있습니다. */
+      overflow-y: auto;
+      padding: 1rem;
+      border: 1px solid var(--apple-separator-color);
+      border-radius: 8px;
+      background-color: var(--apple-background-secondary);
+      
+      /* --- 신규 추가: CSS Grid 레이아웃 --- */
+      display: grid;
+      
+      /* * 그리드 열(column) 설정:
+      * - auto-fit: 사용 가능한 공간에 맞춰 열의 개수를 자동으로 채웁니다.
+      * - minmax(250px, 1fr): 각 열은 최소 250px의 너비를 가지며,
+      * 여유 공간이 있으면 1fr (비율 단위) 만큼 균등하게 늘어납니다.
+      * 이 설정 덕분에 모달 너비에 따라 열 개수가 자동으로 2열, 3열 등으로 변경됩니다.
+      */
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      
+      /* 행과 열 사이의 간격 설정 */
+      gap: 0.5rem 1rem; /* 세로(row) 간격 0.5rem, 가로(column) 간격 1rem */
+    }
+
+    /* Grid 아이템(각 체크박스)의 하단 마진은 gap으로 처리하므로 제거 (선택 사항) */
+    #modal-param-list .form-check {
+      margin-bottom: 0 !important;
+    }
+
     .btn-close {
         filter: grayscale(1) opacity(0.6);
     }
@@ -688,6 +718,34 @@
               </div>
           </section>
           
+          <hr>
+          
+          <section id="fit-weighting-section">
+            <h6><i class="bi bi-distribute-vertical"></i> Weighting Scheme</h6>
+            <p class="text-muted small">Select a weighting method to adjust the influence of each data point on the fit. This is useful for balancing errors across a wide range of concentrations.</p>
+            
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="fitWeighting" id="weightNone" value="none" checked>
+              <label class="form-check-label" for="weightNone">
+                <strong>No Weighting</strong> (Ordinary Least Squares)
+              </label>
+            </div>
+            
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="fitWeighting" id="weight1Y" value="1/Y">
+              <label class="form-check-label" for="weight1Y">
+                <strong>1/Y</strong> (Relative Error) - Divides residuals by observed concentration.
+              </label>
+            </div>
+            
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="fitWeighting" id="weight1Y2" value="1/Y2">
+              <label class="form-check-label" for="weight1Y2">
+                <strong>1/Y²</strong> - Divides residuals by the square of observed concentration.
+              </label>
+            </div>
+          </section>
+
           <hr>
 
           <section id="fit-progress-section" style="display:none;">
