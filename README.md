@@ -63,7 +63,7 @@ simulator/
 
 ---
 
-## 📌 How to Use
+## 📌 How to Simulate
 
 ### 1. Define ODEs
 Input your differential equations using the format:
@@ -92,10 +92,40 @@ Time,A1_obs,A2_obs,...
 Click 🚀 to generate plot and PK summary.
 
 ---
+## 📌 How to Fit
+
+### 1. Define ODEs
+Input your differential equations using the format:
+```
+dCdt = -kel * C
+```
+
+### 2. Set Initial Values & Parameters
+Auto-generated based on your ODEs.
+
+### 3. Adjust Simulation Settings
+Set time range, resolution, and compartments to plot.
+
+### 4. Upload Observed Data
+Upload a `.csv` with columns:
+```
+Time,A1_obs,A2_obs,...
+```
+
+### 5. Press Fit Parameter Button
+Click to set the fitting options.
+
+### 6. Set the fitting options.
+- Select parameters and boundary (optional) to fit.
+- Add dosing group.
+- Select the weighting scheme.
+
+### 7. Run fitting
+Fitting performed with least-square method.
+---
 
 ## 📷 Screenshots
-![image](https://github.com/user-attachments/assets/453624a7-32f9-4a61-b698-95fb54822880)
-![image](https://github.com/user-attachments/assets/0018bf28-18e8-49cd-ae66-5fdf01892656)
+![image](https://github.com/user-attachments/assets/930d0871-a9f3-4595-b0a6-bf7bd43693b3)
 
 
 ---
@@ -104,8 +134,7 @@ Click 🚀 to generate plot and PK summary.
 
 - Export simulation & PK summary as CSV
 - Add units for parameters (e.g., mg, h, L)
-- Toggleable compartments in plot
-- Non-IV dosing support (oral, SC)
+- Apply advanced dosing schedule (multiple, infusion, etc..) to fitting. 
 
 ---
 
