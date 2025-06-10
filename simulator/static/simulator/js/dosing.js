@@ -6,7 +6,7 @@ const doseList    = [];
 let   fitTimer    = null;        // 진행 타이머
 // Bootstrap Modal 인스턴스를 저장할 변수
 let fittingSettingsModalInstance = null;
-
+let fittingGroupCounter = 0;
 
 /*─────────────────────────────────────────────*
  * 1. 오프-캔버스 Observed Data 관리 초기화
@@ -105,17 +105,16 @@ document.addEventListener("DOMContentLoaded", () => {
   // 피팅 설정 모달 관련 이벤트 리스너
   const fittingModalElement = document.getElementById('fittingSettingsModal');
   if (fittingModalElement) {
-    fittingSettingsModalInstance = new bootstrap.Modal(fittingModalElement);
+      fittingSettingsModalInstance = new bootstrap.Modal(fittingModalElement);
 
-    // 모달 내 파라미터 목록에서 체크박스 변경 시 Bounds UI 업데이트
-    document.getElementById('modal-param-list')?.addEventListener('change', (event) => {
-      if (event.target.classList.contains('modal-fit-param-cb')) {
-        renderFitParamBoundsUI();
-      }
-    });
+      document.getElementById('modal-param-list')?.addEventListener('change', (event) => {
+          if (event.target.classList.contains('modal-fit-param-cb')) {
+              renderFitParamBoundsUI();
+          }
+      });
 
-    // "Start Fitting" 버튼 클릭 리스너
-    document.getElementById('start-fitting-btn')?.addEventListener('click', handleStartFitting);
+      document.getElementById('start-fitting-btn')?.addEventListener('click', handleStartFitting);
+      document.getElementById('add-fitting-group-btn')?.addEventListener('click', addFittingGroup);
   }
 });
 
@@ -459,232 +458,248 @@ if (fitBtnMain) {
 }
 
 function openFittingSettingsModal() {
-    const paramListDiv = document.getElementById('modal-param-list');
-    const paramBoundsListDiv = document.getElementById('modal-param-bounds-list');
-    const fitProgressSection = document.getElementById('fit-progress-section');
-
-    if (!paramListDiv || !paramBoundsListDiv || !fittingSettingsModalInstance) return;
-
-    paramListDiv.innerHTML = ''; // Clear previous list
-    paramBoundsListDiv.innerHTML = ''; // Clear previous bounds
-
-    if (window._parameters && window._parameters.length > 0) {
-        window._parameters.forEach(p_name => {
-            // 현재 UI에서 해당 파라미터의 값을 가져옴 (초기 추정치)
-            const paramValueEl = document.getElementById(`param_${p_name}`);
-            const currentValue = paramValueEl ? paramValueEl.value : 'N/A';
-
-            const div = document.createElement('div');
-            div.className = 'form-check';
-            div.innerHTML = `
-                <input class="form-check-input modal-fit-param-cb" type="checkbox" value="${p_name}" id="modal_fit_${p_name}">
-                <label class="form-check-label" for="modal_fit_${p_name}">
-                    ${p_name} <small class="text-muted">(current: ${currentValue})</small>
-                </label>
-            `;
-            paramListDiv.appendChild(div);
-        });
-    } else {
-        paramListDiv.innerHTML = `<p class="text-muted small">No parameters available for fitting. Parse ODEs first.</p>`;
+    // 피팅 시작 전 필수 조건 확인
+    if (!window._compartments?.length || !window._parameters?.length) {
+        return alert("Please parse ODEs first to define parameters for fitting.");
     }
+    if (window._obs.length === 0) {
+        return alert("Please upload at least one observed data file before starting a fit.");
+    }
+
+    const paramListDiv = document.getElementById('modal-param-list');
+    const fitProgressSection = document.getElementById('fit-progress-section');
+    const groupsContainer = document.getElementById('fitting-groups-container');
     
-    if(fitProgressSection) fitProgressSection.style.display = 'none'; // 진행률 섹션 숨기기
-    document.getElementById('start-fitting-btn').disabled = false; // 시작 버튼 활성화
+    if (!paramListDiv || !fittingSettingsModalInstance || !groupsContainer) {
+        console.error("Fitting modal components are missing from the DOM.");
+        return;
+    }
+
+    // 1. 파라미터 선택 목록 채우기 (Grid 레이아웃 적용)
+    paramListDiv.innerHTML = window._parameters.map(p_name => {
+        const paramValueEl = document.getElementById(`param_${p_name}`);
+        const currentValue = paramValueEl ? paramValueEl.value : 'N/A';
+        return `<div class="form-check"><input class="form-check-input modal-fit-param-cb" type="checkbox" value="${p_name}" id="modal_fit_${p_name}"><label class="form-check-label" for="modal_fit_${p_name}">${p_name} <small class="text-muted">(current: ${currentValue})</small></label></div>`;
+    }).join('');
+
+    // 2. 기존 그룹 UI 초기화 및 첫 그룹 자동 추가
+    groupsContainer.innerHTML = '';
+    fittingGroupCounter = 0;
+    addFittingGroup();
+
+    // 3. Bounds UI 초기화
+    renderFitParamBoundsUI();
+    
+    // 4. 모달 상태 초기화 및 표시
+    if (fitProgressSection) fitProgressSection.style.display = 'none';
+    const startBtn = document.getElementById('start-fitting-btn');
+    if (startBtn) startBtn.disabled = false;
 
     fittingSettingsModalInstance.show();
+}
+
+// 그룹 카드 HTML을 생성하는 헬퍼 함수
+function createFittingGroupHTML(groupId) {
+    // 오프캔버스에 업로드된 관찰 데이터 목록으로 드롭다운 옵션 생성
+    const observedDataOptions = window._obs.map((obs, index) => 
+        `<option value="${index}">${obs.name}</option>`
+    ).join('');
+    // 현재 파싱된 컴파트먼트로 드롭다운 옵션 생성
+    const compartmentOptions = (window._compartments || []).map(c => `<option value="${c}">${c}</option>`).join('');
+
+    return `
+        <div class="card mb-3 fitting-group-card" id="fitting-group-${groupId}" data-group-id="${groupId}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="card-title mb-0">Group ${groupId + 1}</h6>
+                    <button type="button" class="btn-close" aria-label="Remove Group" onclick="removeFittingGroup(this)"></button>
+                </div>
+                
+                <div class="row g-3">
+                    <div class="col-md-12">
+                        <label class="form-label small">Observed Data</label>
+                        <select class="form-select form-select-sm group-obs-select" required>
+                            ${observedDataOptions ? `<option value="" selected disabled>Select observed data...</option>${observedDataOptions}` : `<option value="" selected disabled>No observed data uploaded</option>`}
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <label class="form-label small">Compartment</label>
+                        <select class="form-select form-select-sm group-dose-comp">
+                           ${compartmentOptions}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Amount</label>
+                        <input type="number" step="any" class="form-control form-control-sm group-dose-amount" placeholder="e.g., 0.1" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Time</label>
+                        <input type="number" step="any" class="form-control form-control-sm group-dose-time" value="0" required>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// 그룹 제거 함수
+function removeFittingGroup(buttonElement) {
+    buttonElement.closest('.fitting-group-card')?.remove();
+}
+
+function addFittingGroup() {
+    const container = document.getElementById('fitting-groups-container');
+    if (!container) return;
+    const newGroupHTML = createFittingGroupHTML(fittingGroupCounter);
+    container.insertAdjacentHTML('beforeend', newGroupHTML);
+    fittingGroupCounter++;
 }
 
 function renderFitParamBoundsUI() {
     const paramBoundsListDiv = document.getElementById('modal-param-bounds-list');
     if (!paramBoundsListDiv) return;
-    paramBoundsListDiv.innerHTML = ''; // Clear previous bounds
-
+    
     const checkedParams = document.querySelectorAll('#modal-param-list .modal-fit-param-cb:checked');
     if (checkedParams.length === 0) {
-        paramBoundsListDiv.innerHTML = `<p class="text-muted small">Select parameters above to set their bounds.</p>`;
+        paramBoundsListDiv.innerHTML = `<div class="placeholder-text small" style="border:none;background:none;min-height:40px;">Select parameters to set bounds.</div>`;
         return;
     }
 
-    checkedParams.forEach(cb => {
+    paramBoundsListDiv.innerHTML = Array.from(checkedParams).map(cb => {
         const paramName = cb.value;
-        const row = document.createElement('div');
-        row.className = 'row g-2 mb-2 align-items-center';
-        row.innerHTML = `
-            <div class="col-md-3"><label class="form-label mb-0 small" for="lower_bound_${paramName}">${paramName}:</label></div>
-            <div class="col-md-4">
-                <input type="number" step="any" class="form-control form-control-sm modal-param-lower" 
-                       data-param-name="${paramName}" placeholder="Lower Bound" id="lower_bound_${paramName}">
-            </div>
-            <div class="col-md-1 text-center">-</div>
-            <div class="col-md-4">
-                <input type="number" step="any" class="form-control form-control-sm modal-param-upper" 
-                       data-param-name="${paramName}" placeholder="Upper Bound">
-            </div>
-        `;
-        paramBoundsListDiv.appendChild(row);
-    });
+        return `<div class="row g-2 mb-2 align-items-center"><div class="col-md-3"><label class="form-label mb-0 small" for="lower_bound_${paramName}">${paramName}:</label></div><div class="col-md-4"><input type="number" step="any" class="form-control form-control-sm modal-param-lower" data-param-name="${paramName}" placeholder="Lower Bound" id="lower_bound_${paramName}"></div><div class="col-md-1 text-center text-muted">-</div><div class="col-md-4"><input type="number" step="any" class="form-control form-control-sm modal-param-upper" data-param-name="${paramName}" placeholder="Upper Bound"></div></div>`;
+    }).join('');
 }
 
 function handleStartFitting() {
-    if (!window._compartments || !window._parameters) {
-        alert("Critical error: Compartments or parameters not defined. Please parse ODEs again.");
-        return;
-    }
-    const selObs = getSelectedObs();
-    if (!selObs.length) {
-        alert("⚠️ No observed data selected for fitting.");
-        return;
-    }
-
     const fitProgressSection = document.getElementById('fit-progress-section');
     const startFittingBtn = document.getElementById('start-fitting-btn');
-    const weightingScheme = document.querySelector('input[name="fitWeighting"]:checked')?.value || 'none';
-
-    const selectedFitParams = [];
-    document.querySelectorAll('#modal-param-list .modal-fit-param-cb:checked').forEach(cb => {
-        selectedFitParams.push(cb.value);
-    });
-
-    if (selectedFitParams.length === 0) {
-        alert("Please select at least one parameter to fit from the list.");
-        return;
-    }
-
-    const initials = {};
-    const currentParams = {}; // 모든 파라미터의 현재 값 (초기 추정치)
-    const bounds = {};      // 선택된 파라미터의 바운드
-
+    
     try {
-        window._compartments.forEach(c => {
-            const el = document.querySelector(`input[name="init_${c}"]`);
-            initials[c] = +el.value;
-            if (Number.isNaN(initials[c])) throw new Error(`Initial value for ${c} is invalid.`);
-        });
-        window._parameters.forEach(p => {
-            const el = document.querySelector(`input[name="param_${p}"]`);
-            currentParams[p] = +el.value;
-            if (Number.isNaN(currentParams[p])) throw new Error(`Current value for parameter ${p} is invalid.`);
-        });
+        // 1. 기본 설정 수집 (피팅할 파라미터, bounds, 가중치)
+        const selectedFitParams = Array.from(document.querySelectorAll('#modal-param-list .modal-fit-param-cb:checked')).map(cb => cb.value);
+        if (selectedFitParams.length === 0) throw new Error("Please select at least one parameter to fit.");
+        
+        const initials = {}, currentParams = {}, bounds = {};
+        const weightingScheme = document.querySelector('input[name="fitWeighting"]:checked')?.value || 'none';
+
+        window._compartments.forEach(c => { initials[c] = +document.querySelector(`input[name="init_${c}"]`).value; });
+        window._parameters.forEach(p => { currentParams[p] = +document.querySelector(`input[name="param_${p}"]`).value; });
 
         selectedFitParams.forEach(pName => {
-            const lowerEl = document.querySelector(`.modal-param-lower[data-param-name="${pName}"]`);
-            const upperEl = document.querySelector(`.modal-param-upper[data-param-name="${pName}"]`);
-            const lowerVal = lowerEl && lowerEl.value.trim() !== '' ? parseFloat(lowerEl.value) : -Infinity;
-            const upperVal = upperEl && upperEl.value.trim() !== '' ? parseFloat(upperEl.value) : Infinity;
+            const lowerVal = document.querySelector(`.modal-param-lower[data-param-name="${pName}"]`)?.value;
+            const upperVal = document.querySelector(`.modal-param-upper[data-param-name="${pName}"]`)?.value;
+            bounds[pName] = [
+                lowerVal?.trim() === '' ? null : parseFloat(lowerVal),
+                upperVal?.trim() === '' ? null : parseFloat(upperVal)
+            ];
+            if ((bounds[pName][0] !== null && isNaN(bounds[pName][0])) || (bounds[pName][1] !== null && isNaN(bounds[pName][1]))) {
+                throw new Error(`Invalid bound for parameter ${pName}. Please enter numeric values.`);
+            }
+            if (bounds[pName][0] !== null && bounds[pName][1] !== null && bounds[pName][0] > bounds[pName][1]) {
+                throw new Error(`Lower bound cannot be greater than upper bound for ${pName}.`);
+            }
+        });
 
-            if (Number.isNaN(lowerVal) || Number.isNaN(upperVal)) {
-                throw new Error(`Invalid bound for parameter ${pName}. Please enter numeric values or leave blank.`);
+        // 2. 피팅 그룹 정보 수집
+        const fittingGroups = [];
+        const groupCards = document.querySelectorAll('.fitting-group-card');
+        for (const card of groupCards) {
+            const obsIndex = card.querySelector('.group-obs-select').value;
+            const comp = card.querySelector('.group-dose-comp').value;
+            const amount = +card.querySelector('.group-dose-amount').value;
+            const time = +card.querySelector('.group-dose-time').value;
+
+            if (obsIndex === "" || !comp || isNaN(amount) || amount <= 0 || isNaN(time)) {
+                throw new Error(`Please fill out all fields correctly for Group ${+card.dataset.groupId + 1}.`);
             }
-            if (lowerVal > upperVal) {
-                throw new Error(`Lower bound cannot be greater than upper bound for parameter ${pName}.`);
+            fittingGroups.push({
+                doses: [{ compartment: comp, type: 'bolus', amount: amount, start_time: time }],
+                observed: window._obs[parseInt(obsIndex)].data
+            });
+        }
+        if (fittingGroups.length === 0) throw new Error("Please add at least one experimental group.");
+        
+        // 3. API 요청 본문 생성 및 피팅 시작
+        if(fitProgressSection) fitProgressSection.style.display = 'block';
+        if(startFittingBtn) startFittingBtn.disabled = true;
+
+        const body = {
+            equations: document.getElementById("ode-input").value.trim(),
+            initials: initials, parameters: currentParams, fit_params: selectedFitParams,
+            bounds: bounds, weighting: weightingScheme, fitting_groups: fittingGroups,
+        };
+        
+        // ... (이하 fetch 및 결과 처리 로직은 이전 답변과 동일) ...
+        // 모달 내 UI 요소 참조 및 초기화
+        const msgModal = document.getElementById("fit-msg-modal"), elapsedModal = document.getElementById("fit-elapsed-modal");
+        const barModalProg = document.getElementById("fit-progress-bar-modal")?.querySelector('.progress-bar');
+        const consoleModal = document.getElementById("fit-console-output-modal"), resultModal  = document.getElementById("fit-result-modal");
+        
+        if(msgModal) msgModal.textContent = "Fitting in progress…";
+        if(elapsedModal) elapsedModal.textContent = "(0s)";
+        if(consoleModal) consoleModal.innerHTML = "Waiting for server response...";
+        if(resultModal) resultModal.innerHTML = "";
+        if(barModalProg) {
+            barModalProg.style.width = "0%";
+            barModalProg.classList.remove('bg-danger');
+            barModalProg.classList.add('progress-bar-animated');
+            barModalProg.parentElement.style.display = 'block';
+        }
+
+        if (fitTimer) clearInterval(fitTimer);
+        const t0 = Date.now();
+        fitTimer = setInterval(() => {
+            if(elapsedModal) elapsedModal.textContent = ` (${Math.floor((Date.now() - t0) / 1000)}s)`;
+            if(barModalProg) {
+                let currentWidth = parseFloat(barModalProg.style.width);
+                if (currentWidth < 90) barModalProg.style.width = (currentWidth + 2) + "%";
             }
-            bounds[pName] = [lowerVal, upperVal];
+        }, 1000);
+
+        fetch("/fit/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-CSRFToken": getCSRFToken() },
+            body: JSON.stringify(body)
+        })
+        .then(r => r.ok ? r.json() : r.json().then(err => { throw new Error(err.message || `Server error: ${r.status}`) }))
+        .then(res => {
+            if (res.status !== "ok") throw new Error(res.message || "Fitting failed.");
+
+            updateInputFields(res.data.params);
+            renderFitSummary(res.data.params, res.data.ssr_total);
+            autoSimulate();
+
+            if(barModalProg) barModalProg.style.width = "100%";
+            if(msgModal) msgModal.textContent = "Fitting Done 🎉";
+            
+            let consoleOutput = `Fitting process completed.\n`;
+            consoleOutput += `Termination status: ${res.data.status_code || 'N/A'} (${res.data.message || 'No message'})\n`;
+            consoleOutput += `Function evaluations: ${res.data.nfev || 'N/A'}\n`;
+            consoleOutput += `Final Unweighted SSR: ${typeof res.data.ssr_total === 'number' ? res.data.ssr_total.toPrecision(6) : 'N/A'}\n`;
+            
+            if(consoleModal) consoleModal.textContent = consoleOutput;
+
+            const rows = Object.entries(res.data.params).map(([k, v]) => `<tr><td>${k}</td><td>${typeof v === 'number' ? v.toPrecision(6) : v}</td></tr>`).join("");
+            if(resultModal) resultModal.innerHTML = `<table class="table table-sm table-bordered mb-0"><thead class="table-light"><tr><th>Fitted Parameter</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`;
+        })
+        .catch(err => {
+            if(msgModal) msgModal.innerHTML = `<span class="text-danger"><strong>Error:</strong> ${err.message}</span>`;
+            if(consoleModal) consoleModal.textContent = `Error occurred: ${err.message}`;
+            if(barModalProg) barModalProg.classList.add('bg-danger');
+        })
+        .finally(() => {
+            clearInterval(fitTimer); fitTimer = null;
+            if(barModalProg) barModalProg.classList.remove('progress-bar-animated');
+            if(startFittingBtn) startFittingBtn.disabled = false;
         });
 
     } catch (err) {
-        alert(`Input Error: ${err.message}`);
-        return;
-    }
-    
-    if(fitProgressSection) fitProgressSection.style.display = 'block';
-    if(startFittingBtn) startFittingBtn.disabled = true;
-
-    const body = {
-        equations: document.getElementById("ode-input").value.trim(),
-        initials: initials,
-        parameters: currentParams, // 현재 UI 값을 초기 추정치로 사용
-        fit_params: selectedFitParams,
-        bounds: bounds, // 생성한 bounds 객체 전달
-        observed: selObs,
-        weighting: weightingScheme,
-        doses: doseList,
-        t_start: +document.getElementById("sim-start-time").value,
-        t_end: +document.getElementById("sim-end-time").value,
-        t_steps: +document.getElementById("sim-steps").value,
-    };
-
-    // 모달 내 UI 요소 참조
-    const msgModal     = document.getElementById("fit-msg-modal");
-    const elapsedModal = document.getElementById("fit-elapsed-modal");
-    const barModalProg = document.getElementById("fit-progress-bar-modal")?.querySelector('.progress-bar');
-    const consoleModal = document.getElementById("fit-console-output-modal");
-    const resultModal  = document.getElementById("fit-result-modal");
-
-    if(msgModal) msgModal.textContent = "Fitting in progress…";
-    if(elapsedModal) elapsedModal.textContent = "(0s)";
-    if(consoleModal) consoleModal.innerHTML = "Waiting for server response...";
-    if(resultModal) resultModal.innerHTML = "";
-    if(barModalProg) {
-        barModalProg.style.width = "0%";
-        barModalProg.classList.add('progress-bar-animated');
-        barModalProg.parentElement.style.display = 'block'; // progress div 표시
-    }
-
-
-    if (fitTimer) clearInterval(fitTimer);
-    const t0 = Date.now();
-    fitTimer = setInterval(() => {
-        if(elapsedModal) elapsedModal.textContent = ` (${Math.floor((Date.now() - t0) / 1000)}s)`;
-        // 가짜 프로그레스 바 업데이트 (실제 진행률 알 수 없으므로)
-        if(barModalProg) {
-            let currentWidth = parseFloat(barModalProg.style.width);
-            if (currentWidth < 90) { // 90%까지만 천천히 증가
-                barModalProg.style.width = (currentWidth + 2) + "%";
-            }
-        }
-    }, 1000);
-
-    fetch("/fit/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": getCSRFToken() },
-        body: JSON.stringify(body)
-    })
-    .then(r => {
-        if (!r.ok) return r.json().then(err => { throw new Error(err.message || `Server error: ${r.status}`) });
-        return r.json();
-    })
-    .then(res => {
-        if (res.status !== "ok") throw new Error(res.message || "Fitting failed.");
-
-        updateInputFields(res.data.params);
-        renderFitSummary(res.data.params, res.data.cost);
-        autoSimulate();
-
-        if(barModalProg) barModalProg.style.width = "100%";
-        if(msgModal) msgModal.textContent = "Fitting Done 🎉";
-        
-        let consoleOutput = `Fitting process completed.\n`;
-        consoleOutput += `Termination status: ${res.data.status || 'N/A'} (${res.data.message || 'No message'})\n`;
-        consoleOutput += `Function evaluations: ${res.data.nfev || 'N/A'}\n`;
-        consoleOutput += `Jacobian evaluations: ${res.data.njev || 'N/A'}\n`;
-        consoleOutput += `Final Cost (SSR/2): ${typeof res.data.cost === 'number' ? res.data.cost.toPrecision(6) : (res.data.cost || 'N/A')}\n`;
-        if (res.data.ssr_list) {
-            consoleOutput += `SSR per dataset: ${res.data.ssr_list.map(s => typeof s === 'number' ? s.toPrecision(6) : s).join(', ')}\n`;
-        }
-
-        if(consoleModal) consoleModal.textContent = consoleOutput;
-
-        const rows = Object.entries(res.data.params)
-            .map(([k, v]) => `<tr><td>${k}</td><td>${typeof v === 'number' ? v.toPrecision(6) : v}</td></tr>`)
-            .join("");
-        if(resultModal) {
-            resultModal.innerHTML = `
-                <table class="table table-sm table-bordered mb-0">
-                    <thead class="table-light"><tr><th>Fitted Parameter</th><th>Value</th></tr></thead>
-                    <tbody>${rows}</tbody>
-                </table>`;
-        }
-    })
-    .catch(err => {
-        if(msgModal) msgModal.innerHTML = `<span class="text-danger"><strong>Error:</strong> ${err.message}</span>`;
-        if(consoleModal) consoleModal.textContent = `Error occurred: ${err.message}`;
-        if(barModalProg) barModalProg.classList.add('bg-danger');
-    })
-    .finally(() => {
-        clearInterval(fitTimer); fitTimer = null;
-        if(barModalProg) barModalProg.classList.remove('progress-bar-animated');
+        alert(`Error starting fit: ${err.message}`);
+        if(fitProgressSection) fitProgressSection.style.display = 'none';
         if(startFittingBtn) startFittingBtn.disabled = false;
-    });
+    }
 }
 
 
