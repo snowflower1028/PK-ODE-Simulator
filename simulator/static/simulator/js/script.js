@@ -1,0 +1,1152 @@
+const State = {
+  // 1. 투여 관련 상태
+  doseList: [],
+
+  // 2. 관찰 데이터 관련 상태
+  observations: [], // 기존 window._obs를 대체하며, 이름을 더 명확하게 변경
+  
+  // 3. 모델 파싱 결과 상태
+  compartments: [],       // 기존 window._compartments 대체
+  parameters: [],         // 기존 window._parameters 대체
+  processedODE: "",         // 기존 window._processedODE 대체
+  derivedExpressions: {}, // 기존 window._derivedExpressions 대체
+
+  // 4. 피팅 프로세스 관련 상태
+  fitTimer: null,             // 피팅 진행 시간 측정을 위한 타이머 ID
+  fittingGroupCounter: 0,   // 피팅 그룹 UI 생성을 위한 카운터
+  isFitting: false,           // 현재 피팅이 진행 중인지 여부를 나타내는 플래그
+  
+  // 5. 시뮬레이션 프로세스 관련 상태
+  isSimulating: false,        // 현재 시뮬레이션이 진행 중인지 여부를 나타내는 플래그
+};
+
+/** ----- DOM 구획 ----- **/
+const DOM = {
+  // --- 사이드바 (Sidebar) ---
+  sidebar: {
+    odeInput: document.getElementById("ode-input"),
+    parseBtn: document.getElementById("parse-btn"),
+    showProcessedBtn: document.getElementById("show-processed-btn"),
+    initValuesContainer: document.getElementById("init-values"),
+    paramValuesContainer: document.getElementById("param-values"),
+    doseForm: document.getElementById("dose-form"),
+    doseListContainer: document.getElementById("dose-list"),
+    doseTypeSelect: document.getElementById("type"),
+    doseDurationLabel: document.getElementById("duration-label"),
+  },
+
+  // --- 메인 콘텐츠 (Main Content) ---
+  toolbar: {
+    simStartTime: document.getElementById("sim-start-time"),
+    simEndTime: document.getElementById("sim-end-time"),
+    simSteps: document.getElementById("sim-steps"),
+    logScaleCheckbox: document.getElementById("log-scale"),
+    openObsDataBtn: document.querySelector("button[data-bs-target='#obsPanel']"),
+    fitBtn: document.getElementById("fit-btn"),
+    simulateBtn: document.getElementById("simulate-btn"),
+  },
+  
+  simulation: {
+    compartmentsMenu: document.getElementById("sim-compartments-menu"),
+    selectedCompBadges: document.getElementById("selected-comp-badges"),
+  },
+
+  results: {
+    plotContainer: document.getElementById("plot"),
+    plotPlaceholder: document.getElementById("plot-placeholder"),
+    pkSummaryContainer: document.getElementById("pk-summary"),
+    pkSummaryPlaceholder: document.getElementById("pk-summary-placeholder"),
+    fitSummaryCard: document.getElementById("fit-summary-card"),
+    fitSummaryContainer: document.getElementById("fit-summary"),
+  },
+
+  // --- 모달 (Modals) & 오프캔버스 (Offcanvas) ---
+  modals: {
+    processedOde: {
+      element: document.getElementById("processedModal"),
+      body: document.getElementById("modal-body"),
+    },
+    fittingSettings: {
+      element: document.getElementById('fittingSettingsModal'),
+      paramList: document.getElementById('modal-param-list'),
+      paramBoundsList: document.getElementById('modal-param-bounds-list'),
+      groupsContainer: document.getElementById('fitting-groups-container'),
+      addGroupBtn: document.getElementById('add-fitting-group-btn'),
+      startBtn: document.getElementById('start-fitting-btn'),
+      progressSection: document.getElementById('fit-progress-section'),
+      progressMsg: document.getElementById("fit-msg-modal"),
+      progressElapsed: document.getElementById("fit-elapsed-modal"),
+      progressBar: document.querySelector("#fit-progress-bar-modal .progress-bar"),
+      progressConsole: document.getElementById("fit-console-output-modal"),
+      progressResult: document.getElementById("fit-result-modal"),
+    },
+    obsData: {
+      panel: document.getElementById("obsPanel"),
+      fileInput: document.getElementById("obs-file"),
+      list: document.getElementById("obs-list"),
+      preview: document.getElementById("obs-preview"),
+    }
+  }
+};
+
+/** ----- API 구획 ----- **/
+function getCSRFToken() {
+  const csrfTokenEl = document.querySelector('input[name="csrfmiddlewaretoken"]');
+  if (csrfTokenEl) return csrfTokenEl.value;
+  // 쿠키에서 CSRF 토큰을 찾는 대체 로직 (기존 코드와 동일)
+  const cookies = document.cookie.split('; ');
+  for (const cookie of cookies) {
+    const [name, value] = cookie.split('=');
+    if (name === 'csrftoken') return value;
+  }
+  return '';
+}
+
+const API = {
+  /**
+   * 모든 fetch 요청을 위한 비공개 래퍼 함수.
+   * @param {string} url - 요청을 보낼 엔드포인트 URL
+   * @param {object} body - POST 요청의 본문에 포함될 JavaScript 객체
+   * @returns {Promise<object>} - 성공 시 서버로부터 받은 JSON 데이터
+   * @throws {Error} - 네트워크 오류 또는 서버 에러 발생 시
+   */
+  async _fetchWrapper(url, body) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCSRFToken(),
+        },
+        body: JSON.stringify(body),
+      });
+
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        // 서버가 에러 메시지를 포함하여 응답했을 경우, 해당 메시지를 에러에 담아 전달
+        throw new Error(responseData.message || `Server error: ${response.status}`);
+      }
+      
+      return responseData;
+
+    } catch (error) {
+      console.error(`API Error fetching ${url}:`, error);
+      // 핸들러에서 에러를 인지할 수 있도록 다시 던져줍니다.
+      throw error; 
+    }
+  },
+
+  /**
+   * ODE 텍스트를 서버로 보내 파싱을 요청합니다.
+   * @param {string} odeText - 사용자가 입력한 ODE 텍스트
+   * @returns {Promise<object>} - 파싱 결과 데이터
+   */
+  parseODE(odeText) {
+    return this._fetchWrapper("/parse/", { text: odeText });
+  },
+
+  /**
+   * 시뮬레이션에 필요한 모든 데이터를 서버로 보내 실행을 요청합니다.
+   * @param {object} payload - 시뮬레이션 파라미터, 초기값, 투여 계획 등을 담은 객체
+   * @returns {Promise<object>} - 시뮬레이션 결과 데이터
+   */
+  simulate(payload) {
+    return this._fetchWrapper("/simulate/", payload);
+  },
+  
+  /**
+   * 파라미터 피팅에 필요한 모든 데이터를 서버로 보내 실행을 요청합니다.
+   * @param {object} payload - 피팅 파라미터, 그룹, 경계값 등을 담은 객체
+   * @returns {Promise<object>} - 피팅 결과 데이터
+   */
+  fit(payload) {
+    return this._fetchWrapper("/fit/", payload);
+  }
+};
+
+/** ----- UI 구획 ----- **/
+
+const UI = {
+  // --- 공용 및 일반 UI ---
+
+  /**
+   * 버튼의 로딩 상태를 설정합니다.
+   * @param {HTMLElement} button - 대상 버튼 요소
+   * @param {boolean} isLoading - 로딩 상태 여부
+   */
+  setLoading(button, isLoading) {
+    if (!button) return;
+    if (isLoading) {
+      button.dataset.originalText = button.innerHTML;
+      button.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Running...`;
+      button.disabled = true;
+    } else {
+      button.innerHTML = button.dataset.originalText || 'Run Simulation';
+      button.disabled = false;
+    }
+  },
+
+  /**
+   * 선택된 시뮬레이션 구획 뱃지를 업데이트합니다.
+   */
+  updateSelectedBadges() {
+    const container = DOM.simulation.selectedCompBadges;
+    if (!container) return;
+    const checkedCheckboxes = [...DOM.simulation.compartmentsMenu.querySelectorAll(".sim-comp-checkbox:checked")];
+    if (State.compartments.length > 0) {
+      container.innerHTML = checkedCheckboxes.length > 0
+        ? checkedCheckboxes.map(cb => `<span class="badge text-bg-secondary me-1">${cb.value}</span>`).join("")
+        : `<span class="placeholder-badge-area">No compartments selected.</span>`;
+    } else {
+      container.innerHTML = `<span class="placeholder-badge-area">Parse ODEs to select compartments.</span>`;
+    }
+  },
+
+  /**
+   * 파싱된 심볼(구획, 파라미터)에 대한 입력 필드와 메뉴를 렌더링합니다.
+   */
+  renderSymbolInputs() {
+    const { compartments, parameters, derivedExpressions } = State;
+    const { initValuesContainer, paramValuesContainer, doseForm } = DOM.sidebar;
+    const { compartmentsMenu } = DOM.simulation; // [추가] 시뮬레이션 메뉴 DOM 요소
+    const compartmentSelect = doseForm.querySelector('#compartment');
+
+    initValuesContainer.innerHTML = "";
+    paramValuesContainer.innerHTML = "";
+    compartmentSelect.innerHTML = "";
+    compartmentsMenu.innerHTML = ""; // [추가] 메뉴 초기화
+
+    if (compartments.length > 0) {
+      // 초기값 필드 생성
+      initValuesContainer.innerHTML = compartments.map(c => `
+        <div class="d-flex align-items-center mb-2">
+          <label for="init_${c}" class="form-label mb-0 me-2 text-end" style="width:70px;">${c}(0):</label>
+          <input type="number" step="any" value="0" id="init_${c}" name="init_${c}" class="form-control form-control-sm">
+        </div>`).join("");
+      
+      // 투여(Dosing) 구획 드롭다운 채우기
+      compartmentSelect.innerHTML = compartments.map(c => `<option value="${c}">${c}</option>`).join("");
+
+      // 시뮬레이션 구획 선택 메뉴(체크박스) 렌더링
+      compartmentsMenu.innerHTML = compartments.map(c => `
+        <li>
+          <label class="dropdown-item py-1">
+            <input type="checkbox" class="form-check-input me-2 sim-comp-checkbox" value="${c}" checked>
+            ${c}
+          </label>
+        </li>`).join("");
+
+    } else {
+      initValuesContainer.innerHTML = `<div class="placeholder-text">Parse ODEs to set initial values.</div>`;
+      compartmentsMenu.innerHTML = `<li><span class="dropdown-item-text">N/A</span></li>`;
+    }
+
+    // 파라미터 필드 생성
+    if (parameters.length > 0) {
+      paramValuesContainer.innerHTML = parameters.map(p => `
+        <div class="d-flex align-items-center mb-2">
+          <label for="param_${p}" class="form-label mb-0 me-2 text-end" style="width:70px;">${p}:</label>
+          <input type="number" step="any" value="0.1" id="param_${p}" name="param_${p}" class="form-control form-control-sm">
+        </div>`).join("");
+      
+      Object.entries(derivedExpressions)
+        .filter(([k]) => !parameters.includes(k))
+        .forEach(([k, expr]) => {
+          paramValuesContainer.insertAdjacentHTML("beforeend", `<div class="derived-box"><i class="bi bi-calculator me-1"></i><strong>${k}</strong> = ${expr}</div>`);
+        });
+    } else {
+      paramValuesContainer.innerHTML = `<div class="placeholder-text">Parse ODEs to set parameters.</div>`;
+    }
+
+    // 뱃지 UI도 함께 업데이트
+    UI.updateSelectedBadges();
+  },
+
+  /**
+   * 파싱된 ODE 정보를 보여주는 모달을 띄웁니다.
+   */
+  showProcessedModal() {
+    const modal = DOM.modals.processedOde;
+    if (!modal || !modal.body) return;
+
+    const compHTML = State.compartments.length > 0
+      ? State.compartments.map(c => `<span class="badge text-bg-primary me-1">${c}</span>`).join("")
+      : `<span class="text-muted small">No compartments defined.</span>`;
+
+    const paramHTML = State.parameters.length > 0
+      ? State.parameters.map(p => `<span class="badge text-bg-secondary me-1">${p}</span>`).join("")
+      : `<span class="text-muted small">No parameters defined.</span>`;
+
+    const odeHTML = State.processedODE
+      ? `<pre class="bg-light p-2 rounded small border">${State.processedODE.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>`
+      : `<span class="text-muted small">ODEs not parsed.</span>`;
+
+    modal.body.innerHTML = `
+      <h6 class="mb-1"><i class="bi bi-box-seam me-1"></i> Compartments</h6>
+      <div class="mb-3 p-2 bg-light border rounded small">${compHTML}</div>
+      <h6 class="mb-1"><i class="bi bi-sliders me-1"></i> Parameters</h6>
+      <div class="mb-3 p-2 bg-light border rounded small">${paramHTML}</div>
+      <h6 class="mb-1"><i class="bi bi-file-earmark-code me-1"></i> Processed ODEs</h6>
+      ${odeHTML}`;
+
+    // Bootstrap 모달 인스턴스를 가져오거나 생성하여 보여줍니다.
+    const modalInstance = bootstrap.Modal.getOrCreateInstance(modal.element);
+    modalInstance.show();
+  },
+
+  // --- 투여 (Dosing) 관련 UI ---
+
+  /**
+   * 등록된 투여 목록을 테이블로 렌더링합니다.
+   */
+  renderDoses() {
+    const container = DOM.sidebar.doseListContainer;
+    if (!container) return;
+    if (State.doseList.length === 0) {
+      container.innerHTML = `<div class="placeholder-text">No doses registered yet.</div>`;
+      return;
+    }
+    const tableRows = State.doseList.map((d, i) => `
+      <tr>
+        <td>${i + 1}</td><td>${d.compartment}</td><td>${d.type}</td><td>${d.amount}</td>
+        <td>${d.start_time}</td><td>${d.type === "infusion" && d.duration > 0 ? d.duration : "-"}</td>
+        <td>${d.repeat_every || "-"}</td><td>${d.repeat_until || "-"}</td>
+        <td><button class="btn btn-sm btn-outline-danger py-0 px-1 remove-dose-btn" data-index="${i}" title="Remove dose">🗑️</button></td>
+      </tr>`).join("");
+    container.innerHTML = `<div class="table-responsive"><table class="table table-sm table-bordered table-striped"><thead><tr>
+        <th>#</th><th>Compartment</th><th>Type</th><th>Amount</th><th>Start (h)</th><th>Duration (h)</th>
+        <th>Repeat Every (h)</th><th>Repeat Until (h)</th><th>Action</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
+  },
+  
+  // --- 관찰 데이터 (Offcanvas) 관련 UI ---
+
+  /**
+   * 업로드된 관찰 데이터 목록을 렌더링합니다.
+   */
+  renderObsList() {
+    const { list } = DOM.modals.obsData;
+    if (!list) return;
+
+    if (State.observations.length === 0) {
+      list.innerHTML = `<div class="placeholder-text">No observed data uploaded.</div>`;
+    } else {
+      list.innerHTML = State.observations.map((o, i) => `
+        <li class="list-group-item d-flex justify-content-between align-items-center obs-item" data-index="${i}">
+          <div>
+            <input type="checkbox" class="form-check-input me-2 obs-check" ${o.selected ? "checked" : ""}>
+            <span style="color:${o.color}; cursor:default;">●</span>
+            <span style="cursor:pointer;" class="obs-name-clickable">${o.name}</span>
+          </div>
+          <button class="btn btn-sm btn-outline-danger py-0 px-1 remove-obs-btn" data-index="${i}" title="Remove ${o.name}">🗑️</button>
+        </li>`).join("");
+    }
+    this.renderObsPreview(); // 목록 변경 후 미리보기도 항상 업데이트
+  },
+
+  /**
+   * 선택된 관찰 데이터의 미리보기를 렌더링합니다.
+   */
+  renderObsPreview(index = null) {
+    const { preview } = DOM.modals.obsData;
+    if (!preview) return;
+    let targetIndex = index ?? State.observations.findIndex(o => o.selected);
+    targetIndex = (targetIndex === -1 && State.observations.length > 0) ? 0 : targetIndex;
+
+    if (targetIndex === -1 || !State.observations[targetIndex]) {
+      preview.innerHTML = `<div class="placeholder-text small">No data to preview.</div>`;
+      return;
+    }
+
+    const { name, data } = State.observations[targetIndex];
+    const cols = Object.keys(data);
+    const n = Math.min(5, data.Time?.length || 0);
+
+    const header = `<th>${cols.join("</th><th>")}</th>`;
+    const bodyRows = Array.from({ length: n }, (_, i) => `<tr>${cols.map(c => `<td>${data[c][i] ?? '-'}</td>`).join("")}</tr>`).join("");
+    
+    let html = `<p class="small text-muted mb-1">Preview: <strong>${name}</strong></p>
+                <table class='table table-sm table-bordered table-striped'><thead><tr>${header}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+    if ((data.Time?.length || 0) > n) {
+      html += `<p class="text-muted small text-center mt-1">Showing first ${n} of ${data.Time.length} rows...</p>`;
+    }
+    preview.innerHTML = html;
+  },
+
+  // --- 결과 (Results) 관련 UI ---
+
+  /**
+   * 시뮬레이션 결과를 Plotly 그래프로 그립니다.
+   */
+  plotSimulationResult(profileData, logYaxis) {
+    const { plotContainer, plotPlaceholder } = DOM.results;
+    if (!plotContainer || !profileData || !profileData.Time) return;
+
+    const selectedCompartments = [...DOM.simulation.compartmentsMenu.querySelectorAll(".sim-comp-checkbox:checked")].map(e => e.value);
+    const traces = [];
+
+    selectedCompartments.forEach(compName => {
+      if (profileData[compName]) traces.push({ x: profileData.Time, y: maskLowValues(profileData[compName], threshold=0.000000001), mode: "lines", name: compName });
+    });
+
+    State.observations.filter(o => o.selected).forEach(obs => {
+      Object.keys(obs.data).forEach(key => {
+        if (key.toLowerCase() !== "time") traces.push({ x: obs.data.Time, y: obs.data[key], mode: "markers", name: `${obs.name} - ${key}`, marker: { color: obs.color } });
+      });
+    });
+
+    const layout = {
+      xaxis: { title: "Time (h)", zeroline: false, gridcolor: 'rgba(0,0,0,0.05)' },
+      yaxis: {
+          title: "Concentration",
+          type: logYaxis ? "log" : "linear",
+          zeroline: false,
+          gridcolor: 'rgba(0,0,0,0.05)',
+          exponentformat: 'power',
+      },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "right", x: 1 },
+      margin: { l: 60, r: 20, b: 50, t: 20, pad: 4 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      autosize: true,
+    };
+    
+    Plotly.react(plotContainer, traces, layout, { responsive: true });
+    plotPlaceholder.style.display = "none";
+    plotContainer.style.display = "block";
+  },
+
+  /**
+   * PK 파라미터 요약 정보를 테이블로 표시합니다.
+   */
+  displayPKSummary(pkData) {
+    const { pkSummaryContainer, pkSummaryPlaceholder } = DOM.results;
+    if (!pkSummaryContainer || !pkData) return;
+    
+    // [수정] pkData 변수 재선언 오류 수정
+    const dataArray = Array.isArray(pkData) ? pkData : Object.entries(pkData).map(([comp, metrics]) => ({ compartment: comp, ...metrics }));
+
+    if (dataArray.length === 0) {
+      pkSummaryContainer.innerHTML = `<div class="placeholder-text">No PK summary data.</div>`;
+      return;
+    }
+    const rows = dataArray.map(entry => `
+      <tr>
+        <td>${entry.compartment || 'N/A'}</td>
+        <td>${entry.Cmax?.toPrecision(4) ?? "-"}</td><td>${entry.Tmax?.toPrecision(4) ?? "-"}</td>
+        <td>${entry.AUC_last?.toPrecision(4) ?? entry.AUC?.toPrecision(4) ?? "-"}</td>
+        <td>${entry.HL_half_life?.toPrecision(4) ?? "-"}</td>
+      </tr>`).join("");
+    pkSummaryContainer.innerHTML = `<div class="table-responsive"><table class="table table-sm table-hover"><thead><tr>
+        <th>Compartment</th><th>C<sub>max</sub></th><th>T<sub>max</sub> (h)</th>
+        <th>AUC<sub>last</sub></th><th>Half-life (h)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+
+    pkSummaryPlaceholder.style.display = "none";
+    pkSummaryContainer.style.display = "block";
+  },
+  
+  // --- 피팅 모달 (Fitting Modal) 관련 UI ---
+
+  // Bootstrap 모달 인스턴스를 관리하기 위한 내부 변수
+  _fittingModalInstance: null,
+
+  /**
+   * 피팅 설정 모달을 열고 내부 UI를 최신 상태로 초기화합니다.
+   */
+  openFittingSettingsModal() {
+    // 모달 인스턴스가 없으면 새로 생성
+    if (!this._fittingModalInstance) {
+      this._fittingModalInstance = new bootstrap.Modal(DOM.modals.fittingSettings.element);
+    }
+    
+    const { paramList, groupsContainer, progressSection, startBtn } = DOM.modals.fittingSettings;
+    
+    // 1. 피팅할 파라미터 목록 채우기
+    paramList.innerHTML = State.parameters.map(p_name => {
+      const paramValueEl = DOM.sidebar.paramValuesContainer.querySelector(`#param_${p_name}`);
+      const currentValue = paramValueEl ? paramValueEl.value : 'N/A';
+      return `
+        <div class="form-check">
+          <input class="form-check-input modal-fit-param-cb" type="checkbox" value="${p_name}" id="modal_fit_${p_name}">
+          <label class="form-check-label" for="modal_fit_${p_name}">
+            ${p_name} <small class="text-muted">(current: ${currentValue})</small>
+          </label>
+        </div>`;
+    }).join('');
+
+    // 2. 그룹 UI 초기화 및 첫 그룹 자동 추가
+    groupsContainer.innerHTML = '';
+    State.fittingGroupCounter = 0; // State의 카운터 초기화
+    this.addFittingGroup();
+
+    // 3. 파라미터 경계값(Bounds) UI 초기화
+    this.renderFitParamBoundsUI();
+    
+    // 4. 모달 상태 초기화 (진행률 숨기기, 버튼 활성화)
+    progressSection.style.display = 'none';
+    startBtn.disabled = false;
+    startBtn.innerHTML = '<i class="bi bi-play-circle"></i> Start Fitting';
+
+    // 5. 모달 표시
+    this._fittingModalInstance.show();
+  },
+
+  /**
+   * 피팅 실험 그룹을 UI에 추가합니다.
+   */
+  addFittingGroup() {
+    const container = DOM.modals.fittingSettings.groupsContainer;
+    if (!container) return;
+    // 헬퍼 함수를 호출하여 그룹 카드 HTML을 생성하고 추가
+    const newGroupHTML = this._createFittingGroupHTML(State.fittingGroupCounter);
+    container.insertAdjacentHTML('beforeend', newGroupHTML);
+    State.fittingGroupCounter++; // State의 카운터 증가
+  },
+
+  /**
+   * 피팅 그룹 카드 하나의 HTML 문자열을 생성하는 '비공개' 헬퍼 함수.
+   * @param {number} groupId - 생성할 그룹의 ID
+   * @returns {string} - 그룹 카드 HTML 문자열
+   */
+  _createFittingGroupHTML(groupId) {
+    // State에서 관찰 데이터와 구획 목록을 가져와 드롭다운 옵션 생성
+    const observedDataOptions = State.observations.map((obs, index) => 
+      `<option value="${index}">${obs.name}</option>`
+    ).join('');
+    const compartmentOptions = State.compartments.map(c => `<option value="${c}">${c}</option>`).join('');
+
+    // 템플릿 리터럴(백틱)을 사용하여 가독성 좋게 HTML 작성
+    return `
+      <div class="card mb-3 fitting-group-card" id="fitting-group-${groupId}" data-group-id="${groupId}">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="card-title mb-0">Group ${groupId + 1}</h6>
+            <button type="button" class="btn-close remove-fitting-group-btn" title="Remove Group"></button>
+          </div>
+          
+          <div class="row g-3">
+            <div class="col-md-12">
+              <label class="form-label small">Observed Data</label>
+              <select class="form-select form-select-sm group-obs-select" required>
+                ${observedDataOptions 
+                  ? `<option value="" selected disabled>Select observed data...</option>${observedDataOptions}` 
+                  : `<option value="" selected disabled>No observed data uploaded</option>`
+                }
+              </select>
+            </div>
+            
+            <div class="col-md-4">
+              <label class="form-label small">Compartment</label>
+              <select class="form-select form-select-sm group-dose-comp">
+                ${compartmentOptions}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Amount</label>
+              <input type="number" step="any" class="form-control form-control-sm group-dose-amount" placeholder="e.g., 100" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Time</label>
+              <input type="number" step="any" class="form-control form-control-sm group-dose-time" value="0" required>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  /**
+   * 선택된 피팅 파라미터에 대한 경계값(Bounds) 입력 UI를 렌더링합니다.
+   */
+  renderFitParamBoundsUI() {
+    const { paramBoundsList, paramList } = DOM.modals.fittingSettings;
+    const checkedParams = paramList.querySelectorAll('.modal-fit-param-cb:checked');
+
+    if (checkedParams.length === 0) {
+      paramBoundsList.innerHTML = '<div class="placeholder-text small" style="border:none;background:none;min-height:40px;">Select parameters to set bounds.</div>';
+      return;
+    }
+
+    paramBoundsList.innerHTML = Array.from(checkedParams).map(cb => {
+      const paramName = cb.value;
+      return `
+        <div class="row g-2 mb-2 align-items-center">
+          <div class="col-md-3">
+            <label class="form-label mb-0 small" for="lower_bound_${paramName}">${paramName}:</label>
+          </div>
+          <div class="col-md-4">
+            <input type="number" step="any" class="form-control form-control-sm modal-param-lower" data-param-name="${paramName}" placeholder="Lower Bound" id="lower_bound_${paramName}">
+          </div>
+          <div class="col-md-1 text-center text-muted">-</div>
+          <div class="col-md-4">
+            <input type="number" step="any" class="form-control form-control-sm modal-param-upper" data-param-name="${paramName}" placeholder="Upper Bound">
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  /**
+   * 메인 페이지의 파라미터 입력 필드 값을 업데이트합니다.
+   * @param {object} params - { 파라미터이름: 값 } 형태의 객체
+   */
+  updateInputFields(params) {
+    for (const [key, value] of Object.entries(params)) {
+      const inputEl = DOM.sidebar.paramValuesContainer.querySelector(`#param_${key}`);
+      if (inputEl) {
+        inputEl.value = value;
+      }
+    }
+  },
+
+  /**
+   * 메인 페이지에 피팅 결과 요약 카드를 렌더링합니다.
+   * @param {object} params - 피팅된 파라미터 객체
+   * @param {number} cost - 최종 SSR(잔차 제곱합) 값
+   */
+  renderFitSummary(params, cost) {
+    const { fitSummaryCard, fitSummaryContainer } = DOM.results;
+    if (!fitSummaryCard || !fitSummaryContainer) return;
+
+    const rows = Object.entries(params)
+      .map(([key, value]) => `<tr><td>${key}</td><td>${typeof value === 'number' ? value.toPrecision(6) : value}</td></tr>`)
+      .join("");
+
+    fitSummaryContainer.innerHTML = `
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-2">
+          <thead class="table-light">
+            <tr>
+              <th>Parameter</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <p class="small text-muted mb-0 text-end">Cost (SSR): ${typeof cost === 'number' ? cost.toPrecision(6) : cost}</p>`;
+      
+    fitSummaryCard.style.display = "block";
+  },
+
+  /**
+   * 피팅 모달의 진행률 표시 영역을 초기 상태로 리셋합니다.
+   */
+  resetFitProgress() {
+      const { progressMsg, progressElapsed, progressBar, progressConsole, progressResult } = DOM.modals.fittingSettings;
+      
+      progressMsg.textContent = "Waiting for fitting to start...";
+      progressMsg.className = ""; // 혹시 에러 클래스가 있었다면 제거
+      progressElapsed.textContent = "(0s)";
+      progressConsole.innerHTML = "";
+      progressResult.innerHTML = "";
+
+      if (progressBar) {
+          progressBar.style.width = "0%";
+          progressBar.classList.remove('bg-danger', 'bg-success');
+          progressBar.classList.add('progress-bar-animated');
+      }
+  },
+
+  /**
+   * 피팅 모달에 성공 결과를 표시합니다.
+   * @param {object} resultData - 서버로부터 받은 피팅 결과 데이터 객체
+   */
+  displayFitSuccess(resultData) {
+      const { progressMsg, progressBar, progressConsole, progressResult } = DOM.modals.fittingSettings;
+
+      progressMsg.textContent = "Fitting successfully completed! 🎉";
+      
+      if (progressBar) {
+        progressBar.style.width = "100%";
+        progressBar.classList.add('bg-success');
+        progressBar.classList.remove('progress-bar-animated');
+      }
+
+      let consoleOutput = `Termination: ${resultData.message || 'N/A'}\n`;
+      consoleOutput += `Function Evaluations: ${resultData.nfev || 'N/A'}\n`;
+      consoleOutput += `Final Unweighted SSR: ${typeof resultData.ssr_total === 'number' ? resultData.ssr_total.toPrecision(6) : 'N/A'}`;
+      progressConsole.textContent = consoleOutput;
+
+      const rows = Object.entries(resultData.params)
+        .map(([k, v]) => `<tr><td>${k}</td><td>${typeof v === 'number' ? v.toPrecision(6) : v}</td></tr>`)
+        .join("");
+      progressResult.innerHTML = `
+        <table class="table table-sm table-bordered mb-0">
+          <thead class="table-light">
+            <tr><th>Fitted Parameter</th><th>Value</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+  },
+
+  /**
+   * 피팅 모달에 에러 메시지를 표시합니다.
+   * @param {string} errorMessage - 표시할 에러 메시지
+   */
+  displayFitError(errorMessage) {
+      const { progressMsg, progressBar, progressConsole } = DOM.modals.fittingSettings;
+
+      progressMsg.innerHTML = `<span class="text-danger"><strong>Error:</strong> ${errorMessage}</span>`;
+      progressConsole.textContent = `Fitting failed: ${errorMessage}`;
+
+      if (progressBar) {
+        progressBar.style.width = "100%";
+        progressBar.classList.add('bg-danger');
+        progressBar.classList.remove('progress-bar-animated');
+      }
+  }
+};
+
+const COLORS = ["#d9534f","#0275d8","#5cb85c","#f0ad4e","#6f42c1"];
+function pickColor() {
+  return COLORS[State.observations.length % COLORS.length];
+}
+
+function parseCsv(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = ev => {
+      try {
+        const lines = ev.target.result.split(/\r?\n/).filter(Boolean);
+        const head = lines.shift().split(",").map(h => h.trim());
+        const tIdx = head.findIndex(h => h.toLowerCase() === "time");
+        if (tIdx === -1) return reject(new Error(`'Time' column missing in ${file.name}`));
+        
+        const data = { Time: [], ...Object.fromEntries(head.filter((_, i) => i !== tIdx).map(h => [h, []])) };
+        
+        lines.forEach(line => {
+          const vals = line.split(",");
+          if (vals.length !== head.length) return;
+          
+          const timeVal = parseFloat(vals[tIdx]);
+          if (isNaN(timeVal)) return;
+          
+          data.Time.push(timeVal);
+          head.forEach((h, j) => {
+            if (j === tIdx) return;
+            const v = parseFloat(vals[j]);
+            data[h].push(isNaN(v) ? null : v);
+          });
+        });
+        resolve(data);
+      } catch (error) { reject(error); }
+    };
+    fr.onerror = (err) => reject(new Error(`Error reading file ${file.name}: ${err}`));
+    fr.readAsText(file);
+  });
+}
+
+function maskLowValues(arr, threshold = 0.000000001) {
+  return arr.map(v => (v < threshold ? null : v));
+} 
+
+const Handlers = {
+  // --- 사이드바 및 공용 핸들러 ---
+
+  /**
+   * 'Parse' 버튼 클릭을 처리합니다.
+   * ODE 텍스트를 API로 보내고, 결과를 받아 State를 업데이트한 후 UI를 다시 렌더링합니다.
+   */
+  async handleParseClick() {
+    const odeText = DOM.sidebar.odeInput.value.trim();
+    if (!odeText) return alert("Please enter ODEs.");
+
+    try {
+      const response = await API.parseODE(odeText);
+      if (response.status === "ok") {
+        // State 업데이트
+        State.compartments = response.data.compartments || [];
+        State.parameters = response.data.parameters || [];
+        State.processedODE = response.data.processed_ode;
+        State.derivedExpressions = response.data.derived_expressions || {};
+
+        // UI 업데이트 요청
+        UI.renderSymbolInputs();
+        UI.updateSelectedBadges();
+      } else {
+        alert("Parse failed: " + (response.message || "Unknown error"));
+      }
+    } catch (error) {
+      // API.js에서 던진 에러를 여기서 처리 (이미 alert는 API.js에서 처리됨)
+      console.error("Parse failed:", error);
+    }
+  },
+
+  /**
+   * Dosing 폼 제출을 처리합니다.
+   * @param {Event} event - 폼 제출 이벤트 객체
+   */
+  handleDoseFormSubmit(event) {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const d = {
+      compartment: formData.get("compartment"),
+      type: formData.get("type"),
+      amount: +formData.get("amount"),
+      start_time: +formData.get("start_time"),
+      duration: formData.get("type") === "infusion" ? (+formData.get("duration") || 0) : 0,
+      repeat_every: +formData.get("repeat_every") || null,
+      repeat_until: +formData.get("repeat_until") || null
+    };
+
+    // 유효성 검사
+    if (!d.amount || d.amount <= 0) return alert("Please enter a valid amount.");
+    if (d.repeat_every && (!d.repeat_until || d.repeat_until <= d.start_time)) {
+      return alert("If 'Repeat every' is set, 'Repeat until' must also be set and be greater than Start Time.");
+    }
+    
+    // State 업데이트
+    State.doseList.push(d);
+    // UI 업데이트
+    UI.renderDoses();
+    
+    event.target.reset();
+    DOM.sidebar.doseTypeSelect.dispatchEvent(new Event('change')); // Infusion 필드 숨김 처리
+  },
+
+  /**
+   * 동적으로 생성된 투여 목록의 클릭 이벤트를 처리합니다 (이벤트 위임).
+   * @param {Event} event - 클릭 이벤트 객체
+   */
+  handleDoseListClick(event) {
+    const removeButton = event.target.closest('.remove-dose-btn');
+    if (removeButton) {
+      const index = parseInt(removeButton.dataset.index, 10);
+      if (confirm(`Are you sure you want to remove dose #${index + 1}?`)) {
+        // State 업데이트
+        State.doseList.splice(index, 1);
+        // UI 업데이트
+        UI.renderDoses();
+      }
+    }
+  },
+
+  // --- 메인 툴바 및 시뮬레이션 핸들러 ---
+  /**
+   * 선택된 구획 배지 클릭을 처리하여 해당 구획을 선택 해제합니다.
+   * @param {Event} event - 클릭 이벤트 객체
+   */
+  handleBadgeClick(event) {
+    // 1. 클릭된 요소가 '뱃지'가 맞는지 확인합니다.
+    const clickedBadge = event.target.closest('.badge');
+    if (!clickedBadge) {
+      return; // 뱃지가 아니면 아무 작업도 하지 않음
+    }
+
+    // 2. 클릭된 배지에서 구획(compartment) 이름을 가져옵니다.
+    const compName = clickedBadge.textContent.trim();
+    if (!compName) return;
+
+    // 3. 뱃지 이름과 일치하는 시뮬레이션 구획 선택 메뉴의 체크박스를 찾습니다.
+    const checkboxToUncheck = DOM.simulation.compartmentsMenu.querySelector(`.sim-comp-checkbox[value="${compName}"]`);
+
+    // 4. 체크박스를 찾았다면, 선택을 해제합니다.
+    if (checkboxToUncheck) {
+      checkboxToUncheck.checked = false;
+      
+      // 5. 체크박스 상태가 변경되었으므로, 뱃지 UI를 다시 렌더링하여 화면에 반영합니다.
+      UI.updateSelectedBadges();
+    }
+  },
+
+  /**
+   * 'Run Simulation' 버튼 클릭을 처리합니다.
+   */
+  async handleSimulateClick() {
+    if (State.isSimulating) return;
+    if (State.compartments.length === 0 || State.parameters.length === 0) {
+      return alert("Please parse ODEs first.");
+    }
+
+    State.isSimulating = true;
+    UI.setLoading(DOM.toolbar.simulateBtn, true);
+
+    try {
+      const payload = {
+        equations: DOM.sidebar.odeInput.value.trim(),
+        compartments: [...DOM.simulation.compartmentsMenu.querySelectorAll(".sim-comp-checkbox:checked")].map(e => e.value),
+        initials: {},
+        parameters: {},
+        doses: State.doseList,
+        t_start: +DOM.toolbar.simStartTime.value,
+        t_end: +DOM.toolbar.simEndTime.value,
+        t_steps: +DOM.toolbar.simSteps.value,
+      };
+
+      // 파라미터 및 초기값 수집
+      State.compartments.forEach(c => payload.initials[c] = +DOM.sidebar.initValuesContainer.querySelector(`#init_${c}`).value);
+      State.parameters.forEach(p => payload.parameters[p] = +DOM.sidebar.paramValuesContainer.querySelector(`#param_${p}`).value);
+      
+      const response = await API.simulate(payload);
+
+      if (response.status === "ok") {
+        UI.plotSimulationResult(response.data.profile, DOM.toolbar.logScaleCheckbox.checked);
+        UI.displayPKSummary(response.data.pk);
+      }
+    } catch (error) {
+       // API 모듈에서 이미 alert를 띄웠으므로, 콘솔에만 에러 기록
+       console.error("Simulation failed:", error);
+    } finally {
+      State.isSimulating = false;
+      UI.setLoading(DOM.toolbar.simulateBtn, false);
+    }
+  },
+
+  // --- 피팅 관련 핸들러 ---
+
+  handleFitBtnClick() {
+    // 모달을 열기 전, 필수 조건들을 확인합니다.
+    if (State.compartments.length === 0 || State.parameters.length === 0) {
+      return alert("Please parse ODEs first to define parameters for fitting.");
+    }
+    if (State.observations.filter(o => o.selected).length === 0) {
+      return alert("⚠️ Upload and select observed data first for fitting.");
+    }
+    
+    // 모든 조건 통과 시, UI 모듈에 모달을 열도록 요청합니다.
+    UI.openFittingSettingsModal();
+  },
+
+  /**
+   * 'Start Fitting' 버튼 클릭을 처리합니다.
+   * 모달에서 모든 설정 값을 수집하여 유효성을 검사하고,
+   * API를 통해 서버에 피팅을 요청한 후 결과를 처리합니다.
+   */
+  async handleStartFittingClick() {
+    // 0. 상태 확인 및 UI 초기화
+    if (State.isFitting) return; // 중복 실행 방지
+    
+    const startBtn = DOM.modals.fittingSettings.startBtn;
+    const progressSection = DOM.modals.fittingSettings.progressSection;
+
+    try {
+      State.isFitting = true;
+      progressSection.style.display = 'block'; // 진행률 섹션 표시
+      UI.resetFitProgress();
+      UI.setLoading(startBtn, true);
+      // TODO: UI 모듈에 피팅 진행률 UI를 초기화하는 함수를 만들고 여기서 호출 (예: UI.resetFitProgress())
+      
+      // 1. 데이터 수집 (DOM -> JS Object)
+      const selectedFitParams = [...DOM.modals.fittingSettings.paramList.querySelectorAll('.modal-fit-param-cb:checked')].map(cb => cb.value);
+      
+      const bounds = {};
+      selectedFitParams.forEach(pName => {
+        const lowerEl = DOM.modals.fittingSettings.paramBoundsList.querySelector(`.modal-param-lower[data-param-name="${pName}"]`);
+        const upperEl = DOM.modals.fittingSettings.paramBoundsList.querySelector(`.modal-param-upper[data-param-name="${pName}"]`);
+        bounds[pName] = [
+          lowerEl?.value.trim() === '' ? null : parseFloat(lowerEl.value),
+          upperEl?.value.trim() === '' ? null : parseFloat(upperEl.value)
+        ];
+      });
+
+      const weightingScheme = document.querySelector('input[name="fitWeighting"]:checked')?.value || 'none';
+      
+      const initials = {}, currentParams = {};
+      State.compartments.forEach(c => initials[c] = +DOM.sidebar.initValuesContainer.querySelector(`#init_${c}`).value);
+      State.parameters.forEach(p => currentParams[p] = +DOM.sidebar.paramValuesContainer.querySelector(`#param_${p}`).value);
+
+      const fittingGroups = [];
+      const groupCards = DOM.modals.fittingSettings.groupsContainer.querySelectorAll('.fitting-group-card');
+      
+      for (const card of groupCards) {
+        const obsIndex = card.querySelector('.group-obs-select').value;
+        const comp = card.querySelector('.group-dose-comp').value;
+        const amount = +card.querySelector('.group-dose-amount').value;
+        const time = +card.querySelector('.group-dose-time').value;
+        
+        fittingGroups.push({
+          doses: [{ compartment: comp, type: 'bolus', amount: amount, start_time: time }],
+          observed: State.observations[parseInt(obsIndex, 10)].data
+        });
+      }
+
+      // 2. 유효성 검사
+      if (selectedFitParams.length === 0) throw new Error("Please select at least one parameter to fit.");
+      if (fittingGroups.length === 0) throw new Error("Please add at least one experimental group.");
+      // 추가적인 상세 유효성 검사... (예: 그룹 정보가 모두 채워졌는지)
+
+      // 3. API 요청 페이로드(Payload) 생성
+      const payload = {
+          equations: DOM.sidebar.odeInput.value.trim(),
+          initials: initials,
+          parameters: currentParams,
+          fit_params: selectedFitParams,
+          bounds: bounds,
+          weighting: weightingScheme,
+          fitting_groups: fittingGroups,
+      };
+      if (!payload.fit_params || payload.fit_params.length === 0) throw new Error("Please select at least one parameter to fit.");
+   
+      // 4. API 호출
+      const response = await API.fit(payload);
+
+      // 5. 성공 처리
+      if (response.status === "ok") {
+      UI.displayFitSuccess(response.data);
+      UI.updateInputFields(response.data.params);
+      UI.renderFitSummary(response.data.params, response.data.ssr_total);
+      this.handleSimulateClick(); // 자동 재시뮬레이션
+    } else {
+      throw new Error(response.message || "Fitting failed on the server.");
+    }
+  } catch (err) {
+    UI.displayFitError(err.message);
+  } finally {
+    State.isFitting = false;
+    UI.setLoading(startBtn, false);
+  }
+},
+
+  /**
+   * 'Show Processed ODEs' 버튼 클릭을 처리합니다.
+   */
+  handleShowProcessedClick() {
+    // UI.showProcessedModal() 함수를 UI 모듈에 추가해야 합니다.
+    // 이 함수는 State의 _processedODE, _compartments 등을 읽어 모달 내용을 채우고 보여줍니다.
+    UI.showProcessedModal(); 
+  },
+
+  /**
+   * Dosing 폼의 'Type' select 변경을 처리합니다.
+   */
+  handleDoseTypeChange(event) {
+    DOM.sidebar.doseDurationLabel.style.display = event.target.value === "infusion" ? "flex" : "none";
+  },
+
+  /**
+   * 시뮬레이션 구획 선택 메뉴의 변경을 처리합니다.
+   */
+  handleSimCompMenuChange() {
+    UI.updateSelectedBadges();
+  },
+
+  /**
+   * 관찰 데이터 파일 입력을 처리합니다.
+   * @param {Event} event - 파일 input의 change 이벤트
+   */
+  async handleObsFileChange(event) {
+    const files = [...event.target.files];
+    for (const file of files) {
+      try {
+        const data = await parseCsv(file);
+        State.observations.push({
+          name: file.name,
+          color: pickColor(),
+          data: data,
+          selected: true
+        });
+      } catch (error) {
+        alert(`Error processing file ${file.name}: ${error.message}`);
+      }
+    }
+    UI.renderObsList();
+    event.target.value = ""; // 동일한 파일을 다시 선택할 수 있도록 초기화
+  },
+
+  /**
+   * 관찰 데이터 목록의 클릭 이벤트를 처리합니다 (이벤트 위임).
+   */
+  handleObsListClick(event) {
+    const target = event.target;
+    const item = target.closest('.obs-item');
+    if (!item) return;
+
+    const index = parseInt(item.dataset.index, 10);
+    const obsData = State.observations[index];
+    if (!obsData) return;
+
+    if (target.classList.contains('obs-check')) {
+      // 체크박스 클릭
+      obsData.selected = target.checked;
+    } else if (target.classList.contains('remove-obs-btn')) {
+      // 삭제 버튼 클릭
+      if (confirm(`Are you sure you want to remove "${obsData.name}"?`)) {
+        State.observations.splice(index, 1);
+        UI.renderObsList();
+      }
+    } else {
+      // 그 외 영역(이름 등) 클릭
+      UI.renderObsPreview(index);
+    }
+  },
+
+  /**
+   * 피팅 모달의 파라미터 체크박스 변경을 처리합니다.
+   */
+  handleFitParamCheckboxChange() {
+    UI.renderFitParamBoundsUI();
+  },
+  
+  /**
+   * 'Add Experimental Group' 버튼 클릭을 처리합니다.
+   */
+  handleAddFittingGroupClick() {
+    UI.addFittingGroup();
+  },
+
+  /**
+   * 피팅 그룹 카드 내의 클릭 이벤트를 처리합니다 (이벤트 위임).
+   */
+  handleFittingGroupEvents(event) {
+    if (event.target.classList.contains('remove-fitting-group-btn')) {
+      event.target.closest('.fitting-group-card')?.remove();
+    }
+  },
+};
+
+const App = {
+  /**
+   * 애플리케이션을 초기화하는 메인 함수.
+   */
+  init() {
+    console.log("Application initializing...");
+    this._bindEvents();
+    this._initialRender();
+  },
+
+  /**
+   * 모든 DOM 요소에 이벤트 리스너를 연결하는 '비공개' 헬퍼 함수.
+   */
+  _bindEvents() {
+    // --- 사이드바 이벤트 바인딩 ---
+    DOM.sidebar.parseBtn.addEventListener('click', Handlers.handleParseClick);
+    DOM.sidebar.showProcessedBtn.addEventListener('click', Handlers.handleShowProcessedClick);
+    DOM.sidebar.doseForm.addEventListener('submit', Handlers.handleDoseFormSubmit);
+    DOM.sidebar.doseTypeSelect.addEventListener('change', Handlers.handleDoseTypeChange);
+    DOM.sidebar.doseListContainer.addEventListener('click', Handlers.handleDoseListClick); // 이벤트 위임
+
+    // --- 메인 툴바 이벤트 바인딩 ---
+    DOM.toolbar.simulateBtn.addEventListener('click', Handlers.handleSimulateClick);
+    DOM.toolbar.fitBtn.addEventListener('click', Handlers.handleFitBtnClick);
+
+    // --- 시뮬레이션 구획 선택 이벤트 바인딩 ---
+    DOM.simulation.compartmentsMenu.addEventListener('change', Handlers.handleSimCompMenuChange);
+    DOM.simulation.selectedCompBadges.addEventListener('click', Handlers.handleBadgeClick);
+
+    // --- 관찰 데이터(Offcanvas) 이벤트 바인딩 ---
+    DOM.modals.obsData.fileInput.addEventListener('change', Handlers.handleObsFileChange);
+    DOM.modals.obsData.list.addEventListener('click', Handlers.handleObsListClick); // 이벤트 위임
+
+    // --- 피팅 모달 이벤트 바인딩 ---
+    DOM.modals.fittingSettings.paramList.addEventListener('change', Handlers.handleFitParamCheckboxChange);
+    DOM.modals.fittingSettings.addGroupBtn.addEventListener('click', Handlers.handleAddFittingGroupClick);
+    DOM.modals.fittingSettings.groupsContainer.addEventListener('click', Handlers.handleFittingGroupEvents); // 이벤트 위임
+    DOM.modals.fittingSettings.startBtn.addEventListener('click', () => Handlers.handleStartFittingClick());
+  },
+
+  /**
+   * 페이지 로드 시 필요한 초기 UI를 렌더링합니다.
+   */
+  _initialRender() {
+    UI.renderDoses();
+    UI.renderObsList();
+    UI.updateSelectedBadges();
+  }
+};
+
+
+// =======================================================
+// =============== 애플리케이션 실행 (점화!) ===============
+// =======================================================
+
+document.addEventListener('DOMContentLoaded', () => App.init());
