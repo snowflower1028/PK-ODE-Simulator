@@ -1,0 +1,530 @@
+/* ------------------------------ */
+/* 1. CSS Variables (:root)       */
+/* ------------------------------ */
+:root {
+    --apple-system-blue: #007AFF;
+    --apple-system-blue-hover: #0056b3;
+    --apple-system-blue-active: #004085;
+    --apple-text-primary: #1d1d1f;       /* 거의 검정 */
+    --apple-text-secondary: #6e6e73;    /* 중간 회색 */
+    --apple-text-tertiary: #86868b;     /* 밝은 회색 */
+    --apple-background-primary: #ffffff; /* 흰색 배경 */
+    --apple-background-secondary: #f5f5f7; /* 매우 밝은 회색 배경 */
+    --apple-separator-color: #d1d1d6;   /* 얇은 구분선 */
+    --apple-control-background: #f0f0f0; /* 버튼 등 컨트롤 배경 */
+    --apple-control-border: #c6c6c8;     /* 컨트롤 테두리 */
+    --apple-card-border: #e5e5e5;        /* 카드 테두리 (더 연하게) */
+    
+    --apple-sidebar-width: 33vw;         /* 사이드바 너비 */
+    --apple-toolbar-height: 48px;        /* 메인 패널 상단 툴바 높이 (컴팩트하게) */
+
+    /* 컨트롤 요소 크기 일관성을 위한 변수 */
+    --control-font-size-sm: 0.875rem;    /* 14px */
+    --control-padding-y-sm: 0.375rem;   /* Bootstrap .form-control-sm 패딩과 유사하게 조정 (약 6px) */
+    --control-padding-x-sm: 0.75rem;    /* Bootstrap .form-control-sm 패딩과 유사하게 조정 (약 12px) */
+    --control-line-height: 1.5;
+    /* 계산된 컨트롤 높이 (border 포함): (font-size * line-height) + (padding-y * 2) + (border-width * 2) */
+    /* (14px * 1.5) + (6px * 2) + (1px * 2) = 21 + 12 + 2 = 35px */
+    /* Bootstrap의 .form-control-sm은 약 31px, .btn-sm도 약 31px. 여기에 맞추려면 패딩을 0.25rem 정도로. */
+    --control-padding-y-sm-strict: 0.25rem; /* Bootstrap .form-control-sm 패딩 */
+    --control-padding-x-sm-strict: 0.5rem;  /* Bootstrap .form-control-sm 패딩 */
+    --control-height-strict: calc( (var(--control-font-size-sm) * var(--control-line-height)) + (var(--control-padding-y-sm-strict) * 2) + 2px );
+}
+
+/* ------------------------------ */
+/* 2. Base & Typography Styles    */
+/* ------------------------------ */
+body {
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--apple-text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: 15px; 
+    line-height: 1.5;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    background-color: var(--apple-background-secondary);
+}
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 500;
+    color: var(--apple-text-primary);
+    letter-spacing: -0.01em;
+    margin-bottom: 0.75rem;
+}
+h1 { font-size: 28px; font-weight: 700; }
+h2 { font-size: 24px; font-weight: 700; } /* 사이드바 섹션 타이틀 등에 사용될 수 있음 */
+.sidebar-section-title { /* 사이드바용 h2 대체 */
+    font-size: 18px; /* 기존 스타일 유지 */
+    font-weight: 500;
+    color: var(--apple-text-primary);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+}
+.sidebar-section-title .bi {
+    margin-right: 0.5rem;
+    font-size: 1.1em;
+    color: var(--apple-text-secondary);
+}
+h3 { font-size: 20px; }
+    .subsection-title { /* 사이드바용 h3 대체 */
+    font-size: 15px; /* 기존 스타일 유지 */
+    font-weight: 500;
+    color: var(--apple-text-secondary);
+    margin-bottom: 0.75rem;
+    border-top: 1px solid var(--apple-separator-color);
+    padding-top: 0.75rem;
+    margin-top: 1rem;
+}
+.value-settings-columns .subsection-title:first-child {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+}
+h4 { font-size: 18px; }
+h5 { font-size: 16px; } /* 카드 제목 등에 사용 */
+
+p, label:not(.form-check-label), .form-label {
+    color: var(--apple-text-primary);
+    font-size: 15px;
+    line-height: 1.6;
+}
+/* Dosing 폼 내부 레이블은 더 작게 */
+#dose-form label.form-label { 
+    font-size: 14px; 
+    margin-bottom: 0.25rem !important; 
+}
+small, .text-muted {
+    color: var(--apple-text-secondary);
+    font-size: 13px;
+}
+hr {
+    border: none;
+    height: 1px;
+    background-color: var(--apple-separator-color); 
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+.bi {
+    color: var(--apple-text-secondary);
+    vertical-align: -0.1em;
+}
+.btn .bi { 
+    color: inherit;
+}
+h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* 제목 아이콘 스타일 통일 */
+    color: var(--apple-text-secondary);
+    margin-right: 0.35rem;
+    font-size: 1em; 
+}
+
+/* ------------------------------ */
+/* 3. Layout Styles               */
+/* ------------------------------ */
+.sidebar {
+    width: var(--apple-sidebar-width);
+    height: 100vh;
+    overflow-y: auto;
+    background-color: var(--apple-background-primary);
+    border-right: 1px solid var(--apple-separator-color);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+.sidebar-section { }
+
+.main-content {
+    flex-grow: 1;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.main-toolbar {
+    min-height: var(--apple-toolbar-height);
+    height: var(--apple-toolbar-height); /* 높이 고정 */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.25rem; /* 패딩 약간 조정 */
+    border-bottom: 1px solid var(--apple-separator-color);
+    background-color: var(--apple-background-primary);
+}
+.main-toolbar .simulation-settings-compact {
+    display: flex;
+    gap: 0.75rem; /* 간격 약간 줄임 */
+    align-items: center;
+}
+.main-toolbar .action-buttons {
+    display: flex;
+    gap: 0.5rem; /* 간격 약간 줄임 */
+    align-items: center; /* 버튼들도 수직 중앙 정렬 */
+}
+.main-scrollable-area {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    background-color: var(--apple-background-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+.value-settings-columns {
+    display: flex;
+    gap: 1.5rem;
+}
+.value-settings-columns > div {
+    flex: 1;
+}
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); /* 최소 너비 조정 */
+    gap: 1.5rem;
+}
+.results-grid .card {
+    min-height: 280px; /* 최소 높이 조정 */
+}
+#plot { min-height: 420px; } /* 플롯 영역 높이 조정 */
+
+/* ------------------------------ */
+/* 4. Component Styles            */
+/* ------------------------------ */
+.btn {
+    border-radius: 7px; /* Apple 스타일 둥근 모서리 통일 */
+    font-weight: 500;
+    padding: var(--control-padding-y-sm-strict) var(--control-padding-x-sm-strict); /* 기본 버튼 패딩도 sm 기준으로 */
+    font-size: var(--control-font-size-sm); /* 기본 버튼 폰트도 sm 기준 */
+    line-height: var(--control-line-height);
+    letter-spacing: 0;
+    text-transform: none;
+    border: 1px solid transparent;
+    box-shadow: none;
+    transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, color 0.15s ease-in-out;
+    height: var(--control-height-strict); /* 모든 버튼 높이 통일 */
+    display: inline-flex; /* 아이콘 정렬 위해 */
+    align-items: center;    /* 아이콘 정렬 위해 */
+    justify-content: center;/* 아이콘 정렬 위해 */
+}
+/* 사이드바의 Parse, Show Processed ODEs 버튼은 기존 btn-sm 유지 또는 .btn 스타일 따르도록 */
+.sidebar .d-flex.gap-2 .btn { 
+    /* height: auto; /* 필요시 사이드바 버튼 높이만 다르게 */
+    padding: 0.25rem 0.5rem; /* Bootstrap btn-sm 기본 패딩 */
+}
+    /* Add Dose 버튼은 w-100 이므로 높이만 통일 */
+#dose-form .btn.w-100 {
+    /* height: var(--control-height-strict); /* 이미 .btn 에 적용됨 */
+}
+
+
+.btn-primary {
+    background-color: var(--apple-system-blue);
+    color: white;
+    border-color: var(--apple-system-blue);
+}
+.btn-primary:hover {
+    background-color: var(--apple-system-blue-hover);
+    border-color: var(--apple-system-blue-hover);
+    color: white;
+}
+.btn-primary:active, .btn-primary:focus {
+    background-color: var(--apple-system-blue-active);
+    border-color: var(--apple-system-blue-active);
+    color: white;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2); /* 포커스 링 투명도 조정 */
+}
+.btn-outline-primary {
+    background-color: transparent;
+    color: var(--apple-system-blue);
+    border-color: var(--apple-system-blue);
+}
+.btn-outline-primary:hover {
+    background-color: rgba(0, 122, 255, 0.08);
+    color: var(--apple-system-blue);
+    border-color: var(--apple-system-blue);
+}
+.btn-outline-primary:active, .btn-outline-primary:focus {
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+}
+.btn-outline-secondary, .btn-secondary {
+    background-color: var(--apple-control-background);
+    color: var(--apple-text-primary);
+    border-color: var(--apple-control-border);
+}
+.btn-outline-secondary:hover, .btn-secondary:hover {
+    background-color: #e0e0e0;
+    border-color: #b0b0b0;
+}
+.btn-danger { background-color: #FF3B30; color: white; border-color: #FF3B30; }
+.btn-danger:hover { background-color: #E03024; border-color: #E03024; }
+.btn-warning { background-color: #FF9500; color: white; border-color: #FF9500; }
+.btn-warning:hover { background-color: #E08400; border-color: #E08400; }
+.btn-info { background-color: #5AC8FA; color: white; border-color: #5AC8FA; } /* Apple Info Blue */
+.btn-info:hover { background-color: #4AB5E0; border-color: #4AB5E0; }
+.btn-outline-info { color: #5AC8FA; border-color: #5AC8FA; }
+.btn-outline-info:hover { background-color: rgba(90, 200, 250, 0.08); }
+
+
+/* 툴바 내부 버튼들 (일반 .btn 스타일을 따르되, 아이콘 마진만 조정) */
+.main-toolbar .action-buttons .btn .bi {
+    margin-right: 0.4em;
+}
+/* Data 버튼 같이 텍스트와 아이콘이 모두 있는 경우, 아이콘만 있는 버튼용 스타일은 불필요 */
+/* .main-toolbar .action-buttons .btn.icon-only .bi { margin-right: 0; } */
+
+
+.form-control, .form-select {
+    border-radius: 7px; 
+    border: 1px solid var(--apple-control-border);
+    background-color: var(--apple-background-primary);
+    padding: var(--control-padding-y-sm-strict) var(--control-padding-x-sm-strict); 
+    font-size: var(--control-font-size-sm);
+    line-height: var(--control-line-height);
+    color: var(--apple-text-primary);
+    box-shadow: none;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    height: var(--control-height-strict); /* 모든 입력 필드 높이 통일 */
+}
+.form-control:focus, .form-select:focus {
+    border-color: var(--apple-system-blue);
+    background-color: var(--apple-background-primary);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2); 
+    outline: none;
+}
+.form-select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2386868b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+    background-position: right var(--control-padding-x-sm-strict) center;
+    background-size: 16px 12px;
+}
+/* 사이드바 내부 입력필드는 form-control-sm 클래스 유지 */
+.sidebar .form-control-sm, .sidebar .form-select-sm {
+    /* 기본 .form-control 스타일을 따르므로 특별한 재정의 불필요 */
+}
+#ode-input { /* rows 속성으로 높이 조절되므로 height 통일 대상에서 제외 */
+    height: auto; 
+    border-radius: 7px;
+    border: 1px solid var(--apple-control-border);
+    background-color: var(--apple-background-primary);
+}
+#ode-input:focus {
+    border-color: var(--apple-system-blue);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+}
+
+/* 툴바 내부 form-control (시간 입력 등) */
+.main-toolbar .simulation-settings-compact .form-control,
+.main-toolbar .simulation-settings-compact .form-select {
+    max-width: 100px; /* 너비 조정 */
+    /* 높이, 패딩, 폰트 등은 이미 .form-control 에서 상속받음 */
+}
+.main-toolbar .simulation-settings-compact label.form-label {
+    font-size: var(--control-font-size-sm); /* 아이콘 옆 레이블 폰트 */
+    color: var(--apple-text-secondary);
+}
+
+.form-check-input {
+    border-color: var(--apple-control-border);
+    border-radius: 4px;
+}
+.form-check-input:checked {
+    background-color: var(--apple-system-blue);
+    border-color: var(--apple-system-blue);
+}
+.form-check-label {
+    font-size: 14px;
+    color: var(--apple-text-secondary);
+}
+.main-toolbar .form-check.form-switch {
+    padding-left: 2.8em; /* 스위치 크기 고려한 패딩 */
+    display: flex;
+    align-items: center;
+    height: var(--control-height-strict); /* 높이 통일 */
+}
+.main-toolbar .form-check.form-switch .form-check-input {
+    margin-top: 0; 
+}
+.main-toolbar .form-check.form-switch .form-check-label.small {
+    padding-top: 0.1rem; /* 레이블 위치 미세 조정 */
+    font-size: 13px; /* 'Log Y' 레이블 약간 작게 */
+}
+
+.card {
+    border-radius: 12px; 
+    border: 1px solid var(--apple-card-border); 
+    box-shadow: none; 
+    background-color: var(--apple-background-primary); 
+}
+.card-title {
+    font-size: 17px; /* 카드 제목 약간 조정 */ 
+    font-weight: 500; 
+    color: var(--apple-text-primary);
+    padding-bottom: 0.25rem;
+    display: flex; /* 아이콘 정렬 위해 */
+    align-items: center;
+}
+.card-title .bi {
+    font-size: 1.1em; /* 카드 제목 아이콘 약간 크게 */
+    margin-right: 0.4rem;
+    color: var(--apple-text-primary); /* 카드 제목 아이콘은 더 진하게 */
+}
+.card-body {
+    padding: 1rem 1.15rem; 
+}
+.modal-content, .offcanvas {
+    border-radius: 14px; 
+    border: none; 
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
+    background-color: var(--apple-background-secondary); 
+}
+.modal-header, .offcanvas-header {
+    border-bottom: 1px solid var(--apple-separator-color); 
+    padding: 0.85rem 1.15rem;
+    background-color: var(--apple-background-secondary); 
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+}
+.modal-body, .offcanvas-body {
+    background-color: var(--apple-background-primary); 
+    padding: 1.15rem;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+}
+.modal-title, .offcanvas-title {
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--apple-text-primary);
+}
+
+#modal-param-list {
+    /* 기존 스타일 (필요시) */
+    max-height: 280px; /* 여러 열로 표시되므로 최대 높이를 약간 조정할 수 있습니다. */
+    overflow-y: auto;
+    padding: 1rem;
+    border: 1px solid var(--apple-separator-color);
+    border-radius: 8px;
+    background-color: var(--apple-background-secondary);
+    
+    /* --- 신규 추가: CSS Grid 레이아웃 --- */
+    display: grid;
+    
+    /* * 그리드 열(column) 설정:
+    * - auto-fit: 사용 가능한 공간에 맞춰 열의 개수를 자동으로 채웁니다.
+    * - minmax(250px, 1fr): 각 열은 최소 250px의 너비를 가지며,
+    * 여유 공간이 있으면 1fr (비율 단위) 만큼 균등하게 늘어납니다.
+    * 이 설정 덕분에 모달 너비에 따라 열 개수가 자동으로 2열, 3열 등으로 변경됩니다.
+    */
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    
+    /* 행과 열 사이의 간격 설정 */
+    gap: 0.5rem 1rem; /* 세로(row) 간격 0.5rem, 가로(column) 간격 1rem */
+}
+
+/* Grid 아이템(각 체크박스)의 하단 마진은 gap으로 처리하므로 제거 (선택 사항) */
+#modal-param-list .form-check {
+    margin-bottom: 0 !important;
+}
+
+.btn-close {
+    filter: grayscale(1) opacity(0.6);
+}
+.btn-close:hover {
+    filter: grayscale(1) opacity(0.9);
+}
+.derived-box{
+    border-radius: 7px;
+    background-color: var(--apple-control-background); 
+    border: 1px solid var(--apple-control-border);
+    padding: 0.6rem 0.85rem;
+    font-size: 13px; 
+    margin-bottom: 0.5rem; /* 다른 요소들과 간격 */
+}
+#param-values .parameter-entry, /* JS에서 이 클래스를 각 행에 추가한다고 가정 */
+#init-values .initial-value-entry {
+    display: flex;
+    align-items: center;
+    gap: 10px; 
+    margin-bottom: 0.5rem;
+}
+#param-values .parameter-entry label:not(.form-check-label),
+#init-values .initial-value-entry label {
+    color: var(--apple-text-secondary); 
+    font-size: 14px;
+    margin-bottom: 0; /* flex 정렬 시 불필요 */
+    text-align: right; /* 레이블 우측 정렬 */
+    width: 70px;       /* 레이블 너비 고정 */
+    flex-shrink: 0;    /* 레이블 줄어들지 않도록 */
+}
+#param-values .parameter-entry input[type="number"],
+#init-values .initial-value-entry input[type="number"] {
+    font-size: 14px; /* .form-control에서 상속 */
+    flex-grow: 1;    /* 입력 필드가 남은 공간 채우도록 */
+}
+    #param-values .parameter-entry .form-check {
+    width: auto; /* 내용에 맞게 */
+    margin-left: 0.25rem; /* 앞 요소와 간격 */
+    display: flex;
+    align-items: center;
+    }
+
+
+#selected-comp-badges .badge {
+    background-color: var(--apple-system-blue); 
+    color: white;
+    font-weight: 400;
+    border-radius: 7px;
+    padding: 5px 9px;
+    font-size: 13px;
+}
+#selected-comp-badges .badge:hover {
+    background-color: var(--apple-system-blue-hover);
+}
+.selected-badges-container { /* #selected-comp-badges 에 적용될 클래스 */
+    min-height: var(--control-height-strict); /* 다른 컨트롤과 높이 일치 */
+    width: auto;
+    flex-grow: 1;
+    min-width: 180px;
+    display: flex;
+    align-items: center;
+    padding: var(--control-padding-y-sm-strict) var(--control-padding-x-sm-strict);
+    /* form-control 클래스에 의해 배경, 테두리 등은 이미 적용됨 */
+}
+
+
+/* ------------------------------ */
+/* 5. Placeholder Styles          */
+/* ------------------------------ */
+.placeholder-text {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    min-height: 120px; 
+    padding: 1rem;
+    text-align: center;
+    font-style: italic;
+    color: var(--apple-text-tertiary); 
+    font-size: 14px;
+    border: 1px dashed var(--apple-separator-color); 
+    border-radius: 8px; 
+    background-color: rgba(0,0,0,0.02); 
+}
+.placeholder-badge-area { /* #selected-comp-badges 내부 placeholder */
+    font-size: 0.85em; 
+    color: var(--apple-text-secondary); 
+    font-style: italic;
+    width: 100%; 
+    text-align: left; 
+    line-height: var(--control-line-height);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0; /* 부모의 패딩 사용 */
+}
+
+/* ------------------------------ */
+/* 6. Utility Styles              */
+/* ------------------------------ */
+.subtle-shadow {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.08);
+}
