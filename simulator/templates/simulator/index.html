@@ -97,6 +97,10 @@
             <input id="sim-start-time" type="number" class="form-control" value="0" step="0.1" title="Start Time (h)">
             <label class="form-label mb-0 me-1 ms-2" for="sim-end-time" title="End Time (h)"><i class="bi bi-clock-fill"></i></label>
             <input id="sim-end-time" type="number" class="form-control" value="48" step="0.1" title="End Time (h)">
+            <div class="d-flex align-items-center ms-3" title="Plotting Threshold (values below this will not be shown)">
+                <label class="form-label mb-0 me-1" for="sim-threshold"><i class="bi bi-filter-circle"></i></label>
+                <input id="sim-threshold" type="number" class="form-control" value="1e-9" step="any">
+            </div>
             <label class="form-label mb-0 me-1 ms-2" for="sim-steps" title="# Time Points"><i class="bi bi-bar-chart-steps"></i></label>
             <input id="sim-steps" type="number" class="form-control" value="200" min="10" max="1000" title="# Time Points">
             
@@ -110,6 +114,7 @@
             <i class="bi bi-file-earmark-arrow-down"></i> Data
           </button>
           <button id="fit-btn" class="btn btn-warning"><i class="bi bi-tools"></i> Fit Parameters</button>
+          <button id="export-csv-btn" class="btn btn-outline-success"><i class="bi bi-download"></i> Export CSV</button>
           <button id="simulate-btn" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</button>
         </div>
     </div>
