@@ -89,7 +89,10 @@ def simulate(request):
             valid_selected_comps = all_compartments
 
         # 6. analyzer.py로 PK 파라미터 계산 (선택된 컴파트먼트에 대해서만)
-        pk_summary = analyze_pk(df_full, valid_selected_comps)
+        total_dose = 0
+        if 'doses' in data and data['doses']:
+            total_dose = sum(dose.get('amount', 0) for dose in data['doses'])
+        pk_summary = analyze_pk(df_full, valid_selected_comps, total_dose)
 
         # 7. 응답 데이터 필터링
         columns_to_return = ["Time"] + valid_selected_comps

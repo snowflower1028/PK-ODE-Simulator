@@ -18,6 +18,7 @@ const State = {
   
   // 5. 시뮬레이션 프로세스 관련 상태
   isSimulating: false,        // 현재 시뮬레이션이 진행 중인지 여부를 나타내는 플래그
+  latestSimulationResult: null, // 마지막 시뮬레이션 결과를 저장하는 변수
 };
 
 /** ----- DOM 구획 ----- **/
@@ -40,9 +41,11 @@ const DOM = {
     simStartTime: document.getElementById("sim-start-time"),
     simEndTime: document.getElementById("sim-end-time"),
     simSteps: document.getElementById("sim-steps"),
+    simThreshold: document.getElementById("sim-threshold"),
     logScaleCheckbox: document.getElementById("log-scale"),
     openObsDataBtn: document.querySelector("button[data-bs-target='#obsPanel']"),
     fitBtn: document.getElementById("fit-btn"),
+    exportCsvBtn: document.getElementById("export-csv-btn"),
     simulateBtn: document.getElementById("simulate-btn"),
   },
   
@@ -166,6 +169,35 @@ const API = {
 };
 
 /** ----- UI 구획 ----- **/
+/**
+ * PK 요약 테이블의 컬럼 구성을 정의하는 설정 객체.
+ * 이 배열의 순서대로 테이블이 그려집니다.
+ * 새로운 파라미터를 추가하려면 이 배열에 객체 하나만 추가하면 됩니다.
+ */
+const PK_TABLE_CONFIG = [
+  {
+    key: 'Cmax',                  // State 데이터의 키 이름
+    displayName: 'C<sub>max</sub>', // 화면에 표시될 이름 (HTML 태그 사용 가능)
+  },
+  {
+    key: 'Tmax',
+    displayName: 'T<sub>max</sub> (h)',
+  },
+  {
+    key: 'AUC',
+    displayName: 'AUC',
+  },
+  {
+    key: 'Clearance',
+    displayName: 'Clearance',
+  },
+  {
+    key: 'HL_half_life',
+    displayName: 'Half-life (h)',
+  },
+  // 예시: 나중에 Vd를 추가하고 싶다면 아래 한 줄만 추가하면 끝입니다.
+  // { key: 'Vd', displayName: 'Vd' }
+];
 
 const UI = {
   // --- 공용 및 일반 UI ---
@@ -384,9 +416,10 @@ const UI = {
 
     const selectedCompartments = [...DOM.simulation.compartmentsMenu.querySelectorAll(".sim-comp-checkbox:checked")].map(e => e.value);
     const traces = [];
+    const threshold = parseFloat(DOM.toolbar.simThreshold.value) || 0.000000001;
 
     selectedCompartments.forEach(compName => {
-      if (profileData[compName]) traces.push({ x: profileData.Time, y: maskLowValues(profileData[compName], threshold=0.000000001), mode: "lines", name: compName });
+      if (profileData[compName]) traces.push({ x: profileData.Time, y: maskLowValues(profileData[compName], threshold), mode: "lines", name: compName });
     });
 
     State.observations.filter(o => o.selected).forEach(obs => {
@@ -420,29 +453,51 @@ const UI = {
    * PK 파라미터 요약 정보를 테이블로 표시합니다.
    */
   displayPKSummary(pkData) {
-    const { pkSummaryContainer, pkSummaryPlaceholder } = DOM.results;
-    if (!pkSummaryContainer || !pkData) return;
-    
-    // [수정] pkData 변수 재선언 오류 수정
-    const dataArray = Array.isArray(pkData) ? pkData : Object.entries(pkData).map(([comp, metrics]) => ({ compartment: comp, ...metrics }));
+      const { pkSummaryContainer, pkSummaryPlaceholder } = DOM.results;
+      if (!pkSummaryContainer || !pkData) return;
 
-    if (dataArray.length === 0) {
-      pkSummaryContainer.innerHTML = `<div class="placeholder-text">No PK summary data.</div>`;
-      return;
-    }
-    const rows = dataArray.map(entry => `
-      <tr>
-        <td>${entry.compartment || 'N/A'}</td>
-        <td>${entry.Cmax?.toPrecision(4) ?? "-"}</td><td>${entry.Tmax?.toPrecision(4) ?? "-"}</td>
-        <td>${entry.AUC_last?.toPrecision(4) ?? entry.AUC?.toPrecision(4) ?? "-"}</td>
-        <td>${entry.HL_half_life?.toPrecision(4) ?? "-"}</td>
-      </tr>`).join("");
-    pkSummaryContainer.innerHTML = `<div class="table-responsive"><table class="table table-sm table-hover"><thead><tr>
-        <th>Compartment</th><th>C<sub>max</sub></th><th>T<sub>max</sub> (h)</th>
-        <th>AUC<sub>last</sub></th><th>Half-life (h)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      const dataArray = Array.isArray(pkData) ? pkData : Object.entries(pkData).map(([comp, metrics]) => ({ compartment: comp, ...metrics }));
 
-    pkSummaryPlaceholder.style.display = "none";
-    pkSummaryContainer.style.display = "block";
+      if (dataArray.length === 0) {
+        pkSummaryContainer.innerHTML = `<div class="placeholder-text">No PK summary data.</div>`;
+        return;
+      }
+
+      // --- [핵심 변경 로직 시작] ---
+
+      // 1. 설정을 기반으로 동적으로 테이블 헤더 생성
+      const headers = ['<th>Compartment</th>'] // 첫 번째 컬럼은 고정
+        .concat(PK_TABLE_CONFIG.map(col => `<th>${col.displayName}</th>`))
+        .join('');
+
+      // 2. 각 데이터 행에 대해, 설정을 기반으로 동적으로 데이터 셀(<td>) 생성
+      const rows = dataArray.map((entry) => {
+        const compartmentCell = `<td>${entry.compartment || 'N/A'}</td>`;
+        
+        const valueCells = PK_TABLE_CONFIG.map(col => {
+          const value = entry[col.key]; // 설정의 key를 사용해 데이터 값 조회
+          const formattedValue = typeof value === 'number' ? value.toPrecision(4) : "-";
+          return `<td>${formattedValue}</td>`;
+        }).join('');
+        
+        return `<tr>${compartmentCell}${valueCells}</tr>`;
+      }).join("");
+
+      // --- [핵심 변경 로직 끝] ---
+
+      // 3. 최종 HTML 조합
+      pkSummaryContainer.innerHTML = `
+        <div class="table-responsive">
+          <table class="table table-sm table-hover"> 
+            <thead class="table-light">
+              <tr>${headers}</tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+
+      pkSummaryPlaceholder.style.display = "none";
+      pkSummaryContainer.style.display = "block";
   },
   
   // --- 피팅 모달 (Fitting Modal) 관련 UI ---
@@ -740,6 +795,39 @@ function maskLowValues(arr, threshold = 0.000000001) {
   return arr.map(v => (v < threshold ? null : v));
 } 
 
+/**
+ * 데이터를 CSV 형식으로 변환하여 다운로드합니다.
+ * @param {object} data - { Time: [...], C: [...] } 형태의 데이터 객체
+ * @param {string} filename - 다운로드될 파일의 이름
+ */
+function exportDataToCsv(data, filename) {
+  const headers = Object.keys(data);
+  const numRows = data[headers[0]].length;
+  
+  // 1. CSV 헤더 생성 (e.g., "Time", "C", "P")
+  let csvContent = headers.join(",") + "\r\n";
+
+  // 2. 데이터 행 생성
+  for (let i = 0; i < numRows; i++) {
+    const row = headers.map(header => data[header][i]);
+    csvContent += row.join(",") + "\r\n";
+  }
+
+  // 3. 파일 다운로드 실행
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+}
+
 const Handlers = {
   // --- 사이드바 및 공용 핸들러 ---
 
@@ -880,6 +968,7 @@ const Handlers = {
       const response = await API.simulate(payload);
 
       if (response.status === "ok") {
+        State.latestSimulationResult = response.data.profile;
         UI.plotSimulationResult(response.data.profile, DOM.toolbar.logScaleCheckbox.checked);
         UI.displayPKSummary(response.data.pk);
       }
@@ -890,6 +979,18 @@ const Handlers = {
       State.isSimulating = false;
       UI.setLoading(DOM.toolbar.simulateBtn, false);
     }
+  },
+
+  /**
+   * Export CSV
+   */
+  handleExportCsvClick() {
+    if (!State.latestSimulationResult) {
+      alert("Please run a simulation first to export results.");
+      return;
+    }
+    // 내보내기 헬퍼 함수 호출
+    exportDataToCsv(State.latestSimulationResult, "simulation_results.csv");
   },
 
   // --- 피팅 관련 핸들러 ---
@@ -1116,7 +1217,10 @@ const App = {
     DOM.sidebar.doseListContainer.addEventListener('click', Handlers.handleDoseListClick); // 이벤트 위임
 
     // --- 메인 툴바 이벤트 바인딩 ---
+    DOM.toolbar.logScaleCheckbox.addEventListener('change', Handlers.handleThresholdChange); // Log Y 체크 시에도 다시 그리기
+    DOM.toolbar.simThreshold.addEventListener('change', Handlers.handleThresholdChange); // [추가] Threshold 변경 시 다시 그리기
     DOM.toolbar.simulateBtn.addEventListener('click', Handlers.handleSimulateClick);
+    DOM.toolbar.exportCsvBtn.addEventListener('click', Handlers.handleExportCsvClick);
     DOM.toolbar.fitBtn.addEventListener('click', Handlers.handleFitBtnClick);
 
     // --- 시뮬레이션 구획 선택 이벤트 바인딩 ---

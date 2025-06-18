@@ -10,9 +10,10 @@ class PKAnalyzer:
     A class to compute PK parameters from time-concentration data.
     """
 
-    def __init__(self, time: np.ndarray, concentration: np.ndarray):
+    def __init__(self, time: np.ndarray, concentration: np.ndarray, dose: float = 0):
         self.time = time
         self.conc = concentration
+        self.dose = dose
 
     def cmax(self) -> float:
         return float(np.max(self.conc))
@@ -20,8 +21,14 @@ class PKAnalyzer:
     def tmax(self) -> float:
         return float(self.time[np.argmax(self.conc)])
 
-    def auc(self) -> float:
+    def auc_last(self) -> float:
         return float(np.trapezoid(self.conc, self.time))
+
+    def clearance(self) -> float:
+        auc = self.auc_last()
+        if self.dose > 0 and auc > 0:
+            return self.dose / auc
+        return np.nan
 
     def half_life(self) -> float:
         """
@@ -49,12 +56,13 @@ class PKAnalyzer:
         return {
             "Cmax": round(self.cmax(), 4),
             "Tmax": round(self.tmax(), 4),
-            "AUC": round(self.auc(), 4),
+            "AUC": round(self.auc_last(), 4),
+            "Clearance": round(self.clearance(), 4) if not np.isnan(self.clearance()) else np.nan,
             "Half-life": self.half_life()
         }
 
 
-def analyze_pk(df: pd.DataFrame, compartments: list) -> Dict[str, Dict[str, float]]:
+def analyze_pk(df: pd.DataFrame, compartments: list, total_dose: float) -> Dict[str, Dict[str, float]]:
     """
     Analyze PK parameters for each compartment using PKAnalyzer.
 
@@ -75,7 +83,7 @@ def analyze_pk(df: pd.DataFrame, compartments: list) -> Dict[str, Dict[str, floa
 
     for comp in compartments:
         conc = df[comp].to_numpy()
-        analyzer = PKAnalyzer(time, conc)
+        analyzer = PKAnalyzer(time, conc, total_dose)
         results[comp] = analyzer.analyze_all()
 
     return clean_pk_summary(results)
