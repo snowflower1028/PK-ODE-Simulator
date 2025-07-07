@@ -19,6 +19,7 @@ const State = {
   // 5. 시뮬레이션 프로세스 관련 상태
   isSimulating: false,        // 현재 시뮬레이션이 진행 중인지 여부를 나타내는 플래그
   latestSimulationResult: null, // 마지막 시뮬레이션 결과를 저장하는 변수
+  latestPKSummary: null, // 마지막 PK 요약 결과를 저장하는 변수
 };
 
 /** ----- DOM 구획 ----- **/
@@ -40,13 +41,12 @@ const DOM = {
   toolbar: {
     simStartTime: document.getElementById("sim-start-time"),
     simEndTime: document.getElementById("sim-end-time"),
-    simSteps: document.getElementById("sim-steps"),
-    simThreshold: document.getElementById("sim-threshold"),
     logScaleCheckbox: document.getElementById("log-scale"),
     openObsDataBtn: document.querySelector("button[data-bs-target='#obsPanel']"),
     fitBtn: document.getElementById("fit-btn"),
     exportCsvBtn: document.getElementById("export-csv-btn"),
     simulateBtn: document.getElementById("simulate-btn"),
+    simOptionsBtn: document.getElementById("sim-options-btn"),
   },
   
   simulation: {
@@ -61,6 +61,9 @@ const DOM = {
     pkSummaryPlaceholder: document.getElementById("pk-summary-placeholder"),
     fitSummaryCard: document.getElementById("fit-summary-card"),
     fitSummaryContainer: document.getElementById("fit-summary"),
+    exportProfileBtn: document.getElementById("export-profile-btn"),
+    exportSummaryBtn: document.getElementById("export-summary-btn"),
+    exportPlotBtn: document.getElementById("export-plot-btn"),
   },
 
   // --- 모달 (Modals) & 오프캔버스 (Offcanvas) ---
@@ -949,6 +952,9 @@ const Handlers = {
     State.isSimulating = true;
     UI.setLoading(DOM.toolbar.simulateBtn, true);
 
+    const stepsInput = document.getElementById('popover-sim-steps');
+    const thresholdInput = document.getElementById('popover-sim-threshold');
+
     try {
       const payload = {
         equations: DOM.sidebar.odeInput.value.trim(),
@@ -958,7 +964,7 @@ const Handlers = {
         doses: State.doseList,
         t_start: +DOM.toolbar.simStartTime.value,
         t_end: +DOM.toolbar.simEndTime.value,
-        t_steps: +DOM.toolbar.simSteps.value,
+        t_steps: stepsInput ? +stepsInput.value : 200, // 기본값 200
       };
 
       // 파라미터 및 초기값 수집
@@ -969,6 +975,7 @@ const Handlers = {
 
       if (response.status === "ok") {
         State.latestSimulationResult = response.data.profile;
+        State.latestPKSummary = response.data.pk;
         UI.plotSimulationResult(response.data.profile, DOM.toolbar.logScaleCheckbox.checked);
         UI.displayPKSummary(response.data.pk);
       }
@@ -982,15 +989,37 @@ const Handlers = {
   },
 
   /**
-   * Export CSV
+   * Export handlers
    */
-  handleExportCsvClick() {
+  handleExportProfileClick() {
     if (!State.latestSimulationResult) {
       alert("Please run a simulation first to export results.");
       return;
     }
     // 내보내기 헬퍼 함수 호출
     exportDataToCsv(State.latestSimulationResult, "simulation_results.csv");
+  },
+
+  handleExportSummaryClick() {
+    if (!State.latestPKSummary) {
+      alert("Please run a simulation first to export the summary.");
+      return;
+    }
+    exportSummaryToCsv(State.latestPkSummary, "pk_summary.csv");
+  },
+
+  handleExportPlotClick() {
+    if (!State.latestSimulationResult) {
+      alert("Please run a simulation first to export the plot.");
+      return;
+    }
+    // Plotly 내장 기능 사용
+    Plotly.downloadImage(DOM.results.plotContainer, {
+      format: 'png',
+      width: 1200,
+      height: 800,
+      filename: 'simulation_plot'
+    });
   },
 
   // --- 피팅 관련 핸들러 ---
@@ -1201,6 +1230,20 @@ const App = {
    */
   init() {
     console.log("Application initializing...");
+
+    // Popover 기동
+    const popoverTriggerEl = document.getElementById('sim-options-btn');
+    if (popoverTriggerEl) {
+      new bootstrap.Popover(popoverTriggerEl, {
+        container: 'body',
+        html: true,
+        placement: 'bottom',
+        sanitize: false, // HTML 콘텐츠(form 등)를 허용하기 위해 필수
+        title: 'Advanced Simulation Settings',
+        content: () => document.getElementById('popover-content-wrapper').innerHTML
+      });
+    }
+
     this._bindEvents();
     this._initialRender();
   },
@@ -1218,9 +1261,7 @@ const App = {
 
     // --- 메인 툴바 이벤트 바인딩 ---
     DOM.toolbar.logScaleCheckbox.addEventListener('change', Handlers.handleThresholdChange); // Log Y 체크 시에도 다시 그리기
-    DOM.toolbar.simThreshold.addEventListener('change', Handlers.handleThresholdChange); // [추가] Threshold 변경 시 다시 그리기
     DOM.toolbar.simulateBtn.addEventListener('click', Handlers.handleSimulateClick);
-    DOM.toolbar.exportCsvBtn.addEventListener('click', Handlers.handleExportCsvClick);
     DOM.toolbar.fitBtn.addEventListener('click', Handlers.handleFitBtnClick);
 
     // --- 시뮬레이션 구획 선택 이벤트 바인딩 ---
@@ -1236,6 +1277,11 @@ const App = {
     DOM.modals.fittingSettings.addGroupBtn.addEventListener('click', Handlers.handleAddFittingGroupClick);
     DOM.modals.fittingSettings.groupsContainer.addEventListener('click', Handlers.handleFittingGroupEvents); // 이벤트 위임
     DOM.modals.fittingSettings.startBtn.addEventListener('click', () => Handlers.handleStartFittingClick());
+
+    // --- Export 버튼 이벤트 바인딩 ---
+    DOM.toolbar.exportProfileBtn.addEventListener('click', Handlers.handleExportProfileClick);
+    DOM.toolbar.exportSummaryBtn.addEventListener('click', Handlers.handleExportSummaryClick);
+    DOM.toolbar.exportPlotBtn.addEventListener('click', Handlers.handleExportPlotClick);
   },
 
   /**
