@@ -254,7 +254,7 @@ def solve_ode_system_old(
                         if t0 <= t <= t1:
                             dy[idx] += amount / duration
                             break
-
+                            
         return dy
 
     sol = solve_ivp(

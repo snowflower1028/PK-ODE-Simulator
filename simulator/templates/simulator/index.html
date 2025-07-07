@@ -92,31 +92,28 @@
 
   <main class="main-content">
     <div class="main-toolbar">
-        <div class="simulation-settings-compact">
-            <label class="form-label mb-0 me-1" for="sim-start-time" title="Start Time (h)"><i class="bi bi-clock"></i></label>
-            <input id="sim-start-time" type="number" class="form-control" value="0" step="0.1" title="Start Time (h)">
-            <label class="form-label mb-0 me-1 ms-2" for="sim-end-time" title="End Time (h)"><i class="bi bi-clock-fill"></i></label>
-            <input id="sim-end-time" type="number" class="form-control" value="48" step="0.1" title="End Time (h)">
-            <div class="d-flex align-items-center ms-3" title="Plotting Threshold (values below this will not be shown)">
-                <label class="form-label mb-0 me-1" for="sim-threshold"><i class="bi bi-filter-circle"></i></label>
-                <input id="sim-threshold" type="number" class="form-control" value="1e-9" step="any">
-            </div>
-            <label class="form-label mb-0 me-1 ms-2" for="sim-steps" title="# Time Points"><i class="bi bi-bar-chart-steps"></i></label>
-            <input id="sim-steps" type="number" class="form-control" value="200" min="10" max="1000" title="# Time Points">
-            
-            <div class="form-check form-switch ms-3" title="Use log scale for Y-axis">
-              <input class="form-check-input" type="checkbox" id="log-scale">
-              <label class="form-check-label small" for="log-scale">Log Y</label>
-            </div>
-        </div>
-        <div class="action-buttons">
-          <button class="btn btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#obsPanel" title="Observed Data">
-            <i class="bi bi-file-earmark-arrow-down"></i> Data
+      <div class="simulation-settings-compact">
+          <label class="form-label mb-0 me-1" for="sim-start-time" title="Start Time (h)"><i class="bi bi-clock"></i></label>
+          <input id="sim-start-time" type="number" class="form-control" value="0" step="0.1" title="Start Time (h)">
+          <label class="form-label mb-0 me-1 ms-2" for="sim-end-time" title="End Time (h)"><i class="bi bi-clock-fill"></i></label>
+          <input id="sim-end-time" type="number" class="form-control" value="48" step="0.1" title="End Time (h)">
+
+          <button id="sim-options-btn" type="button" class="btn btn-sm btn-outline-secondary ms-3" title="Advanced Settings" data-bs-trigger="focus" tabindex="0">
+              <i class="bi bi-gear-fill"></i>
           </button>
-          <button id="fit-btn" class="btn btn-warning"><i class="bi bi-tools"></i> Fit Parameters</button>
-          <button id="export-csv-btn" class="btn btn-outline-success"><i class="bi bi-download"></i> Export CSV</button>
-          <button id="simulate-btn" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</button>
-        </div>
+
+          <div class="form-check form-switch ms-2" title="Use log scale for Y-axis">
+            <input class="form-check-input" type="checkbox" id="log-scale">
+            <label class="form-check-label small" for="log-scale">Log Y</label>
+          </div>
+      </div>
+      <div class="action-buttons">
+        <button class="btn btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#obsPanel" title="Observed Data">
+          <i class="bi bi-file-earmark-arrow-down"></i> Data
+        </button>
+        <button id="fit-btn" class="btn btn-warning"><i class="bi bi-tools"></i> Fit Parameters</button>
+        <button id="simulate-btn" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</button>
+      </div>
     </div>
 
     <div class="main-scrollable-area">
@@ -162,6 +159,25 @@
             <h5 class="card-title"><i class="bi bi-sliders2-vertical"></i> Fitted Parameters</h5>
             <div id="fit-summary"></div>
           </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-box-arrow-down"></i> Exports & Reports</h5>
+        <p class="card-text text-muted small">
+          Export your simulation results and plots for presentations or further analysis.
+        </p>
+        <div class="d-flex flex-wrap gap-2">
+          <button id="export-profile-btn" class="btn btn-outline-secondary">
+            <i class="bi bi-file-earmark-spreadsheet"></i> Export Profile (CSV)
+          </button>
+          <button id="export-summary-btn" class="btn btn-outline-secondary">
+            <i class="bi bi-table"></i> Export Summary (CSV)
+          </button>
+          <button id="export-plot-btn" class="btn btn-outline-secondary">
+            <i class="bi bi-image"></i> Export Plot (PNG)
+          </button>
         </div>
       </div>
     </div>
@@ -270,6 +286,21 @@
               </div>
       </div>
   </div>
+
+  <!-- Popover content for simulation settings -->
+  <div id="popover-content-wrapper" class="d-none">
+  <div class="popover-form-container">
+    <div class="mb-2">
+      <label for="popover-sim-steps" class="form-label small"># Time Points</label>
+      <input id="popover-sim-steps" type="number" class="form-control form-control-sm" value="200" min="10" max="1000">
+    </div>
+    <div>
+      <label for="popover-sim-threshold" class="form-label small">Threshold</label>
+      <input id="popover-sim-threshold" type="number" class="form-control form-control-sm" value="1e-9" step="any">
+    </div>
+  </div>
+</div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer></script>
 </body>
 </html>
