@@ -44,7 +44,6 @@ const DOM = {
     logScaleCheckbox: document.getElementById("log-scale"),
     openObsDataBtn: document.querySelector("button[data-bs-target='#obsPanel']"),
     fitBtn: document.getElementById("fit-btn"),
-    exportCsvBtn: document.getElementById("export-csv-btn"),
     simulateBtn: document.getElementById("simulate-btn"),
     simOptionsBtn: document.getElementById("sim-options-btn"),
   },
@@ -419,10 +418,10 @@ const UI = {
 
     const selectedCompartments = [...DOM.simulation.compartmentsMenu.querySelectorAll(".sim-comp-checkbox:checked")].map(e => e.value);
     const traces = [];
-    const threshold = parseFloat(DOM.toolbar.simThreshold.value) || 0.000000001;
+    const thresholdInput = document.getElementById('popover-sim-threshold');
 
     selectedCompartments.forEach(compName => {
-      if (profileData[compName]) traces.push({ x: profileData.Time, y: maskLowValues(profileData[compName], threshold), mode: "lines", name: compName });
+      if (profileData[compName]) traces.push({ x: profileData.Time, y: maskLowValues(profileData[compName], thresholdInput.value), mode: "lines", name: compName });
     });
 
     State.observations.filter(o => o.selected).forEach(obs => {
@@ -953,7 +952,6 @@ const Handlers = {
     UI.setLoading(DOM.toolbar.simulateBtn, true);
 
     const stepsInput = document.getElementById('popover-sim-steps');
-    const thresholdInput = document.getElementById('popover-sim-threshold');
 
     try {
       const payload = {
