@@ -19,6 +19,9 @@
       <textarea id="ode-input" class="form-control mb-2" rows="6" placeholder="e.g. dCdt = -kel*C"></textarea>
       <div class="d-flex gap-2"> 
         <button id="parse-btn" class="btn btn-sm btn-outline-secondary">🔍 Parse</button>
+        <button id="edit-symbols-btn" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editSymbolsModal" disabled>
+            <i class="bi bi-pencil-square"></i> Edit Symbols
+        </button>
         <button id="show-processed-btn" class="btn btn-sm btn-outline-info">📄 Show Processed ODEs</button>
       </div>
     </section>
@@ -38,6 +41,12 @@
             <div class="placeholder-text">Parse ODEs to set parameters.</div>
           </div>
         </div>
+      </div>
+      <div class="derived-variables-section mt-3">
+          <h3 class="subsection-title">Derived Variables</h3>
+          <div id="derived-values">
+              <div class="placeholder-text small">No derived variables found.</div>
+          </div>
       </div>
     </section>
 
@@ -72,116 +81,172 @@
             <input type="number" id="duration" name="duration" class="form-control form-control-sm" step="any">
           </div>
         </div>
-        <div class="row">
-          <div class="col-6 mb-2">
-            <label class="form-label">Repeat every (h)</label>
-            <input type="number" id="repeat_every" name="repeat_every" class="form-control form-control-sm" step="any">
-          </div>
-          <div class="col-6 mb-2">
-            <label class="form-label">Repeat until (h)</label>
-            <input type="number" id="repeat_until" name="repeat_until" class="form-control form-control-sm" step="any">
-          </div>
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="repeat-dose-toggle">
+          <label class="form-check-label" for="repeat-dose-toggle">
+            Set up repeat dosing
+          </label>
         </div>
+
+        <div id="repeat-dose-fields" style="display:none;">
+            <div class="row">
+              <div class="col-6 mb-2">
+                <label class="form-label">Repeat every (h)</label>
+                <input type="number" id="repeat_every" name="repeat_every" class="form-control form-control-sm" step="any">
+              </div>
+              <div class="col-6 mb-2">
+                <label class="form-label">Repeat until (h)</label>
+                <input type="number" id="repeat_until" name="repeat_until" class="form-control form-control-sm" step="any">
+              </div>
+            </div>
+        </div>
+
         <button type="submit" class="btn btn-primary w-100 mt-2">➕ Add Dose</button>
       </form>
       <h3 class="subsection-title mt-3">Registered Doses</h3>
-      <div id="dose-list" class="table-responsive">
+      <div id="dose-list" class="dose-list-container">
         </div>
     </section>
   </aside>
 
-  <main class="main-content">
-    <div class="main-toolbar">
-      <div class="simulation-settings-compact">
-          <label class="form-label mb-0 me-1" for="sim-start-time" title="Start Time (h)"><i class="bi bi-clock"></i></label>
-          <input id="sim-start-time" type="number" class="form-control" value="0" step="0.1" title="Start Time (h)">
-          <label class="form-label mb-0 me-1 ms-2" for="sim-end-time" title="End Time (h)"><i class="bi bi-clock-fill"></i></label>
-          <input id="sim-end-time" type="number" class="form-control" value="48" step="0.1" title="End Time (h)">
+<main class="main-content">
+  <div class="main-toolbar">
+    <div class="simulation-settings-compact">
+        <label class="form-label mb-0 me-1" for="sim-start-time" title="Start Time (h)"><i class="bi bi-clock"></i></label>
+        <input id="sim-start-time" type="number" class="form-control" value="0" step="0.1" title="Start Time (h)">
+        <label class="form-label mb-0 me-1 ms-2" for="sim-end-time" title="End Time (h)"><i class="bi bi-clock-fill"></i></label>
+        <input id="sim-end-time" type="number" class="form-control" value="48" step="0.1" title="End Time (h)">
 
-          <button id="sim-options-btn" type="button" class="btn btn-sm btn-outline-secondary ms-3" title="Advanced Settings" data-bs-trigger="focus" tabindex="0">
-              <i class="bi bi-gear-fill"></i>
+        <div class="dropdown ms-3">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="advanced-settings-dropdown" data-bs-toggle="dropdown" aria-expanded="false">
+            More
           </button>
-
-          <div class="form-check form-switch ms-2" title="Use log scale for Y-axis">
-            <input class="form-check-input" type="checkbox" id="log-scale">
-            <label class="form-check-label small" for="log-scale">Log Y</label>
+          <div class="dropdown-menu dropdown-menu-end p-3 shadow-sm border-0" aria-labelledby="advanced-settings-dropdown" style="width: 260px;">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <label for="dropdown-sim-steps" class="form-label form-label-sm mb-0"># Time Points</label>
+              <input id="dropdown-sim-steps" type="number" class="form-control form-control-sm" value="200" min="10" max="1000" style="width: 80px;">
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+              <label for="dropdown-sim-threshold" class="form-label form-label-sm mb-0">Threshold</label>
+              <input id="dropdown-sim-threshold" type="number" class="form-control form-control-sm" value="1e-9" step="any" style="width: 80px;">
+            </div>
           </div>
-      </div>
-      <div class="action-buttons">
-        <button class="btn btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#obsPanel" title="Observed Data">
-          <i class="bi bi-file-earmark-arrow-down"></i> Data
-        </button>
-        <button id="fit-btn" class="btn btn-warning"><i class="bi bi-tools"></i> Fit Parameters</button>
-        <button id="simulate-btn" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</button>
+        </div>
+        <div class="form-check form-switch ms-2" title="Use log scale for Y-axis">
+          <input class="form-check-input" type="checkbox" id="log-scale">
+          <label class="form-check-label small" for="log-scale">Log Y</label>
+        </div>
+    </div>
+    <div class="action-buttons">
+      <button class="btn btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#obsPanel" title="Observed Data">
+        <i class="bi bi-file-earmark-arrow-down"></i> Data
+      </button>
+      <button id="fit-btn" class="btn btn-warning"><i class="bi bi-tools"></i> Fit Parameters</button>
+      <button id="simulate-btn" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</button>
+    </div>
+  </div>
+
+  <div class="main-scrollable-area">
+    <div class="mb-3">
+        <label class="form-label small">Simulate Compartments:</label>
+        <div class="d-flex align-items-start">
+            <div class="dropdown me-2" style="width:auto;">
+                <button class="btn dropdown-toggle" data-bs-toggle="dropdown" style="min-width: 180px;">
+                    Select Compartments
+                </button>
+                <ul class="dropdown-menu" id="sim-compartments-menu">
+                </ul>
+            </div>
+            <div id="selected-comp-badges" class="form-control selected-badges-container">
+                </div>
+          </div>
+        <small class="text-muted d-block mt-1">Multiple selections supported</small>
+    </div>
+
+    <div class="card"> 
+      <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-graph-up"></i> Simulation Result</h5>
+        <div id="plot-placeholder" class="text-center py-5 text-muted">
+          <i class="bi bi-graph-up" style="font-size:2rem;"></i><br> Run simulation to see results.
+        </div>
+        <div id="plot" style="display:none;"></div>
       </div>
     </div>
 
-    <div class="main-scrollable-area">
-      <div class="mb-3">
-          <label class="form-label small">Simulate Compartments:</label>
-          <div class="d-flex align-items-start">
-              <div class="dropdown me-2" style="width:auto;">
-                  <button class="btn dropdown-toggle" data-bs-toggle="dropdown" style="min-width: 180px;">
-                      Select Compartments
-                  </button>
-                  <ul class="dropdown-menu" id="sim-compartments-menu">
-                  </ul>
-              </div>
-              <div id="selected-comp-badges" class="form-control selected-badges-container">
-                  </div>
-            </div>
-          <small class="text-muted d-block mt-1">Multiple selections supported</small>
-      </div>
-
+    <div class="results-grid"> 
       <div class="card"> 
         <div class="card-body">
-          <h5 class="card-title"><i class="bi bi-graph-up"></i> Simulation Result</h5>
-          <div id="plot-placeholder" class="text-center py-5 text-muted">
-            <i class="bi bi-graph-up" style="font-size:2rem;"></i><br> Run simulation to see results.
+          <h5 class="card-title"><i class="bi bi-card-list"></i> PK Profile Summary</h5>
+          <div id="pk-summary-placeholder" class="text-center py-5 text-muted">
+            <i class="bi bi-bar-chart-line" style="font-size:2rem;"></i><br> Summary will appear here.
           </div>
-          <div id="plot" style="display:none;"></div>
+          <div id="pk-summary" style="display:none;"></div>
         </div>
       </div>
 
-      <div class="results-grid"> 
-        <div class="card"> 
-          <div class="card-body">
-            <h5 class="card-title"><i class="bi bi-card-list"></i> PK Profile Summary</h5>
-            <div id="pk-summary-placeholder" class="text-center py-5 text-muted">
-              <i class="bi bi-bar-chart-line" style="font-size:2rem;"></i><br> Summary will appear here.
-            </div>
-            <div id="pk-summary" style="display:none;"></div>
-          </div>
-        </div>
-
-        <div class="card" id="fit-summary-card" style="display:none;"> 
-          <div class="card-body">
-            <h5 class="card-title"><i class="bi bi-sliders2-vertical"></i> Fitted Parameters</h5>
-            <div id="fit-summary"></div>
-          </div>
+      <div class="card" id="fit-summary-card" style="display:none;"> 
+        <div class="card-body">
+          <h5 class="card-title"><i class="bi bi-sliders2-vertical"></i> Fitted Parameters</h5>
+          <div id="fit-summary"></div>
         </div>
       </div>
     </div>
+
     <div class="card">
       <div class="card-body">
-        <h5 class="card-title"><i class="bi bi-box-arrow-down"></i> Exports & Reports</h5>
-        <p class="card-text text-muted small">
-          Export your simulation results and plots for presentations or further analysis.
-        </p>
-        <div class="d-flex flex-wrap gap-2">
-          <button id="export-profile-btn" class="btn btn-outline-secondary">
-            <i class="bi bi-file-earmark-spreadsheet"></i> Export Profile (CSV)
-          </button>
-          <button id="export-summary-btn" class="btn btn-outline-secondary">
-            <i class="bi bi-table"></i> Export Summary (CSV)
-          </button>
-          <button id="export-plot-btn" class="btn btn-outline-secondary">
-            <i class="bi bi-image"></i> Export Plot (PNG)
-          </button>
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <h5 class="card-title mb-1"><i class="bi bi-box-arrow-down"></i> Exports & Reports</h5>
+            <p class="card-text text-muted small mb-0">
+              Export your simulation results and plots for presentations or further analysis.
+            </p>
+          </div>
+          <div class="d-flex gap-2">
+            <button id="export-profile-btn" class="btn btn-sm btn-outline-success">
+              <i class="bi bi-file-earmark-spreadsheet me-1"></i> Profile (CSV)
+            </button>
+            <button id="export-summary-btn" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-table me-1"></i> Summary (CSV)
+            </button>
+            <button id="export-plot-btn" class="btn btn-sm btn-dark">
+              <i class="bi bi-image me-1"></i> Plot (PNG)
+            </button>
+          </div>
         </div>
       </div>
     </div>
-  </main>
+  </div>
+</main>
+
+  <div class="modal fade" id="editSymbolsModal" tabindex="-1" aria-labelledby="editSymbolsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editSymbolsModalLabel"><i class="bi bi-pencil-square"></i> Edit Symbol Roles</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">The parser automatically classifies symbols based on ODE syntax. You can manually re-classify them here if needed. Drag symbols between lists to change their role.</p>
+          <div class="row">
+            <div class="col-md-6">
+              <h6><i class="bi bi-box-seam"></i> Compartments (State Variables)</h6>
+              <div id="modal-compartments-list" class="symbol-list">
+                </div>
+            </div>
+            <div class="col-md-6">
+              <h6><i class="bi bi-sliders"></i> Parameters</h6>
+              <div id="modal-parameters-list" class="symbol-list">
+                </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" id="save-symbol-changes-btn" class="btn btn-primary">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="modal fade" id="processedModal" tabindex="-1"> <div class="modal-dialog modal-lg"> <div class="modal-content"> <div class="modal-header"> <h5 class="modal-title">📄 Processed ODEs</h5> <button class="btn-close" data-bs-dismiss="modal"></button> </div> <div class="modal-body" id="modal-body"></div> </div> </div> </div>
   <div class="modal fade" id="fittingSettingsModal" tabindex="-1" aria-labelledby="fittingSettingsModalLabel" aria-hidden="true">
@@ -286,21 +351,6 @@
               </div>
       </div>
   </div>
-
-  <!-- Popover content for simulation settings -->
-  <div id="popover-content-wrapper" class="d-none">
-  <div class="popover-form-container">
-    <div class="mb-2">
-      <label for="popover-sim-steps" class="form-label small"># Time Points</label>
-      <input id="popover-sim-steps" type="number" class="form-control form-control-sm" value="200" min="10" max="1000">
-    </div>
-    <div>
-      <label for="popover-sim-threshold" class="form-label small">Threshold</label>
-      <input id="popover-sim-threshold" type="number" class="form-control form-control-sm" value="1e-9" step="any">
-    </div>
-  </div>
-</div>
-
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer></script>
 </body>
 </html>

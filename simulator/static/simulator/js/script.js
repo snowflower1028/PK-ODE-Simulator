@@ -28,9 +28,11 @@ const DOM = {
   sidebar: {
     odeInput: document.getElementById("ode-input"),
     parseBtn: document.getElementById("parse-btn"),
+    editSymbolsBtn: document.getElementById("edit-symbols-btn"),
     showProcessedBtn: document.getElementById("show-processed-btn"),
     initValuesContainer: document.getElementById("init-values"),
     paramValuesContainer: document.getElementById("param-values"),
+    derivedValuesContainer: document.getElementById("derived-values"),
     doseForm: document.getElementById("dose-form"),
     doseListContainer: document.getElementById("dose-list"),
     doseTypeSelect: document.getElementById("type"),
@@ -45,7 +47,6 @@ const DOM = {
     openObsDataBtn: document.querySelector("button[data-bs-target='#obsPanel']"),
     fitBtn: document.getElementById("fit-btn"),
     simulateBtn: document.getElementById("simulate-btn"),
-    simOptionsBtn: document.getElementById("sim-options-btn"),
   },
   
   simulation: {
@@ -67,6 +68,12 @@ const DOM = {
 
   // --- 모달 (Modals) & 오프캔버스 (Offcanvas) ---
   modals: {
+    editSymbols: {
+      element: document.getElementById("editSymbolsModal"),
+      compartmentsList: document.getElementById("modal-compartments-list"),
+      parametersList: document.getElementById("modal-parameters-list"),
+      saveBtn: document.getElementById("save-symbol-changes-btn"),
+    },
     processedOde: {
       element: document.getElementById("processedModal"),
       body: document.getElementById("modal-body"),
@@ -242,12 +249,13 @@ const UI = {
    */
   renderSymbolInputs() {
     const { compartments, parameters, derivedExpressions } = State;
-    const { initValuesContainer, paramValuesContainer, doseForm } = DOM.sidebar;
-    const { compartmentsMenu } = DOM.simulation; // [추가] 시뮬레이션 메뉴 DOM 요소
+    const { initValuesContainer, paramValuesContainer, derivedValuesContainer, doseForm } = DOM.sidebar;
+    const { compartmentsMenu } = DOM.simulation;
     const compartmentSelect = doseForm.querySelector('#compartment');
 
     initValuesContainer.innerHTML = "";
     paramValuesContainer.innerHTML = "";
+    derivedValuesContainer.innerHTML = "";
     compartmentSelect.innerHTML = "";
     compartmentsMenu.innerHTML = ""; // [추가] 메뉴 초기화
 
@@ -258,16 +266,20 @@ const UI = {
           <label for="init_${c}" class="form-label mb-0 me-2 text-end" style="width:70px;">${c}(0):</label>
           <input type="number" step="any" value="0" id="init_${c}" name="init_${c}" class="form-control form-control-sm">
         </div>`).join("");
-      
+
       // 투여(Dosing) 구획 드롭다운 채우기
       compartmentSelect.innerHTML = compartments.map(c => `<option value="${c}">${c}</option>`).join("");
 
       // 시뮬레이션 구획 선택 메뉴(체크박스) 렌더링
-      compartmentsMenu.innerHTML = compartments.map(c => `
+      // 1. 플로팅 가능한 전체 변수 목록 생성
+      const plottableVariables = [...compartments, ...Object.keys(derivedExpressions)];  // Compartments와 Derived Expressions의 키 merge
+      
+      // 2. 시뮬레이션 구획 선택 메뉴(체크박스)를 전체 변수 목록으로 렌더링
+      compartmentsMenu.innerHTML = plottableVariables.map(variable => `
         <li>
           <label class="dropdown-item py-1">
-            <input type="checkbox" class="form-check-input me-2 sim-comp-checkbox" value="${c}" checked>
-            ${c}
+            <input type="checkbox" class="form-check-input me-2 sim-comp-checkbox" value="${variable}" checked>
+            ${variable}
           </label>
         </li>`).join("");
 
@@ -283,18 +295,49 @@ const UI = {
           <label for="param_${p}" class="form-label mb-0 me-2 text-end" style="width:70px;">${p}:</label>
           <input type="number" step="any" value="0.1" id="param_${p}" name="param_${p}" class="form-control form-control-sm">
         </div>`).join("");
-      
-      Object.entries(derivedExpressions)
-        .filter(([k]) => !parameters.includes(k))
-        .forEach(([k, expr]) => {
-          paramValuesContainer.insertAdjacentHTML("beforeend", `<div class="derived-box"><i class="bi bi-calculator me-1"></i><strong>${k}</strong> = ${expr}</div>`);
-        });
     } else {
       paramValuesContainer.innerHTML = `<div class="placeholder-text">Parse ODEs to set parameters.</div>`;
+    }
+   
+    // 파생 변수(derived expressions) 렌더링
+    const derivedEntries = Object.entries(derivedExpressions);
+    
+    if (derivedEntries.length > 0) {
+        derivedValuesContainer.innerHTML = derivedEntries.map(([key, expr]) => `
+            <div class="derived-box">
+                <i class="bi bi-calculator me-1"></i>
+                <strong>${key}</strong> = ${expr.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
+            </div>
+        `).join("");
+    } else {
+        derivedValuesContainer.innerHTML = `<div class="placeholder-text small">No derived variables found.</div>`;
     }
 
     // 뱃지 UI도 함께 업데이트
     UI.updateSelectedBadges();
+  },
+
+  /**
+   * 심볼 역할 편집 모달의 내용을 렌더링합니다.
+   * @param {string[]} compartments - 현재 Compartment 목록
+   * @param {string[]} parameters - 현재 Parameter 목록
+   */
+  renderSymbolEditorModal(compartments, parameters) {
+    const { compartmentsList, parametersList } = DOM.modals.editSymbols;
+
+    compartmentsList.innerHTML = compartments.map(c => `
+      <div class="symbol-list-item">
+        <span>${c}</span>
+        <button class="btn btn-light btn-sm move-symbol-btn" data-symbol="${c}" data-direction="toParam" title="Move to Parameters">&gt;</button>
+      </div>
+    `).join('');
+
+    parametersList.innerHTML = parameters.map(p => `
+      <div class="symbol-list-item">
+        <button class="btn btn-light btn-sm move-symbol-btn" data-symbol="${p}" data-direction="toComp" title="Move to Compartments">&lt;</button>
+        <span>${p}</span>
+      </div>
+    `).join('');
   },
 
   /**
@@ -332,25 +375,34 @@ const UI = {
   // --- 투여 (Dosing) 관련 UI ---
 
   /**
-   * 등록된 투여 목록을 테이블로 렌더링합니다.
+   * 등록된 투여 목록을 간결한 뱃지 형태로 렌더링합니다.
    */
   renderDoses() {
     const container = DOM.sidebar.doseListContainer;
     if (!container) return;
+    
     if (State.doseList.length === 0) {
-      container.innerHTML = `<div class="placeholder-text">No doses registered yet.</div>`;
+      container.innerHTML = `<div class="placeholder-text small">No doses registered yet.</div>`;
       return;
     }
-    const tableRows = State.doseList.map((d, i) => `
-      <tr>
-        <td>${i + 1}</td><td>${d.compartment}</td><td>${d.type}</td><td>${d.amount}</td>
-        <td>${d.start_time}</td><td>${d.type === "infusion" && d.duration > 0 ? d.duration : "-"}</td>
-        <td>${d.repeat_every || "-"}</td><td>${d.repeat_until || "-"}</td>
-        <td><button class="btn btn-sm btn-outline-danger py-0 px-1 remove-dose-btn" data-index="${i}" title="Remove dose">🗑️</button></td>
-      </tr>`).join("");
-    container.innerHTML = `<div class="table-responsive"><table class="table table-sm table-bordered table-striped"><thead><tr>
-        <th>#</th><th>Compartment</th><th>Type</th><th>Amount</th><th>Start (h)</th><th>Duration (h)</th>
-        <th>Repeat Every (h)</th><th>Repeat Until (h)</th><th>Action</th></tr></thead><tbody>${tableRows}</tbody></table></div>`;
+
+    container.innerHTML = State.doseList.map((d, i) => {
+      // 투여 정보를 요약하는 텍스트 생성
+      let summaryText = `${d.amount}mg ${d.type} to <strong>${d.compartment}</strong> at ${d.start_time}h`;
+      if (d.type === 'infusion' && d.duration > 0) {
+          summaryText += ` over ${d.duration}h`;
+      }
+      if (d.repeat_every && d.repeat_until) {
+          summaryText += ` (repeats every ${d.repeat_every}h until ${d.repeat_until}h)`;
+      }
+
+      return `
+        <div class="dose-badge">
+          <span>${summaryText}</span>
+          <button class="btn-close btn-close-white btn-sm remove-dose-btn" data-index="${i}" title="Remove dose"></button>
+        </div>
+      `;
+    }).join("");
   },
   
   // --- 관찰 데이터 (Offcanvas) 관련 UI ---
@@ -418,10 +470,10 @@ const UI = {
 
     const selectedCompartments = [...DOM.simulation.compartmentsMenu.querySelectorAll(".sim-comp-checkbox:checked")].map(e => e.value);
     const traces = [];
-    const thresholdInput = document.getElementById('popover-sim-threshold');
+    const thresholdInput = document.getElementById('dropdown-sim-threshold').value || 1e-9;
 
     selectedCompartments.forEach(compName => {
-      if (profileData[compName]) traces.push({ x: profileData.Time, y: maskLowValues(profileData[compName], thresholdInput.value), mode: "lines", name: compName });
+      if (profileData[compName]) traces.push({ x: profileData.Time, y: maskLowValues(profileData[compName], thresholdInput), mode: "lines", name: compName });
     });
 
     State.observations.filter(o => o.selected).forEach(obs => {
@@ -853,6 +905,8 @@ const Handlers = {
         // UI 업데이트 요청
         UI.renderSymbolInputs();
         UI.updateSelectedBadges();
+
+        DOM.sidebar.editSymbolsBtn.disabled = false; // 심볼 편집 버튼 활성화
       } else {
         alert("Parse failed: " + (response.message || "Unknown error"));
       }
@@ -860,6 +914,66 @@ const Handlers = {
       // API.js에서 던진 에러를 여기서 처리 (이미 alert는 API.js에서 처리됨)
       console.error("Parse failed:", error);
     }
+  },
+
+
+  /**
+   * 심볼 편집 모달 내부의 클릭 이벤트를 처리합니다 (이벤트 위임).
+   */
+  handleSymbolEditorClick(event) {
+    const moveBtn = event.target.closest('.move-symbol-btn');
+    if (!moveBtn) return;
+    
+    const symbol = moveBtn.dataset.symbol;
+    const direction = moveBtn.dataset.direction;
+    const sourceList = direction === 'toParam' ? 
+      DOM.modals.editSymbols.compartmentsList : 
+      DOM.modals.editSymbols.parametersList;
+    const destList = direction === 'toParam' ? 
+      DOM.modals.editSymbols.parametersList : 
+      DOM.modals.editSymbols.compartmentsList;
+
+    const itemToMove = moveBtn.parentElement;
+    
+    // 버튼 방향에 따라 새 버튼 생성
+    const newButtonHTML = direction === 'toParam' ? 
+      `<button class="btn btn-light btn-sm move-symbol-btn" data-symbol="${symbol}" data-direction="toComp" title="Move to Compartments">&lt;</button>` :
+      `<button class="btn btn-light btn-sm move-symbol-btn" data-symbol="${symbol}" data-direction="toParam" title="Move to Parameters">&gt;</button>`;
+      
+    // 아이템 구조 변경 및 이동
+    itemToMove.remove();
+    const newItem = document.createElement('div');
+    newItem.className = 'symbol-list-item';
+    
+    if (direction === 'toParam') {
+        newItem.innerHTML = `${newButtonHTML} <span>${symbol}</span>`;
+        destList.appendChild(newItem);
+    } else {
+        newItem.innerHTML = `<span>${symbol}</span> ${newButtonHTML}`;
+        destList.prepend(newItem); // 파라미터 -> 구획 이동 시 위로 추가
+    }
+  },
+
+  /**
+   * 심볼 편집 모달의 'Save Changes' 버튼 클릭을 처리합니다.
+   */
+  handleSaveChangesClick() {
+    const { compartmentsList, parametersList } = DOM.modals.editSymbols;
+
+    // 모달 UI에서 최신 심볼 목록을 다시 읽어옵니다.
+    const newCompartments = [...compartmentsList.querySelectorAll('.symbol-list-item span')].map(s => s.textContent);
+    const newParameters = [...parametersList.querySelectorAll('.symbol-list-item span')].map(s => s.textContent);
+    
+    // State를 새로운 목록으로 업데이트합니다.
+    State.compartments = newCompartments;
+    State.parameters = newParameters;
+    
+    // 변경된 State를 기반으로 메인 UI를 다시 렌더링합니다.
+    UI.renderSymbolInputs();
+    
+    // 모달을 닫습니다.
+    const modalInstance = bootstrap.Modal.getInstance(DOM.modals.editSymbols.element);
+    modalInstance.hide();
   },
 
   /**
@@ -951,7 +1065,7 @@ const Handlers = {
     State.isSimulating = true;
     UI.setLoading(DOM.toolbar.simulateBtn, true);
 
-    const stepsInput = document.getElementById('popover-sim-steps');
+    const stepsInput = document.getElementById('dropdown-sim-steps');
 
     try {
       const payload = {
@@ -1229,19 +1343,6 @@ const App = {
   init() {
     console.log("Application initializing...");
 
-    // Popover 기동
-    const popoverTriggerEl = document.getElementById('sim-options-btn');
-    if (popoverTriggerEl) {
-      new bootstrap.Popover(popoverTriggerEl, {
-        container: 'body',
-        html: true,
-        placement: 'bottom',
-        sanitize: false, // HTML 콘텐츠(form 등)를 허용하기 위해 필수
-        title: 'Advanced Simulation Settings',
-        content: () => document.getElementById('popover-content-wrapper').innerHTML
-      });
-    }
-
     this._bindEvents();
     this._initialRender();
   },
@@ -1255,10 +1356,23 @@ const App = {
     DOM.sidebar.showProcessedBtn.addEventListener('click', Handlers.handleShowProcessedClick);
     DOM.sidebar.doseForm.addEventListener('submit', Handlers.handleDoseFormSubmit);
     DOM.sidebar.doseTypeSelect.addEventListener('change', Handlers.handleDoseTypeChange);
-    DOM.sidebar.doseListContainer.addEventListener('click', Handlers.handleDoseListClick); // 이벤트 위임
+    DOM.sidebar.doseListContainer.addEventListener('click', Handlers.handleDoseListClick);
+    
+    // Dosing 폼의 'Repeat' 토글 스위치 이벤트
+    const repeatToggle = document.getElementById('repeat-dose-toggle');
+    const repeatFields = document.getElementById('repeat-dose-fields');
+    if(repeatToggle && repeatFields) {
+        repeatToggle.addEventListener('change', (event) => {
+            repeatFields.style.display = event.target.checked ? 'block' : 'none';
+        });
+    }
 
     // --- 메인 툴바 이벤트 바인딩 ---
-    DOM.toolbar.logScaleCheckbox.addEventListener('change', Handlers.handleThresholdChange); // Log Y 체크 시에도 다시 그리기
+    DOM.toolbar.logScaleCheckbox.addEventListener('change', () => { // 로그 스케일 변경 시 즉시 플롯을 다시 그림
+      if(State.latestSimulationResult) {
+        UI.plotSimulationResult(State.latestSimulationResult, DOM.toolbar.logScaleCheckbox.checked);
+      }
+    });
     DOM.toolbar.simulateBtn.addEventListener('click', Handlers.handleSimulateClick);
     DOM.toolbar.fitBtn.addEventListener('click', Handlers.handleFitBtnClick);
 
@@ -1268,18 +1382,25 @@ const App = {
 
     // --- 관찰 데이터(Offcanvas) 이벤트 바인딩 ---
     DOM.modals.obsData.fileInput.addEventListener('change', Handlers.handleObsFileChange);
-    DOM.modals.obsData.list.addEventListener('click', Handlers.handleObsListClick); // 이벤트 위임
+    DOM.modals.obsData.list.addEventListener('click', Handlers.handleObsListClick);
+
+    // --- 심볼 편집 모달 이벤트 바인딩 ---
+    DOM.sidebar.editSymbolsBtn.addEventListener('click', () => { // 심볼 편집 모달 열기
+      UI.renderSymbolEditorModal(State.compartments, State.parameters);
+    });
+    DOM.modals.editSymbols.element.addEventListener('click', Handlers.handleSymbolEditorClick); // 모달 내부 클릭
+    DOM.modals.editSymbols.saveBtn.addEventListener('click', Handlers.handleSaveChangesClick); // 모달 내부 'Save Changes' 버튼 클릭
 
     // --- 피팅 모달 이벤트 바인딩 ---
     DOM.modals.fittingSettings.paramList.addEventListener('change', Handlers.handleFitParamCheckboxChange);
     DOM.modals.fittingSettings.addGroupBtn.addEventListener('click', Handlers.handleAddFittingGroupClick);
-    DOM.modals.fittingSettings.groupsContainer.addEventListener('click', Handlers.handleFittingGroupEvents); // 이벤트 위임
+    DOM.modals.fittingSettings.groupsContainer.addEventListener('click', Handlers.handleFittingGroupEvents);
     DOM.modals.fittingSettings.startBtn.addEventListener('click', () => Handlers.handleStartFittingClick());
 
     // --- Export 버튼 이벤트 바인딩 ---
-    DOM.toolbar.exportProfileBtn.addEventListener('click', Handlers.handleExportProfileClick);
-    DOM.toolbar.exportSummaryBtn.addEventListener('click', Handlers.handleExportSummaryClick);
-    DOM.toolbar.exportPlotBtn.addEventListener('click', Handlers.handleExportPlotClick);
+    if(DOM.results.exportProfileBtn) DOM.results.exportProfileBtn.addEventListener('click', Handlers.handleExportProfileClick);
+    if(DOM.results.exportSummaryBtn) DOM.results.exportSummaryBtn.addEventListener('click', Handlers.handleExportSummaryClick);
+    if(DOM.results.exportPlotBtn) DOM.results.exportPlotBtn.addEventListener('click', Handlers.handleExportPlotClick);
   },
 
   /**

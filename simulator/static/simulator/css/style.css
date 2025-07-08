@@ -137,10 +137,8 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 
 .main-content {
     flex-grow: 1;
-    height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
 }
 .main-toolbar {
     min-height: var(--apple-toolbar-height);
@@ -183,9 +181,7 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); /* 최소 너비 조정 */
     gap: 1.5rem;
 }
-.results-grid .card {
-    min-height: 280px; /* 최소 높이 조정 */
-}
+
 #plot { min-height: 420px; } /* 플롯 영역 높이 조정 */
 
 /* ------------------------------ */
@@ -215,6 +211,19 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     /* Add Dose 버튼은 w-100 이므로 높이만 통일 */
 #dose-form .btn.w-100 {
     /* height: var(--control-height-strict); /* 이미 .btn 에 적용됨 */
+}
+
+/* 'More' 드롭다운 버튼 스타일 */
+#advanced-settings-dropdown.btn {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important; /* 포커스 시 나타나는 그림자 제거 */
+  color: #6c757d; /* 부드러운 회색 텍스트 */
+}
+
+/* 마우스를 올렸을 때의 스타일 */
+#advanced-settings-dropdown.btn:hover {
+  background-color: rgba(0, 0, 0, 0.05) !important; /* 매우 연한 회색 배경 */
 }
 
 
@@ -273,6 +282,70 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 /* Data 버튼 같이 텍스트와 아이콘이 모두 있는 경우, 아이콘만 있는 버튼용 스타일은 불필요 */
 /* .main-toolbar .action-buttons .btn.icon-only .bi { margin-right: 0; } */
 
+.dose-list-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem; /* 뱃지 사이의 간격 */
+  padding: 0.5rem;
+  border: 1px dashed var(--apple-separator-color);
+  border-radius: 8px;
+  min-height: 60px;
+}
+
+.dose-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.8rem;
+  background-color: var(--apple-system-blue);
+  color: white;
+  border-radius: 1rem; /* 타원형 뱃지 */
+  font-size: 13px;
+}
+
+.dose-badge span {
+  margin-right: 0.75rem;
+}
+
+/* 뱃지 내부의 삭제 버튼 스타일 */
+.dose-badge .btn-close {
+  filter: brightness(0) invert(1); /* 흰색 아이콘으로 변경 */
+  opacity: 0.7;
+}
+.dose-badge .btn-close:hover {
+  opacity: 1;
+}
+
+.symbol-list {
+  min-height: 200px;
+  padding: 0.75rem;
+  border: 1px solid var(--apple-separator-color);
+  border-radius: 8px;
+  background-color: var(--apple-background-secondary);
+}
+
+.symbol-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--apple-background-primary);
+  border: 1px solid var(--apple-card-border);
+  border-radius: 7px;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.symbol-list-item .btn {
+  padding: 0.1rem 0.4rem;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.derived-variables-section .subsection-title {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--apple-separator-color);
+}
 
 .form-control, .form-select {
     border-radius: 7px; 
@@ -297,6 +370,12 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     background-position: right var(--control-padding-x-sm-strict) center;
     background-size: 16px 12px;
 }
+
+/* 'Log Y' 스위치와 라벨 사이 간격 추가 */
+.form-switch .form-check-input {
+  margin-right: 0.5rem; /* 오른쪽 마진 0.5rem (약 8px) 추가 */
+}
+
 /* 사이드바 내부 입력필드는 form-control-sm 클래스 유지 */
 .sidebar .form-control-sm, .sidebar .form-select-sm {
     /* 기본 .form-control 스타일을 따르므로 특별한 재정의 불필요 */
@@ -349,11 +428,16 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     font-size: 13px; /* 'Log Y' 레이블 약간 작게 */
 }
 
-.card {
-    border-radius: 12px; 
-    border: 1px solid var(--apple-card-border); 
-    box-shadow: none; 
-    background-color: var(--apple-background-primary); 
+.results-grid .card, .main-scrollable-area > .card {
+  border-radius: 12px !important; /* 모서리 곡률을 12px로 통일 */
+  border: 1px solid var(--apple-card-border);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.card-header {
+  background-color: #f8f9fa; /* 연한 회색 배경 */
+  border-bottom: 1px solid var(--apple-card-border);
+  font-weight: 500;
+  padding: 0.75rem 1.15rem;
 }
 .card-title {
     font-size: 17px; /* 카드 제목 약간 조정 */ 
