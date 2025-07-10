@@ -30,7 +30,7 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'https://snu-pk-bootcamp-2025-a52098fee279.herokuapp.com']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'snu-pk-bootcamp-2025-a52098fee279.herokuapp.com']
 
 
 # Application definition
