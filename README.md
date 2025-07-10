@@ -38,29 +38,82 @@ simulator/
 
 ---
 
-## 🚀 Getting Started
+## How to Run Locally
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourname/pk-simulator.git
-   cd pk-simulator
-   ```
+This project uses Python and Django. A local setup requires a virtual environment and environment variables for security.
 
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 1\. Clone the Repository
 
-3. Run the development server:
-   ```bash
-   python manage.py runserver
-   ```
+```bash
+git clone https://github.com/snowflower1028/PK-ODE-Simulator.git
+cd PK-ODE-Simulator
+```
 
-4. Open in browser:
-   ```
-   http://localhost:8000/
-   ```
+### 2\. Set Up a Virtual Environment
 
+It's highly recommended to use a virtual environment to manage project dependencies.
+
+```bash
+# Create a virtual environment
+python -m venv .venv
+
+# Activate the virtual environment
+# On Windows:
+.venv\Scripts\activate
+# On macOS/Linux:
+source .venv/bin/activate
+```
+
+### 3\. Install Dependencies
+
+Install all required packages using the `requirements.txt` file.
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4\. Create an Environment Variable File (`.env`)
+
+For security, sensitive settings like the `SECRET_KEY` are managed via environment variables. Create a `.env` file in the project's root directory.
+
+```bash
+# Create a .env file in the root directory
+# For example, using 'copy con .env' on Windows or 'touch .env' on macOS/Linux
+```
+
+Add the following content to your `.env` file.
+
+**.env**
+
+```
+# For local development, set DEBUG to True
+DJANGO_DEBUG=True
+
+# Generate your own secret key. Do not use a key exposed on GitHub.
+DJANGO_SECRET_KEY='your-new-secret-key-goes-here'
+```
+
+> **Important**: To generate a new secret key, run the following command in your terminal with the virtual environment activated:
+> `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`
+> Copy the output and paste it as the value for `DJANGO_SECRET_KEY`.
+
+### 5\. Run Database Migrations
+
+Set up the initial database tables required by Django.
+
+```bash
+python manage.py migrate
+```
+
+### 6\. Run the Development Server
+
+You are now ready to run the application.
+
+```bash
+python manage.py runserver
+```
+
+Open your web browser and go to **[http://127.0.0.1:8000](https://www.google.com/search?q=http://127.0.0.1:8000)** to see the application running.
 ---
 
 ## 📌 How to Simulate
