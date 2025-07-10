@@ -53,6 +53,7 @@
     <section class="sidebar-section">
       <h2 class="sidebar-section-title"><i class="bi bi-eyedropper"></i> Dosing</h2>
       <form id="dose-form">
+        {% csrf_token %}
         <div class="row"> 
           <div class="col-6 mb-2">
             <label class="form-label">Compartment</label>

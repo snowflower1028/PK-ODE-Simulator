@@ -17,7 +17,6 @@ from .solver import solve_ode_system
 from .analyzer import analyze_pk
 
 
-@csrf_exempt
 @require_POST
 def simulate(request):
     try:
@@ -134,7 +133,6 @@ def simulate(request):
         traceback.print_exc()
         return JsonResponse({"status": "error", "message": f"An unexpected error occurred: {str(e)}"}, status=500)
 
-@csrf_exempt
 @require_POST
 def parse_ode_view(request):
     try:
@@ -161,7 +159,6 @@ def parse_ode_view(request):
         traceback.print_exc()
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
-@csrf_exempt
 @require_POST
 def fit(request):
     try:
