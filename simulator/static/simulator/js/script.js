@@ -388,7 +388,7 @@ const UI = {
 
     container.innerHTML = State.doseList.map((d, i) => {
       // 투여 정보를 요약하는 텍스트 생성
-      let summaryText = `${d.amount}mg ${d.type} to <strong>${d.compartment}</strong> at ${d.start_time}h`;
+      let summaryText = `Amount of "${d.amount}" of ${d.type} to <strong>${d.compartment}</strong> at ${d.start_time}h`;
       if (d.type === 'infusion' && d.duration > 0) {
           summaryText += ` over ${d.duration}h`;
       }

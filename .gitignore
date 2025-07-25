@@ -39,3 +39,8 @@ desktop.ini
 
 # System files
 *.bak
+
+#test
+test.py
+locust.py
+

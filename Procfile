@@ -1,3 +1,3 @@
 # Procfile
 
-web: gunicorn pk_simulator.wsgi --log-file -
+web: newrelic-admin run-program gunicorn pk_simulator.wsgi --log-file -
