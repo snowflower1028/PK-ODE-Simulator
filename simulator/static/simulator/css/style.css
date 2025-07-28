@@ -287,6 +287,28 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 .btn-outline-info { color: #5AC8FA; border-color: #5AC8FA; }
 .btn-outline-info:hover { background-color: rgba(90, 200, 250, 0.08); }
 
+/* 피팅 모달의 'Suggest Bounds' 버튼 스타일 */
+.btn-suggest-bounds {
+    width: 100%;
+    margin-bottom: 1rem; /* 아래 입력 필드와의 간격 */
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--apple-system-blue);
+    background-color: rgba(0, 122, 255, 0.08); /* 매우 옅은 파란색 배경 */
+    border: 1px solid rgba(0, 122, 255, 0.2); /* 얇고 투명한 테두리 */
+    transition: background-color 0.2s ease;
+}
+
+.btn-suggest-bounds:hover {
+    background-color: rgba(0, 122, 255, 0.12);
+    border-color: rgba(0, 122, 255, 0.3);
+}
+
+.btn-suggest-bounds .bi {
+    margin-right: 0.35rem;
+}
+
+
 /* Export 부분 구분선 마진 */
 .d-flex .vr {
   margin: 0 0.5rem;

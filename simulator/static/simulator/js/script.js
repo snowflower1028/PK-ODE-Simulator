@@ -84,6 +84,7 @@ const DOM = {
       element: document.getElementById('fittingSettingsModal'),
       paramList: document.getElementById('modal-param-list'),
       paramBoundsList: document.getElementById('modal-param-bounds-list'),
+      fetchInitialParamsBtn: document.getElementById("fetch-initial-params-btn"),
       groupsContainer: document.getElementById('fitting-groups-container'),
       addGroupBtn: document.getElementById('add-fitting-group-btn'),
       startBtn: document.getElementById('start-fitting-btn'),
@@ -670,15 +671,21 @@ const UI = {
    * 선택된 피팅 파라미터에 대한 경계값(Bounds) 입력 UI를 렌더링합니다.
    */
   renderFitParamBoundsUI() {
-    const { paramBoundsList, paramList } = DOM.modals.fittingSettings;
+    const { paramBoundsList, paramList, fetchInitialParamsBtn } = DOM.modals.fittingSettings;
     const checkedParams = paramList.querySelectorAll('.modal-fit-param-cb:checked');
 
+    // 1. 선택된 파라미터가 없으면 버튼을 숨기고 placeholder를 표시합니다.
     if (checkedParams.length === 0) {
+      fetchInitialParamsBtn.style.display = 'none'; // 버튼 숨기기
       paramBoundsList.innerHTML = '<div class="placeholder-text small" style="border:none;background:none;min-height:40px;">Select parameters to set bounds.</div>';
       return;
     }
 
-    paramBoundsList.innerHTML = Array.from(checkedParams).map(cb => {
+    // 2. 선택된 파라미터가 있으면 버튼을 보여줍니다.
+    fetchInitialParamsBtn.style.display = 'block';
+
+    // 3. 각 선택된 파라미터에 대한 입력 필드 HTML을 생성합니다.
+    const boundsInputsHTML = Array.from(checkedParams).map(cb => {
       const paramName = cb.value;
       return `
         <div class="row g-2 mb-2 align-items-center">
@@ -694,6 +701,9 @@ const UI = {
           </div>
         </div>`;
     }).join('');
+    
+    // 4. 입력 필드 영역만 업데이트합니다.
+    paramBoundsList.innerHTML = boundsInputsHTML;
   },
 
   /**
@@ -1259,6 +1269,50 @@ const Handlers = {
   },
 
   /**
+   * 'Fetch Guesses & Set Bounds' 버튼 클릭을 처리합니다.
+   * 메인 화면의 파라미터 값을 읽어와 선택된 피팅 파라미터의
+   * 초기값으로 사용하고, 1/10배와 10배를 경계값으로 자동 설정합니다.
+   */
+  handleFetchInitialParamsClick() {
+    const { paramList, paramBoundsList } = DOM.modals.fittingSettings;
+    const checkedParams = paramList.querySelectorAll('.modal-fit-param-cb:checked');
+
+    if (checkedParams.length === 0) {
+      alert("Please select at least one parameter to fetch initial values.");
+      return;
+    }
+
+    checkedParams.forEach(checkbox => {
+      const paramName = checkbox.value;
+      
+      // 1. 메인 화면에서 현재 파라미터 값을 가져옵니다.
+      const mainInput = DOM.sidebar.paramValuesContainer.querySelector(`#param_${paramName}`);
+      if (!mainInput) return;
+      
+      const initialValue = parseFloat(mainInput.value);
+      if (isNaN(initialValue)) return;
+
+      // 2. 모달의 경계값(Bounds) 입력 필드를 찾습니다.
+      const lowerBoundInput = paramBoundsList.querySelector(`.modal-param-lower[data-param-name="${paramName}"]`);
+      const upperBoundInput = paramBoundsList.querySelector(`.modal-param-upper[data-param-name="${paramName}"]`);
+
+      if (lowerBoundInput && upperBoundInput) {
+        // 3. 1/10배와 10배 값을 계산하여 입력 필드에 설정합니다.
+        //    만약 초기값이 0이면, 경계값은 설정하지 않습니다.
+        if (initialValue !== 0) {
+          lowerBoundInput.value = initialValue / 10;
+          upperBoundInput.value = initialValue * 10;
+        } else {
+          lowerBoundInput.value = '';
+          upperBoundInput.value = '';
+        }
+      }
+    });
+
+    alert(`${checkedParams.length} parameter(s) had their bounds automatically set.`);
+  },
+
+  /**
    * 'Start Fitting' 버튼 클릭을 처리합니다.
    * 모달에서 모든 설정 값을 수집하여 유효성을 검사하고,
    * API를 통해 서버에 피팅을 요청한 후 결과를 처리합니다.
@@ -1505,6 +1559,7 @@ const App = {
     DOM.modals.fittingSettings.addGroupBtn.addEventListener('click', Handlers.handleAddFittingGroupClick);
     DOM.modals.fittingSettings.groupsContainer.addEventListener('click', Handlers.handleFittingGroupEvents);
     DOM.modals.fittingSettings.startBtn.addEventListener('click', () => Handlers.handleStartFittingClick());
+    DOM.modals.fittingSettings.fetchInitialParamsBtn.addEventListener('click', Handlers.handleFetchInitialParamsClick);
 
     // --- Export 버튼 이벤트 바인딩 ---
     if(DOM.results.exportProfileBtn) DOM.results.exportProfileBtn.addEventListener('click', Handlers.handleExportProfileClick);
