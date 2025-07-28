@@ -64,6 +64,8 @@ const DOM = {
     exportProfileBtn: document.getElementById("export-profile-btn"),
     exportSummaryBtn: document.getElementById("export-summary-btn"),
     exportPlotBtn: document.getElementById("export-plot-btn"),
+    importSessionInput: document.getElementById("import-session-input"),
+    exportSessionBtn: document.getElementById("export-session-btn"),
   },
 
   // --- 모달 (Modals) & 오프캔버스 (Offcanvas) ---
@@ -1131,8 +1133,115 @@ const Handlers = {
       width: 1200,
       height: 800,
       filename: 'simulation_plot'
-    });
+    });    
   },
+
+    /**
+   * 'Save Session' 버튼 클릭을 처리합니다.
+   * 현재 앱의 모든 상태를 하나의 JSON 파일로 만들어 다운로드합니다.
+   */
+  handleExportSessionClick() {
+    // 1. 현재 상태를 하나의 객체로 수집
+    const sessionData = {
+      ode: DOM.sidebar.odeInput.value,
+      initials: {},
+      parameters: {},
+      doses: State.doseList,
+      simulationSettings: {
+        start: +DOM.toolbar.simStartTime.value,
+        end: +DOM.toolbar.simEndTime.value,
+        steps: +document.getElementById('dropdown-sim-steps').value,
+        logScale: DOM.toolbar.logScaleCheckbox.checked,
+        selectedCompartments: [...DOM.simulation.compartmentsMenu.querySelectorAll(".sim-comp-checkbox:checked")].map(e => e.value)
+      }
+    };
+
+    State.compartments.forEach(c => {
+      sessionData.initials[c] = +DOM.sidebar.initValuesContainer.querySelector(`#init_${c}`).value;
+    });
+    State.parameters.forEach(p => {
+      sessionData.parameters[p] = +DOM.sidebar.paramValuesContainer.querySelector(`#param_${p}`).value;
+    });
+
+    // 2. JSON 문자열로 변환하여 파일로 다운로드
+    const jsonString = JSON.stringify(sessionData, null, 2); // 2는 가독성을 위한 들여쓰기
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pk-simulator-session-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
+  /**
+   * 'Load Session' 파일 선택을 처리합니다.
+   * 사용자가 선택한 JSON 파일을 읽어 앱의 상태를 복원합니다.
+   */
+  handleImportSessionChange(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const sessionData = JSON.parse(e.target.result);
+
+        // 1. ODE 입력창 채우고 파싱 실행
+        DOM.sidebar.odeInput.value = sessionData.ode || "";
+        await Handlers.handleParseClick();
+
+        // 2. 파싱 후 UI가 업데이트될 시간을 잠시 대기
+        setTimeout(() => {
+          // 3. 파라미터 및 초기값 복원
+          if(sessionData.parameters) {
+            Object.entries(sessionData.parameters).forEach(([key, value]) => {
+              const el = DOM.sidebar.paramValuesContainer.querySelector(`#param_${key}`);
+              if (el) el.value = value;
+            });
+          }
+          if(sessionData.initials) {
+            Object.entries(sessionData.initials).forEach(([key, value]) => {
+              const el = DOM.sidebar.initValuesContainer.querySelector(`#init_${key}`);
+              if (el) el.value = value;
+            });
+          }
+
+          // 4. 투여 계획(Dose) 복원
+          State.doseList = sessionData.doses || [];
+          UI.renderDoses();
+
+          // 5. 시뮬레이션 설정 복원
+          const settings = sessionData.simulationSettings || {};
+          DOM.toolbar.simStartTime.value = settings.start || 0;
+          DOM.toolbar.simEndTime.value = settings.end || 48;
+          document.getElementById('dropdown-sim-steps').value = settings.steps || 200;
+          DOM.toolbar.logScaleCheckbox.checked = settings.logScale || false;
+
+          // 6. 선택된 Compartment 복원
+          const selected = settings.selectedCompartments || State.compartments;
+          DOM.simulation.compartmentsMenu.querySelectorAll('.sim-comp-checkbox').forEach(cb => {
+            cb.checked = selected.includes(cb.value);
+          });
+          UI.updateSelectedBadges();
+
+          alert('Session loaded successfully!');
+        }, 500); // 0.5초 대기
+
+      } catch (error) {
+        alert('Failed to load or parse the session file. Please check if the file is a valid JSON.');
+        console.error("Session load error:", error);
+      } finally {
+        // 동일한 파일을 다시 선택할 수 있도록 입력값 초기화
+        event.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+  },
+
 
   // --- 피팅 관련 핸들러 ---
 
@@ -1401,6 +1510,8 @@ const App = {
     if(DOM.results.exportProfileBtn) DOM.results.exportProfileBtn.addEventListener('click', Handlers.handleExportProfileClick);
     if(DOM.results.exportSummaryBtn) DOM.results.exportSummaryBtn.addEventListener('click', Handlers.handleExportSummaryClick);
     if(DOM.results.exportPlotBtn) DOM.results.exportPlotBtn.addEventListener('click', Handlers.handleExportPlotClick);
+    if(DOM.results.exportSessionBtn) DOM.results.exportSessionBtn.addEventListener('click', Handlers.handleExportSessionClick);
+    if(DOM.results.importSessionInput) DOM.results.importSessionInput.addEventListener('change', Handlers.handleImportSessionChange);
   },
 
   /**

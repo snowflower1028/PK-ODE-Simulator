@@ -30,6 +30,11 @@
     --control-padding-x-sm-strict: 0.5rem;  /* Bootstrap .form-control-sm 패딩 */
     --control-height-strict: calc( (var(--control-font-size-sm) * var(--control-line-height)) + (var(--control-padding-y-sm-strict) * 2) + 2px );
 }
+html {
+    /* 화면 너비에 따라 글씨 크기를 조절합니다. */
+    /* 최소 14px, 기본 1.2vw, 최대 16px */
+    font-size: clamp(14px, 1.2vw, 16px);
+}
 
 /* ------------------------------ */
 /* 2. Base & Typography Styles    */
@@ -39,7 +44,7 @@ body {
     color: var(--apple-text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-size: 15px; 
+    font-size: 1rem; 
     line-height: 1.5;
     display: flex;
     height: 100vh;
@@ -52,10 +57,10 @@ h1, h2, h3, h4, h5, h6 {
     letter-spacing: -0.01em;
     margin-bottom: 0.75rem;
 }
-h1 { font-size: 28px; font-weight: 700; }
-h2 { font-size: 24px; font-weight: 700; } /* 사이드바 섹션 타이틀 등에 사용될 수 있음 */
+h1 { font-size: 1.75rem; font-weight: 700; }
+h2 { font-size: 1.5rem; font-weight: 700; } /* 사이드바 섹션 타이틀 등에 사용될 수 있음 */
 .sidebar-section-title { /* 사이드바용 h2 대체 */
-    font-size: 18px; /* 기존 스타일 유지 */
+    font-size: 1.125rem; /* 기존 스타일 유지 */
     font-weight: 500;
     color: var(--apple-text-primary);
     margin-bottom: 1rem;
@@ -64,12 +69,12 @@ h2 { font-size: 24px; font-weight: 700; } /* 사이드바 섹션 타이틀 등�
 }
 .sidebar-section-title .bi {
     margin-right: 0.5rem;
-    font-size: 1.1em;
+    font-size: 1.1rem;
     color: var(--apple-text-secondary);
 }
-h3 { font-size: 20px; }
+h3 { font-size: 1.125rem; }
     .subsection-title { /* 사이드바용 h3 대체 */
-    font-size: 15px; /* 기존 스타일 유지 */
+    font-size: 1rem; /* 기존 스타일 유지 */
     font-weight: 500;
     color: var(--apple-text-secondary);
     margin-bottom: 0.75rem;
@@ -82,12 +87,12 @@ h3 { font-size: 20px; }
     padding-top: 0;
     margin-top: 0;
 }
-h4 { font-size: 18px; }
-h5 { font-size: 16px; } /* 카드 제목 등에 사용 */
+h4 { font-size: 1.125rem; }
+h5 { font-size: 1.1rem; } /* 카드 제목 등에 사용 */
 
 p, label:not(.form-check-label), .form-label {
     color: var(--apple-text-primary);
-    font-size: 15px;
+    font-size: 1rem;
     line-height: 1.6;
 }
 /* Dosing 폼 내부 레이블은 더 작게 */
@@ -97,7 +102,7 @@ p, label:not(.form-check-label), .form-label {
 }
 small, .text-muted {
     color: var(--apple-text-secondary);
-    font-size: 13px;
+    font-size: 0.85rem;
 }
 hr {
     border: none;
@@ -118,13 +123,20 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     margin-right: 0.35rem;
     font-size: 1em; 
 }
+.btn, label.btn {
+    font-size: var(--control-font-size-sm) !important; /* !important를 사용해 다른 label 스타일을 무시하고 이 스타일을 강제 적용 */
+    vertical-align: middle; /* label과 button의 수직 정렬을 맞춤 */
+}
 
 /* ------------------------------ */
 /* 3. Layout Styles               */
 /* ------------------------------ */
 .sidebar {
+    flex-shrink: 0;
     width: var(--apple-sidebar-width);
     height: 100vh;
+    max-width: 500px;
+    min-width: 308px;
     overflow-y: auto;
     background-color: var(--apple-background-primary);
     border-right: 1px solid var(--apple-separator-color);
@@ -133,7 +145,6 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     flex-direction: column;
     gap: 1.5rem;
 }
-.sidebar-section { }
 
 .main-content {
     flex-grow: 1;
@@ -198,7 +209,9 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     border: 1px solid transparent;
     box-shadow: none;
     transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, color 0.15s ease-in-out;
-    height: var(--control-height-strict); /* 모든 버튼 높이 통일 */
+    min-height: var(--control-height-strict); /* 모든 버튼 높이 통일 */
+    height: auto;
+    white-space: normal;
     display: inline-flex; /* 아이콘 정렬 위해 */
     align-items: center;    /* 아이콘 정렬 위해 */
     justify-content: center;/* 아이콘 정렬 위해 */
@@ -274,6 +287,10 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 .btn-outline-info { color: #5AC8FA; border-color: #5AC8FA; }
 .btn-outline-info:hover { background-color: rgba(90, 200, 250, 0.08); }
 
+/* Export 부분 구분선 마진 */
+.d-flex .vr {
+  margin: 0 0.5rem;
+}
 
 /* 툴바 내부 버튼들 (일반 .btn 스타일을 따르되, 아이콘 마진만 조정) */
 .main-toolbar .action-buttons .btn .bi {
@@ -606,9 +623,43 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     padding: 0; /* 부모의 패딩 사용 */
 }
 
+
 /* ------------------------------ */
-/* 6. Utility Styles              */
+/* 6. Responsive Styles           */
+/* ------------------------------ */
+
+/* 화면 너비가 1200px 이하일 때 */
+@media (max-width: 996px) {
+  body {
+    flex-direction: column; /* flex 방향을 세로로 변경 */
+    height: auto;           /* body 높이를 자동으로 조절 */
+    overflow-y: auto;       /* body 자체에 스크롤 허용 */
+  }
+
+  .sidebar, .main-content {
+    width: 100%;            /* 사이드바와 메인 콘텐츠 너비를 100%로 설정 */
+    height: auto;           /* 높이를 자동으로 조절 */
+    max-width: none;        /* 최대 너비 제한 해제 */
+  }
+  
+  .sidebar {
+    border-right: none; /* 사이드바 오른쪽 경계선 제거 */
+    border-bottom: 1px solid var(--apple-separator-color); /* 하단 경계선 추가 */
+  }
+  
+  .main-content {
+    overflow: visible; /* 메인 콘텐츠의 overflow 숨김 해제 */
+  }
+
+  .main-scrollable-area {
+    overflow-y: visible; /* 스크롤 영역의 overflow 숨김 해제 */
+  }
+}
+
+/* ------------------------------ */
+/* 7. Utility Styles              */
 /* ------------------------------ */
 .subtle-shadow {
     box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.08);
 }
+

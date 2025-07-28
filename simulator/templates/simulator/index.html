@@ -198,19 +198,34 @@
           <div>
             <h5 class="card-title mb-1"><i class="bi bi-box-arrow-down"></i> Exports & Reports</h5>
             <p class="card-text text-muted small mb-0">
-              Export your simulation results and plots for presentations or further analysis.
+              Save/load your session or export results.
             </p>
           </div>
-          <div class="d-flex gap-2">
-            <button id="export-profile-btn" class="btn btn-sm btn-outline-success">
-              <i class="bi bi-file-earmark-spreadsheet me-1"></i> Profile (CSV)
-            </button>
-            <button id="export-summary-btn" class="btn btn-sm btn-outline-primary">
-              <i class="bi bi-table me-1"></i> Summary (CSV)
-            </button>
-            <button id="export-plot-btn" class="btn btn-sm btn-dark">
-              <i class="bi bi-image me-1"></i> Plot (PNG)
-            </button>
+
+          <div class="d-flex align-items-center gap-3">
+            <div class="btn-group" role="group" aria-label="Session Management">
+              <label for="import-session-input" class="btn btn-sm btn-outline-info" title="Load Session from JSON file">
+                <i class="bi bi-box-arrow-in-up"></i> Load Session
+              </label>
+              <input type="file" id="import-session-input" accept=".json" style="display: none;">
+              <button id="export-session-btn" type="button" class="btn btn-sm btn-outline-info" title="Save current session to a JSON file">
+                <i class="bi bi-box-arrow-down"></i> Save Session
+              </button>
+            </div>
+
+            <div class="vr"></div>
+
+            <div class="btn-group" role="group" aria-label="Data Export">
+              <button id="export-profile-btn" type="button" class="btn btn-sm btn-outline-success" title="Export Profile (CSV)">
+                <i class="bi bi-file-earmark-spreadsheet"></i> Profile
+              </button>
+              <button id="export-summary-btn" type="button" class="btn btn-sm btn-outline-primary" title="Export Summary (CSV)">
+                <i class="bi bi-table"></i> Summary
+              </button>
+              <button id="export-plot-btn" type="button" class="btn btn-sm btn-dark" title="Export Plot (PNG)">
+                <i class="bi bi-image"></i> Plot
+              </button>
+            </div>
           </div>
         </div>
       </div>
