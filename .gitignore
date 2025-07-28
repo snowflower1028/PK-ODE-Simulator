@@ -42,5 +42,5 @@ desktop.ini
 
 #test
 test.py
-locust.py
+locustfile.py
 
