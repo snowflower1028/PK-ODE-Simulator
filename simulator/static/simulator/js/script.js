@@ -625,7 +625,22 @@ const UI = {
     const observedDataOptions = State.observations.map((obs, index) => 
       `<option value="${index}">${obs.name}</option>`
     ).join('');
-    const compartmentOptions = State.compartments.map(c => `<option value="${c}">${c}</option>`).join('');
+
+    // 'Compartment' 드롭다운 메뉴를 동적으로 생성합니다.
+    let compartmentDropdownHTML;
+    if (State.compartments.length === 0 && Object.keys(State.derivedExpressions).length === 0) {
+        // 옵션이 전혀 없는 경우
+        compartmentDropdownHTML = `<option value="" selected disabled>Parse ODEs first</option>`;
+    } else {
+        // <optgroup>을 사용하여 메뉴를 그룹화합니다.
+        const baseCompOptions = State.compartments.map(c => `<option value="${c}">${c}</option>`).join('');
+        const derivedParamOptions = Object.keys(State.derivedExpressions).map(p => `<option value="${p}" style="font-style: italic;">${p}</option>`).join('');
+
+        compartmentDropdownHTML = `
+            ${baseCompOptions ? `<optgroup label="Compartments">${baseCompOptions}</optgroup>` : ''}
+            ${derivedParamOptions ? `<optgroup label="Derived Parameters (ƒx)">${derivedParamOptions}</optgroup>` : ''}
+        `;
+    }
 
     // 템플릿 리터럴(백틱)을 사용하여 가독성 좋게 HTML 작성
     return `
@@ -650,7 +665,7 @@ const UI = {
             <div class="col-md-4">
               <label class="form-label small">Compartment</label>
               <select class="form-select form-select-sm group-dose-comp">
-                ${compartmentOptions}
+                ${compartmentDropdownHTML}
               </select>
             </div>
             <div class="col-md-4">

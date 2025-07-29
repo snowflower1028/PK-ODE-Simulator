@@ -10,11 +10,12 @@ from .solver import solve_ode_system
 from .parser import parse_ode_input
 
 
-def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, comps, initials, fitting_groups, weighting):
+def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, comps, initials, fitting_groups, weighting, derived_expressions):
     """
     여러 '피팅 그룹'을 순회하며 전체 잔차를 계산합니다.
     - fitting_groups: 각 그룹은 'doses'와 'observed' 데이터를 포함하는 딕셔너리입니다.
     - weighting: 'none', '1/Y', or '1/Y2'
+    - derived_expressions: 파생 변수 표현식 딕셔너리
     """
     # 1. 현재 추정치로 전체 파라미터 딕셔너리 재구성
     fit_param = dict(zip(fit_keys, vec))
@@ -29,12 +30,11 @@ def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, c
         if "Time" not in obs_df.columns or obs_df["Time"].empty:
             continue
 
-        # 각 그룹의 관찰 데이터 시간 범위에 맞춰 시뮬레이션 수행
         t_start = obs_df["Time"].min()
         t_end = obs_df["Time"].max()
         t_eval = obs_df["Time"].to_numpy()
 
-        # 3. solve_ode_system 호출 (그룹별 Dose 사용)
+        # 3. solve_ode_system 호출
         sim_df = solve_ode_system(
             equations_callable=equations_callable,
             compartments=comps,
@@ -43,11 +43,23 @@ def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, c
             param_values=all_param_values,
             t_span=[t_start, t_end],
             t_eval=t_eval,
-            doses=group_doses # <-- 그룹별 Dosing 정보 전달
+            doses=group_doses
         )
+
+        # derived_expressions가 있다면 계산
+        # 계산에 필요한 모든 변수 (시뮬레이션된 compartment + 현재 파라미터 값)
+        available_vars_for_eval = {**sim_df.to_dict(orient='series'), **all_param_values}
+        for new_col, expr_str in derived_expressions.items():
+            try:
+                # pandas.eval을 사용하여 파생 변수 값을 계산하고 sim_df에 새 컬럼으로 추가
+                sim_df[new_col] = pd.eval(expr_str, local_dict=available_vars_for_eval, engine='python')
+            except Exception as e:
+                # 파생 변수 계산 실패 시 경고 출력 (피팅은 계속 진행)
+                print(f"Warning: Could not evaluate derived expression during fitting: '{new_col} = {expr_str}': {e}")
 
         # 4. 각 관찰 컬럼에 대한 잔차 계산 및 가중치 적용
         for col in obs_df.columns:
+            # obs_df의 컬럼이 (파생 변수 계산 후 확장된) sim_df에 있는지 확인
             if col.lower() == "time" or col not in sim_df.columns:
                 continue
             
@@ -72,7 +84,7 @@ def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, c
             res_all.extend(weighted_residuals)
 
     if not res_all:
-        # 잔차 계산이 불가능한 경우, 최적화가 진행되지 않도록 큰 값 반환
+        # 잔차 계산이 불가능하다면 최적화 안 되도록 존나 큰 값 반환
         return np.array([1e6] * len(vec)) 
 
     return np.asarray(res_all)
@@ -94,6 +106,7 @@ def fit(data: dict) -> dict:
         all_compartments = parsed["compartments"]
         all_parameters = parsed["parameters"]
         equations = parsed["equations"]
+        derived_expressions = parsed.get("derived_expressions", {})
 
         comp_syms, param_syms, t_sym = symbols(all_compartments), symbols(all_parameters), symbols('t')
         y_args = tuple(comp_syms) if isinstance(comp_syms, (list, tuple)) else (comp_syms,)
@@ -144,8 +157,9 @@ def fit(data: dict) -> dict:
                 all_parameters=all_parameters,
                 comps=all_compartments,
                 initials=initials,
-                fitting_groups=fitting_groups, # <-- 수정된 부분
-                weighting=weighting
+                fitting_groups=fitting_groups,
+                weighting=weighting,
+                derived_expressions=derived_expressions
             ),
             bounds=actual_bounds,
             verbose=0
@@ -159,7 +173,7 @@ def fit(data: dict) -> dict:
     # 4) 최종 파라미터로 "가중되지 않은" SSR 계산
     final_residuals_unweighted = _residuals(
         result.x, fit_keys, fixed_param, equations_callable, all_parameters, all_compartments, initials, 
-        fitting_groups, weighting='none' # weighting='none'으로 강제하여 unweighted SSR 계산
+        fitting_groups, weighting='none', derived_expressions=derived_expressions # weighting='none'으로 강제하여 unweighted SSR 계산,
     )
     total_ssr = np.sum(np.square(final_residuals_unweighted))
 
