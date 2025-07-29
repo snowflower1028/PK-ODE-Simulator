@@ -1,3 +1,5 @@
+# fitting.py
+
 import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
@@ -13,7 +15,7 @@ from .parser import parse_ode_input
 def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, comps, initials, fitting_groups, weighting, derived_expressions):
     """
     여러 '피팅 그룹'을 순회하며 전체 잔차를 계산합니다.
-    - fitting_groups: 각 그룹은 'doses'와 'observed' 데이터를 포함하는 딕셔너리입니다.
+    - fitting_groups: 각 그룹은 'doses', 'observed', 'mappings' 데이터를 포함하는 딕셔너리입니다.
     - weighting: 'none', '1/Y', or '1/Y2'
     - derived_expressions: 파생 변수 표현식 딕셔너리
     """
@@ -26,8 +28,9 @@ def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, c
     for group in fitting_groups:
         obs_df = pd.DataFrame(group['observed'])
         group_doses = group['doses']
+        mappings = group.get('mappings', {}) # 매핑 정보 가져오기
 
-        if "Time" not in obs_df.columns or obs_df["Time"].empty:
+        if "Time" not in obs_df.columns or obs_df["Time"].empty or not mappings:
             continue
 
         t_start = obs_df["Time"].min()
@@ -46,25 +49,22 @@ def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, c
             doses=group_doses
         )
 
-        # derived_expressions가 있다면 계산
-        # 계산에 필요한 모든 변수 (시뮬레이션된 compartment + 현재 파라미터 값)
+        # 4. 파생 변수 계산 (시뮬레이션 직후)
         available_vars_for_eval = {**sim_df.to_dict(orient='series'), **all_param_values}
         for new_col, expr_str in derived_expressions.items():
             try:
-                # pandas.eval을 사용하여 파생 변수 값을 계산하고 sim_df에 새 컬럼으로 추가
                 sim_df[new_col] = pd.eval(expr_str, local_dict=available_vars_for_eval, engine='python')
             except Exception as e:
-                # 파생 변수 계산 실패 시 경고 출력 (피팅은 계속 진행)
                 print(f"Warning: Could not evaluate derived expression during fitting: '{new_col} = {expr_str}': {e}")
 
-        # 4. 각 관찰 컬럼에 대한 잔차 계산 및 가중치 적용
-        for col in obs_df.columns:
-            # obs_df의 컬럼이 (파생 변수 계산 후 확장된) sim_df에 있는지 확인
-            if col.lower() == "time" or col not in sim_df.columns:
+        # 5. 매핑 정보를 기반으로 잔차 계산
+        for data_col, model_var in mappings.items():
+            # 관측 데이터 컬럼과 매핑된 모델 변수가 모두 존재하는지 확인
+            if data_col not in obs_df.columns or model_var not in sim_df.columns:
                 continue
             
-            observed_values = obs_df[col].to_numpy()
-            simulated_values = sim_df[col].to_numpy()
+            observed_values = obs_df[data_col].to_numpy()
+            simulated_values = sim_df[model_var].to_numpy()
             
             valid_indices = ~np.isnan(observed_values)
             if not np.any(valid_indices):
@@ -84,7 +84,6 @@ def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, c
             res_all.extend(weighted_residuals)
 
     if not res_all:
-        # 잔차 계산이 불가능하다면 최적화 안 되도록 존나 큰 값 반환
         return np.array([1e6] * len(vec)) 
 
     return np.asarray(res_all)
@@ -94,7 +93,7 @@ def fit(data: dict) -> dict:
     """
     여러 실험 그룹 데이터를 사용하여 파라미터 피팅을 수행합니다.
     """
-    # 1) 캐싱을 사용하여 ODE 파싱 및 lambdify
+    # 1) 캐싱을 사용하여 ODE 파싱 및 lambdify (기존과 동일)
     try:
         ode_text = data["equations"]
         cache_key = 'parsed_ode_sympy_' + hashlib.md5(ode_text.encode('utf-8')).hexdigest()
@@ -106,7 +105,7 @@ def fit(data: dict) -> dict:
         all_compartments = parsed["compartments"]
         all_parameters = parsed["parameters"]
         equations = parsed["equations"]
-        derived_expressions = parsed.get("derived_expressions", {})
+        derived_expressions = parsed.get("derived_expressions", {}) # 파생 변수 정보 추출
 
         comp_syms, param_syms, t_sym = symbols(all_compartments), symbols(all_parameters), symbols('t')
         y_args = tuple(comp_syms) if isinstance(comp_syms, (list, tuple)) else (comp_syms,)
@@ -118,7 +117,7 @@ def fit(data: dict) -> dict:
     except Exception as e:
         return {"status": "error", "message": f"ODE Parsing/Compilation Error: {e}"}
 
-    # 2) 피팅을 위한 값들 준비
+    # 2) 피팅을 위한 값들 준비 (기존과 동일)
     try:
         initials = data["initials"]
         full_param = data["parameters"]
@@ -159,7 +158,7 @@ def fit(data: dict) -> dict:
                 initials=initials,
                 fitting_groups=fitting_groups,
                 weighting=weighting,
-                derived_expressions=derived_expressions
+                derived_expressions=derived_expressions # <-- 파생 변수 정보 전달
             ),
             bounds=actual_bounds,
             verbose=0
@@ -173,11 +172,11 @@ def fit(data: dict) -> dict:
     # 4) 최종 파라미터로 "가중되지 않은" SSR 계산
     final_residuals_unweighted = _residuals(
         result.x, fit_keys, fixed_param, equations_callable, all_parameters, all_compartments, initials, 
-        fitting_groups, weighting='none', derived_expressions=derived_expressions # weighting='none'으로 강제하여 unweighted SSR 계산,
+        fitting_groups, weighting='none', derived_expressions=derived_expressions
     )
     total_ssr = np.sum(np.square(final_residuals_unweighted))
 
-    # 5) 최종 반환값
+    # 5) 최종 반환값 (기존과 동일)
     return {
         "status": "ok",
         "params": fitted_params,

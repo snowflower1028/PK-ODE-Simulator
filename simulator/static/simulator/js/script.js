@@ -262,22 +262,28 @@ const UI = {
     compartmentSelect.innerHTML = "";
     compartmentsMenu.innerHTML = ""; // [추가] 메뉴 초기화
 
-    if (compartments.length > 0) {
-      // 초기값 필드 생성
-      initValuesContainer.innerHTML = compartments.map(c => `
-        <div class="d-flex align-items-center mb-2">
-          <label for="init_${c}" class="form-label mb-0 me-2 text-end" style="width:70px;">${c}(0):</label>
-          <input type="number" step="any" value="0" id="init_${c}" name="init_${c}" class="form-control form-control-sm">
-        </div>`).join("");
+    if (compartments.length > 0 || Object.keys(derivedExpressions).length > 0) {
+      // 초기값 필드 생성 (기본 Compartment에 대해서만)
+      if (compartments.length > 0) {
+        initValuesContainer.innerHTML = compartments.map(c => `
+          <div class="d-flex align-items-center mb-2">
+            <label for="init_${c}" class="form-label mb-0 me-2 text-end" style="width:70px;">${c}(0):</label>
+            <input type="number" step="any" value="0" id="init_${c}" name="init_${c}" class="form-control form-control-sm">
+          </div>`).join("");
+      } else {
+        initValuesContainer.innerHTML = `<div class="placeholder-text">No base compartments defined.</div>`;
+      }
+      
+      // 투여(Dosing) 구획 드롭다운 채우기 (<optgroup> 사용)
+      const baseCompOptions = compartments.map(c => `<option value="${c}">${c}</option>`).join('');
+      // const derivedParamOptions = Object.keys(derivedExpressions).map(p => `<option value="${p}" style="font-style: italic;">${p}</option>`).join('');
 
-      // 투여(Dosing) 구획 드롭다운 채우기
-      compartmentSelect.innerHTML = compartments.map(c => `<option value="${c}">${c}</option>`).join("");
+      compartmentSelect.innerHTML = compartments.length > 0 
+          ? `<optgroup label="Compartments">${baseCompOptions}</optgroup>`
+          : `<option value="" disabled selected>No compartments defined</option>`;
 
       // 시뮬레이션 구획 선택 메뉴(체크박스) 렌더링
-      // 1. 플로팅 가능한 전체 변수 목록 생성
-      const plottableVariables = [...compartments, ...Object.keys(derivedExpressions)];  // Compartments와 Derived Expressions의 키 merge
-      
-      // 2. 시뮬레이션 구획 선택 메뉴(체크박스)를 전체 변수 목록으로 렌더링
+      const plottableVariables = [...compartments, ...Object.keys(derivedExpressions)];
       compartmentsMenu.innerHTML = plottableVariables.map(variable => `
         <li>
           <label class="dropdown-item py-1">
@@ -289,6 +295,7 @@ const UI = {
     } else {
       initValuesContainer.innerHTML = `<div class="placeholder-text">Parse ODEs to set initial values.</div>`;
       compartmentsMenu.innerHTML = `<li><span class="dropdown-item-text">N/A</span></li>`;
+      compartmentSelect.innerHTML = `<option value="" disabled selected>Parse ODEs first</option>`;
     }
 
     // 파라미터 필드 생성
@@ -411,55 +418,111 @@ const UI = {
   // --- 관찰 데이터 (Offcanvas) 관련 UI ---
 
   /**
-   * 업로드된 관찰 데이터 목록을 렌더링합니다.
+   * 업로드된 관측 데이터 목록을 렌더링합니다.
    */
   renderObsList() {
     const { list } = DOM.modals.obsData;
     if (!list) return;
 
     if (State.observations.length === 0) {
-      list.innerHTML = `<div class="placeholder-text">No observed data uploaded.</div>`;
-    } else {
-      list.innerHTML = State.observations.map((o, i) => `
-        <li class="list-group-item d-flex justify-content-between align-items-center obs-item" data-index="${i}">
-          <div>
-            <input type="checkbox" class="form-check-input me-2 obs-check" ${o.selected ? "checked" : ""}>
-            <span style="color:${o.color}; cursor:default;">●</span>
-            <span style="cursor:pointer;" class="obs-name-clickable">${o.name}</span>
-          </div>
-          <button class="btn btn-sm btn-outline-danger py-0 px-1 remove-obs-btn" data-index="${i}" title="Remove ${o.name}">🗑️</button>
-        </li>`).join("");
-    }
-    this.renderObsPreview(); // 목록 변경 후 미리보기도 항상 업데이트
-  },
-
-  /**
-   * 선택된 관찰 데이터의 미리보기를 렌더링합니다.
-   */
-  renderObsPreview(index = null) {
-    const { preview } = DOM.modals.obsData;
-    if (!preview) return;
-    let targetIndex = index ?? State.observations.findIndex(o => o.selected);
-    targetIndex = (targetIndex === -1 && State.observations.length > 0) ? 0 : targetIndex;
-
-    if (targetIndex === -1 || !State.observations[targetIndex]) {
-      preview.innerHTML = `<div class="placeholder-text small">No data to preview.</div>`;
+      list.innerHTML = `<div class="placeholder-text small">Upload observed data files (.csv).</div>`;
+      document.getElementById('obs-detail-view').innerHTML = ''; // 상세 보기 영역도 비움
       return;
     }
 
-    const { name, data } = State.observations[targetIndex];
+    list.innerHTML = State.observations.map((o, i) => `
+      <a href="#" class="list-group-item list-group-item-action obs-item ${o.selected ? 'active' : ''}" data-index="${i}">
+        <div class="d-flex w-100 justify-content-between">
+          <h6 class="mb-1 small"><span style="color:${o.color};">●</span> ${o.name}</h6>
+        </div>
+        <small class="text-muted">${Object.keys(o.data).length - 1} data columns.</small>
+      </a>`).join("");
+
+    // 첫 번째 아이템 또는 선택된 아이템의 상세 뷰를 렌더링
+    const selectedIndex = State.observations.findIndex(o => o.selected);
+    this.renderObsDetailView(selectedIndex !== -1 ? selectedIndex : 0);
+  },
+
+  /**
+   * 특정 관측 데이터의 상세 보기(미리보기, 매핑) UI를 렌더링합니다.
+   * @param {number} index - State.observations 배열의 인덱스
+   */
+  renderObsDetailView(index) {
+    const detailContainer = document.getElementById('obs-detail-view');
+    if (index === -1 || !State.observations[index] || !detailContainer) {
+      detailContainer.innerHTML = '';
+      return;
+    }
+
+    // 1. 상태 업데이트: 선택된 항목(selected) 플래그를 관리합니다.
+    State.observations.forEach((obs, i) => obs.selected = (i === index));
+
+    // UI 업데이트
+    const { list } = DOM.modals.obsData;
+    list.querySelectorAll('.obs-item').forEach((item, i) => {
+      if (i === index) {
+        item.classList.add('active');
+      } else {
+        item.classList.remove('active');
+      }
+    });
+
+    const obsData = State.observations[index];
+    const { name, data, mappings } = obsData;
+    const dataColumns = Object.keys(data).filter(col => col.toLowerCase() !== 'time');
+    const modelVariables = [...State.compartments, ...Object.keys(State.derivedExpressions)];
+
+    // 2. 자동 매핑 로직: 데이터 컬럼 이름과 모델 변수 이름이 일치하면 자동으로 매핑
+    dataColumns.forEach(col => {
+      if (!mappings[col] && modelVariables.includes(col)) {
+        mappings[col] = col;
+      }
+    });
+
+    // 3. HTML 생성
+    const modelOptionsHTML = modelVariables.map(v => `<option value="${v}">${v}</option>`).join('');
+    const mappingHTML = dataColumns.map(col => `
+      <div class="row g-2 mb-2 align-items-center">
+        <div class="col-5"><input type="text" class="form-control form-control-sm" value="${col}" readonly disabled></div>
+        <div class="col-2 text-center"><i class="bi bi-arrow-left-right"></i></div>
+        <div class="col-5">
+          <select class="form-select form-select-sm mapping-select" data-obs-index="${index}" data-column-name="${col}">
+            <option value="">-- Map to --</option>
+            ${modelOptionsHTML.replace(`value="${mappings[col]}"`, `value="${mappings[col]}" selected`)}
+          </select>
+        </div>
+      </div>
+    `).join('');
+
+    const previewHTML = this._createPreviewHTML(name, data); // 미리보기 HTML 생성은 헬퍼 함수로 분리
+
+    detailContainer.innerHTML = `
+      ${previewHTML}
+      <hr>
+      <h6><i class="bi bi-link-45deg"></i> Map Data to Model</h6>
+      <p class="text-muted small">Connect columns from your data file to the variables defined in your ODE model.</p>
+      ${mappingHTML || '<div class="placeholder-text small">No data columns to map.</div>'}
+      <button class="btn btn-sm btn-outline-danger mt-3 remove-obs-btn" data-index="${index}"><i class="bi bi-trash"></i> Remove this Dataset</button>
+    `;
+  },
+
+  /**
+   * 데이터 미리보기 테이블 HTML을 생성하는 '비공개' 헬퍼 함수
+   */
+  _createPreviewHTML(name, data) {
     const cols = Object.keys(data);
     const n = Math.min(5, data.Time?.length || 0);
-
     const header = `<th>${cols.join("</th><th>")}</th>`;
     const bodyRows = Array.from({ length: n }, (_, i) => `<tr>${cols.map(c => `<td>${data[c][i] ?? '-'}</td>`).join("")}</tr>`).join("");
-    
+
     let html = `<p class="small text-muted mb-1">Preview: <strong>${name}</strong></p>
-                <table class='table table-sm table-bordered table-striped'><thead><tr>${header}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+                <div class="table-responsive" style="max-height: 180px;">
+                  <table class='table table-sm table-bordered table-striped'><thead><tr>${header}</tr></thead><tbody>${bodyRows}</tbody></table>
+                </div>`;
     if ((data.Time?.length || 0) > n) {
       html += `<p class="text-muted small text-center mt-1">Showing first ${n} of ${data.Time.length} rows...</p>`;
     }
-    preview.innerHTML = html;
+    return html;
   },
 
   // --- 결과 (Results) 관련 UI ---
@@ -626,21 +689,7 @@ const UI = {
       `<option value="${index}">${obs.name}</option>`
     ).join('');
 
-    // 'Compartment' 드롭다운 메뉴를 동적으로 생성합니다.
-    let compartmentDropdownHTML;
-    if (State.compartments.length === 0 && Object.keys(State.derivedExpressions).length === 0) {
-        // 옵션이 전혀 없는 경우
-        compartmentDropdownHTML = `<option value="" selected disabled>Parse ODEs first</option>`;
-    } else {
-        // <optgroup>을 사용하여 메뉴를 그룹화합니다.
-        const baseCompOptions = State.compartments.map(c => `<option value="${c}">${c}</option>`).join('');
-        const derivedParamOptions = Object.keys(State.derivedExpressions).map(p => `<option value="${p}" style="font-style: italic;">${p}</option>`).join('');
-
-        compartmentDropdownHTML = `
-            ${baseCompOptions ? `<optgroup label="Compartments">${baseCompOptions}</optgroup>` : ''}
-            ${derivedParamOptions ? `<optgroup label="Derived Parameters (ƒx)">${derivedParamOptions}</optgroup>` : ''}
-        `;
-    }
+    const compartmentOptions = State.compartments.map(c => `<option value="${c}">${c}</option>`).join('');
 
     // 템플릿 리터럴(백틱)을 사용하여 가독성 좋게 HTML 작성
     return `
@@ -663,9 +712,9 @@ const UI = {
             </div>
             
             <div class="col-md-4">
-              <label class="form-label small">Compartment</label>
+              <label class="form-label small">Dose Compartment</label>
               <select class="form-select form-select-sm group-dose-comp">
-                ${compartmentDropdownHTML}
+                ${compartmentOptions || `<option value="" selected disabled>Parse ODEs first</option>`}
               </select>
             </div>
             <div class="col-md-4">
@@ -677,6 +726,14 @@ const UI = {
               <input type="number" step="any" class="form-control form-control-sm group-dose-time" value="0" required>
             </div>
           </div>
+
+          <div class="mt-3 mapping-container" style="display: none;">
+            <h6 class="subsection-title small mt-0 pt-0 border-0">Map Data Columns to Model Variables:</h6>
+            <div class="mapping-rows">
+              {/* This area will be populated by renderMappingUI */}
+            </div>
+          </div>
+          
         </div>
       </div>
     `;
@@ -870,6 +927,39 @@ function parseCsv(file) {
     fr.onerror = (err) => reject(new Error(`Error reading file ${file.name}: ${err}`));
     fr.readAsText(file);
   });
+}
+
+/**
+ * PK 요약 데이터를 CSV 형식으로 변환하여 다운로드합니다.
+ * @param {Array<object>} data - PK 요약 객체들의 배열
+ * @param {string} filename - 다운로드될 파일의 이름
+ */
+function exportSummaryToCsv(data, filename) {
+  if (!data || data.length === 0) return;
+
+  const headers = Object.keys(data[0]);
+  let csvContent = headers.join(",") + "\r\n";
+
+  data.forEach(row => {
+    const values = headers.map(header => {
+        const value = row[header];
+        return value === null ? '' : value; // null 값을 빈 문자열로 처리
+    });
+    csvContent += values.join(",") + "\r\n";
+  });
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
 }
 
 function maskLowValues(arr, threshold = 0.000000001) {
@@ -1141,10 +1231,24 @@ const Handlers = {
 
   handleExportSummaryClick() {
     if (!State.latestPKSummary) {
-      alert("Please run a simulation first to export the summary.");
-      return;
+        alert("Please run a simulation first to export the summary.");
+        return;
     }
-    exportSummaryToCsv(State.latestPkSummary, "pk_summary.csv");
+    // 1. 데이터가 배열이든 객체든 항상 배열 형태로 변환합니다.
+    const summaryData = Array.isArray(State.latestPKSummary) 
+      ? State.latestPKSummary 
+      : Object.entries(State.latestPKSummary).map(([comp, metrics]) => ({ compartment: comp, ...metrics }));
+
+    // 2. 변환된 배열을 바탕으로 CSV용 데이터를 재구성합니다.
+    const summaryArray = summaryData.map(item => ({
+        compartment: item.compartment,
+        Cmax: item.Cmax,
+        Tmax: item.Tmax,
+        AUC: item.AUC,
+        Clearance: item.Clearance,
+        'Half-life': item['HL_half_life']
+    }));
+    exportSummaryToCsv(summaryArray, "pk_summary.csv");
   },
 
   handleExportPlotClick() {
@@ -1373,10 +1477,17 @@ const Handlers = {
         const comp = card.querySelector('.group-dose-comp').value;
         const amount = +card.querySelector('.group-dose-amount').value;
         const time = +card.querySelector('.group-dose-time').value;
+
+        if (obsIndex === "" || !State.observations[parseInt(obsIndex, 10)]) { // 관측 데이터 인덱스 확인
+            throw new Error(`Group ${parseInt(card.dataset.groupId, 10) + 1} has no observed data selected.`);
+        }
         
+        const selectedObs = State.observations[parseInt(obsIndex, 10)];
+
         fittingGroups.push({
           doses: [{ compartment: comp, type: 'bolus', amount: amount, start_time: time }],
-          observed: State.observations[parseInt(obsIndex, 10)].data
+          observed: selectedObs.data,
+          mappings: selectedObs.mappings 
         });
       }
 
@@ -1453,7 +1564,8 @@ const Handlers = {
           name: file.name,
           color: pickColor(),
           data: data,
-          selected: true
+          selected: true,
+          mappings: {} // { dataColumn: modelVariable, ... }
         });
       } catch (error) {
         alert(`Error processing file ${file.name}: ${error.message}`);
@@ -1464,29 +1576,44 @@ const Handlers = {
   },
 
   /**
-   * 관찰 데이터 목록의 클릭 이벤트를 처리합니다 (이벤트 위임).
+   * 관찰 데이터 패널(Offcanvas) 내부의 'click' 이벤트를 처리합니다.
    */
-  handleObsListClick(event) {
+  handleObsPanelClick(event) {
     const target = event.target;
-    const item = target.closest('.obs-item');
-    if (!item) return;
+    const item = target.closest('.obs-item');       // 목록 아이템
+    const removeBtn = target.closest('.remove-obs-btn'); // 삭제 버튼
 
-    const index = parseInt(item.dataset.index, 10);
-    const obsData = State.observations[index];
-    if (!obsData) return;
-
-    if (target.classList.contains('obs-check')) {
-      // 체크박스 클릭
-      obsData.selected = target.checked;
-    } else if (target.classList.contains('remove-obs-btn')) {
-      // 삭제 버튼 클릭
-      if (confirm(`Are you sure you want to remove "${obsData.name}"?`)) {
+    // 1. 삭제 버튼 클릭 시
+    if (removeBtn) {
+      const index = parseInt(removeBtn.dataset.index, 10);
+      const obsData = State.observations[index];
+      if (obsData && confirm(`Are you sure you want to remove "${obsData.name}"?`)) {
         State.observations.splice(index, 1);
-        UI.renderObsList();
+        UI.renderObsList(); // 목록과 상세 보기를 다시 렌더링
       }
-    } else {
-      // 그 외 영역(이름 등) 클릭
-      UI.renderObsPreview(index);
+      return;
+    }
+
+    // 2. 목록 아이템 클릭 시
+    if (item) {
+      event.preventDefault();
+      const index = parseInt(item.dataset.index, 10);
+      UI.renderObsDetailView(index);
+    }
+  },
+
+  /**
+   * 관찰 데이터 패널(Offcanvas) 내부의 'change' 이벤트를 처리합니다.
+   */
+  handleObsPanelChange(event) {
+    const target = event.target;
+    // 매핑 드롭다운 메뉴 변경 시
+    if (target.classList.contains('mapping-select')) {
+        const obsIndex = parseInt(target.dataset.obsIndex, 10);
+        const colName = target.dataset.columnName;
+        if (State.observations[obsIndex]) {
+          State.observations[obsIndex].mappings[colName] = target.value;
+        }
     }
   },
 
@@ -1560,7 +1687,8 @@ const App = {
 
     // --- 관찰 데이터(Offcanvas) 이벤트 바인딩 ---
     DOM.modals.obsData.fileInput.addEventListener('change', Handlers.handleObsFileChange);
-    DOM.modals.obsData.list.addEventListener('click', Handlers.handleObsListClick);
+    DOM.modals.obsData.panel.addEventListener('click', Handlers.handleObsPanelClick);
+    DOM.modals.obsData.panel.addEventListener('change', Handlers.handleObsPanelChange);
 
     // --- 심볼 편집 모달 이벤트 바인딩 ---
     DOM.sidebar.editSymbolsBtn.addEventListener('click', () => { // 심볼 편집 모달 열기
