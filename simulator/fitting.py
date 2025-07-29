@@ -6,6 +6,7 @@ from scipy.optimize import least_squares
 from sympy import symbols, lambdify
 from django.core.cache import cache
 import hashlib
+import math
 
 # 프로젝트의 다른 모듈 임포트
 from .solver import solve_ode_system
@@ -89,6 +90,19 @@ def _residuals(vec, fit_keys, fixed_param, equations_callable, all_parameters, c
     return np.asarray(res_all)
 
 
+def _clean_nan(obj):
+    """
+    딕셔너리나 리스트 내부의 모든 NaN, inf, -inf 값을 None으로 재귀적으로 변환합니다.
+    """
+    if isinstance(obj, dict):
+        return {k: _clean_nan(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_clean_nan(elem) for elem in obj]
+    elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    return obj
+
+
 def fit(data: dict) -> dict:
     """
     여러 실험 그룹 데이터를 사용하여 파라미터 피팅을 수행합니다.
@@ -169,20 +183,59 @@ def fit(data: dict) -> dict:
 
     fitted_params = dict(zip(fit_keys, result.x))
 
-    # 4) 최종 파라미터로 "가중되지 않은" SSR 계산
-    final_residuals_unweighted = _residuals(
-        result.x, fit_keys, fixed_param, equations_callable, all_parameters, all_compartments, initials, 
-        fitting_groups, weighting='none', derived_expressions=derived_expressions
-    )
-    total_ssr = np.sum(np.square(final_residuals_unweighted))
+    # 4) 최종 파라미터와 잔차, 자유도, 신뢰 구간 계산
+    final_residuals_unweighted = _residuals(result.x, fit_keys, fixed_param, equations_callable, all_parameters, all_compartments, initials, fitting_groups, 'none', derived_expressions)
+    ssr_total = np.sum(np.square(final_residuals_unweighted))
 
-    # 5) 최종 반환값 (기존과 동일)
-    return {
+    n_params = len(fit_keys)
+    standard_errors = [np.nan] * n_params
+    conf_intervals = [[np.nan, np.nan]] * n_params
+
+    n_obs = len(final_residuals_unweighted)
+    dof = n_obs - n_params
+
+    if dof > 0:
+        try:
+            from scipy.stats import t
+            residual_variance = ssr_total / dof
+            J = result.jac
+            covariance_matrix = np.linalg.inv(J.T @ J) * residual_variance
+            valid_variances = np.maximum(np.diag(covariance_matrix), 0)
+            standard_errors = np.sqrt(valid_variances)
+            
+            alpha = 0.05
+            t_val = t.ppf(1.0 - alpha / 2.0, dof)
+            
+            conf_intervals = []
+            for i, param_val in enumerate(result.x):
+                se = standard_errors[i]
+                lower = param_val - t_val * se
+                upper = param_val + t_val * se
+                conf_intervals.append([lower, upper])
+        except Exception as e:
+            print(f"Warning: Could not calculate confidence intervals: {e}")
+
+    # params_with_stats를 if 문 바깥에서 생성하여 UnboundLocalError를 방지합니다.
+    params_with_stats = []
+    for i, key in enumerate(fit_keys):
+        params_with_stats.append({
+            "name": key,
+            "value": fitted_params[key],
+            "stderr": standard_errors[i],
+            "ci_lower": conf_intervals[i][0],
+            "ci_upper": conf_intervals[i][1]
+        })
+
+    final_result = {
         "status": "ok",
-        "params": fitted_params,
+        "params": params_with_stats,
         "cost": result.cost,
-        "ssr_total": total_ssr,
+        "ssr_total": ssr_total,
         "nfev": result.nfev,
         "message": result.message,
         "status_code": result.status,
     }
+
+    # 최종 반환 전에 _clean_nan 함수를 호출하여 모든 NaN/inf 값을 None으로 변환합니다.
+    return _clean_nan(final_result)
+

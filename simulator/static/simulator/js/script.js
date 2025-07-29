@@ -780,15 +780,15 @@ const UI = {
 
   /**
    * 메인 페이지의 파라미터 입력 필드 값을 업데이트합니다.
-   * @param {object} params - { 파라미터이름: 값 } 형태의 객체
+   * @param {list} params - { 파라미터이름: 값 } 형태의 객체
    */
   updateInputFields(params) {
-    for (const [key, value] of Object.entries(params)) {
-      const inputEl = DOM.sidebar.paramValuesContainer.querySelector(`#param_${key}`);
+    params.forEach(p => {
+      const inputEl = DOM.sidebar.paramValuesContainer.querySelector(`#param_${p.name}`);
       if (inputEl) {
-        inputEl.value = value;
+        inputEl.value = p.value;
       }
-    }
+    });
   },
 
   /**
@@ -800,9 +800,20 @@ const UI = {
     const { fitSummaryCard, fitSummaryContainer } = DOM.results;
     if (!fitSummaryCard || !fitSummaryContainer) return;
 
-    const rows = Object.entries(params)
-      .map(([key, value]) => `<tr><td>${key}</td><td>${typeof value === 'number' ? value.toPrecision(6) : value}</td></tr>`)
-      .join("");
+    const rows = params.map(p => {
+      const stderrText = p.stderr !== null ? p.stderr.toPrecision(4) : 'N/A';
+      const ciText = (p.ci_lower !== null && p.ci_upper !== null) 
+        ? `[${p.ci_lower.toPrecision(4)}, ${p.ci_upper.toPrecision(4)}]` 
+        : 'N/A';
+
+      return `
+        <tr>
+          <td>${p.name}</td>
+          <td>${p.value.toPrecision(6)}</td>
+          <td>${stderrText}</td>
+          <td>${ciText}</td>
+        </tr>`;
+    }).join("");
 
     fitSummaryContainer.innerHTML = `
       <div class="table-responsive">
@@ -811,12 +822,15 @@ const UI = {
             <tr>
               <th>Parameter</th>
               <th>Value</th>
+              <th>Std. Error</th>
+              <th>95% CI</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <p class="small text-muted mb-0 text-end">Cost (SSR): ${typeof cost === 'number' ? cost.toPrecision(6) : cost}</p>`;
+      <p class="small text-muted mb-0 text-end">Cost (SSR): ${cost.toPrecision(6)}</p>`;
+
       
     fitSummaryCard.style.display = "block";
   },
@@ -860,13 +874,15 @@ const UI = {
       consoleOutput += `Final Unweighted SSR: ${typeof resultData.ssr_total === 'number' ? resultData.ssr_total.toPrecision(6) : 'N/A'}`;
       progressConsole.textContent = consoleOutput;
 
-      const rows = Object.entries(resultData.params)
-        .map(([k, v]) => `<tr><td>${k}</td><td>${typeof v === 'number' ? v.toPrecision(6) : v}</td></tr>`)
-        .join("");
+      const rows = resultData.params.map(p => {
+        const stderrText = p.stderr !== null ? p.stderr.toPrecision(4) : 'N/A';
+        return `<tr><td>${p.name}</td><td>${p.value.toPrecision(6)}</td><td>${stderrText}</td></tr>`;
+      }).join("");
+
       progressResult.innerHTML = `
         <table class="table table-sm table-bordered mb-0">
           <thead class="table-light">
-            <tr><th>Fitted Parameter</th><th>Value</th></tr>
+            <tr><th>Fitted Parameter</th><th>Value</th><th>Std. Error</th></tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>`;
