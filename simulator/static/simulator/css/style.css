@@ -46,9 +46,9 @@ body {
     -moz-osx-font-smoothing: grayscale;
     font-size: 1rem; 
     line-height: 1.5;
-    display: flex;
+    /* display: flex;
     height: 100vh;
-    overflow: hidden;
+    overflow: hidden; */
     background-color: var(--apple-background-secondary);
 }
 h1, h2, h3, h4, h5, h6 {
@@ -685,3 +685,13 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.08);
 }
 
+/* ------------------------------ */
+/* 8. Simulator Layout Wrapper    */
+/* ------------------------------ */
+.simulator-container {
+  display: flex;
+  width: 100%;
+  /* 100vh에서 상단 네비게이션 바의 높이(약 56px)를 뺀 만큼의 높이를 차지하도록 설정 */
+  height: calc(100vh - 56px); 
+  overflow: hidden; /* 컨테이너를 벗어나는 내용은 숨김 */
+}

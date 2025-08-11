@@ -1,0 +1,17 @@
+{% extends 'bootcamp/base.html' %}
+{% block title %}Welcome - PK Bootcamp{% endblock %}
+
+{% block content %}
+<div class="container text-center vh-75 d-flex flex-column justify-content-center mt-4">
+  <h1 class="display-4">PK Bootcamp 2025에 오신 것을 환영합니다!</h1>
+  <p class="lead text-muted">아래에서 참여할 세션을 선택해주세요.</p>
+  <div class="d-grid gap-3 col-6 mx-auto">
+    <a href="{% url 'morning_session' %}" class="btn btn-primary btn-lg">
+      <i class="bi bi-brightness-high-fill me-2"></i> 오전 세션 (NCA & FIH Dose)
+    </a>
+    <a href="{% url 'afternoon_index' %}" class="btn btn-warning btn-lg">
+      <i class="bi bi-sunglasses me-2"></i> 오후 세션 (TMDD Modeling)
+    </a>
+  </div>
+</div>
+{% endblock %}

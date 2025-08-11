@@ -21,10 +21,12 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('simulator.urls')),
+    # '/afternoon/'으로 시작하는 모든 요청은 simulator 앱으로 전달
+    path('afternoon/', include('simulator.urls')),
+    # '/' 또는 '/morning/'으로 시작하는 모든 요청은 bootcamp 앱으로 전달
+    path('', include('bootcamp.urls')),
 ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
-    

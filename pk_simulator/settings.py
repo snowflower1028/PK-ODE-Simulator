@@ -38,6 +38,7 @@ ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'snu-pk-bootcamp-2025-a52098fee279.he
 INSTALLED_APPS = [
     # My custom app
     'simulator',
+    'bootcamp',
     
     # Default Django apps
     'django.contrib.admin',
