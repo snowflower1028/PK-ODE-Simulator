@@ -192,18 +192,27 @@ def fit(data: dict) -> dict:
     conf_intervals = [[np.nan, np.nan]] * n_params
 
     n_obs = len(final_residuals_unweighted)
+    n_params = len(fit_keys)
     dof = n_obs - n_params
 
+    # 자유도가 0보다 클 때만 통계치 계산을 시도
     if dof > 0:
         try:
             from scipy.stats import t
             residual_variance = ssr_total / dof
             J = result.jac
-            covariance_matrix = np.linalg.inv(J.T @ J) * residual_variance
-            valid_variances = np.maximum(np.diag(covariance_matrix), 0)
+
+            # 기존 역행렬 대신, 수치적으로 더 안정적인 유사 역행렬(pinv)을 사용합니다.
+            # J.T @ J 행렬이 특이 행렬(singular)일 경우에도 계산을 계속할 수 있습니다.
+            covariance_matrix = np.linalg.pinv(J.T @ J) * residual_variance
+            
+            param_variances = np.diag(covariance_matrix)
+            
+            # 분산이 음수가 되는 경우를 방지 (수치적 불안정성)
+            valid_variances = np.maximum(param_variances, 0)
             standard_errors = np.sqrt(valid_variances)
             
-            alpha = 0.05
+            alpha = 0.05  # 95% confidence
             t_val = t.ppf(1.0 - alpha / 2.0, dof)
             
             conf_intervals = []
@@ -212,8 +221,12 @@ def fit(data: dict) -> dict:
                 lower = param_val - t_val * se
                 upper = param_val + t_val * se
                 conf_intervals.append([lower, upper])
-        except Exception as e:
+
+        except (np.linalg.LinAlgError, ValueError) as e:
             print(f"Warning: Could not calculate confidence intervals: {e}")
+            # 계산 실패 시 NaN 값 유지
+            standard_errors = [np.nan] * n_params
+            conf_intervals = [[np.nan, np.nan]] * n_params
 
     # params_with_stats를 if 문 바깥에서 생성하여 UnboundLocalError를 방지합니다.
     params_with_stats = []

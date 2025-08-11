@@ -801,7 +801,12 @@ const UI = {
     if (!fitSummaryCard || !fitSummaryContainer) return;
 
     const rows = params.map(p => {
-      const stderrText = p.stderr !== null ? p.stderr.toPrecision(4) : 'N/A';
+      // CV% 계산: (표준오차 / 추정치) * 100
+      // 추정치가 0이거나 표준오차 계산이 불가능한 경우 'N/A' 처리
+      const cvText = (p.stderr !== null && p.value !== 0) 
+        ? `${((p.stderr / p.value) * 100).toFixed(2)}%` 
+        : 'N/A';
+        
       const ciText = (p.ci_lower !== null && p.ci_upper !== null) 
         ? `[${p.ci_lower.toPrecision(4)}, ${p.ci_upper.toPrecision(4)}]` 
         : 'N/A';
@@ -810,7 +815,7 @@ const UI = {
         <tr>
           <td>${p.name}</td>
           <td>${p.value.toPrecision(6)}</td>
-          <td>${stderrText}</td>
+          <td>${cvText}</td>
           <td>${ciText}</td>
         </tr>`;
     }).join("");
@@ -822,7 +827,7 @@ const UI = {
             <tr>
               <th>Parameter</th>
               <th>Value</th>
-              <th>Std. Error</th>
+              <th>CV%</th>
               <th>95% CI</th>
             </tr>
           </thead>
@@ -830,7 +835,6 @@ const UI = {
         </table>
       </div>
       <p class="small text-muted mb-0 text-end">Cost (SSR): ${cost.toPrecision(6)}</p>`;
-
       
     fitSummaryCard.style.display = "block";
   },
@@ -875,14 +879,16 @@ const UI = {
       progressConsole.textContent = consoleOutput;
 
       const rows = resultData.params.map(p => {
-        const stderrText = p.stderr !== null ? p.stderr.toPrecision(4) : 'N/A';
-        return `<tr><td>${p.name}</td><td>${p.value.toPrecision(6)}</td><td>${stderrText}</td></tr>`;
+        const cvText = (p.stderr !== null && p.value !== 0) 
+          ? `${((p.stderr / p.value) * 100).toFixed(2)}%` 
+          : 'N/A';
+        return `<tr><td>${p.name}</td><td>${p.value.toPrecision(6)}</td><td>${cvText}</td></tr>`;
       }).join("");
 
       progressResult.innerHTML = `
         <table class="table table-sm table-bordered mb-0">
           <thead class="table-light">
-            <tr><th>Fitted Parameter</th><th>Value</th><th>Std. Error</th></tr>
+            <tr><th>Fitted Parameter</th><th>Value</th><th>CV%</th></tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>`;
