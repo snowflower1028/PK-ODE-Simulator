@@ -13,16 +13,17 @@
     <h2 class="mb-0">오전 세션: NCA 분석 & FIH 용량 계산</h2>
     <ul class="nav nav-pills">
       <li class="nav-item">
-        <a class="nav-link active" data-bs-toggle="tab" href="#nca-analyzer">NCA 분석기</a>
+        <a class="nav-link" data-bs-toggle="tab" href="#nca-analyzer">NCA 분석기</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" data-bs-toggle="tab" href="#fih-calculator">FIH 용량 계산기</a>
+        <a class="nav-link active" data-bs-toggle="tab" href="#fih-calculator">FIH 용량 계산기</a>
       </li>
     </ul>
   </div>
 
   <div class="tab-content">
-    <div class="tab-pane fade show active" id="nca-analyzer">
+    <div class="tab-pane fade" id="nca-analyzer">
+      <!-- NCA Analyzer Content -->
       <div class="row g-4">
         <div class="col-lg-7">
           <div class="card h-100">
@@ -73,16 +74,16 @@
         </div>
       </div>
     </div>
-    <div class="tab-pane fade" id="fih-calculator">
+    <div class="tab-pane fade show active" id="fih-calculator">
       <div class="card">
         <div class="card-header">
           <div class="d-flex justify-content-between align-items-center">
             <ul class="nav nav-tabs card-header-tabs">
               <li class="nav-item">
-                <a class="nav-link active" data-bs-toggle="tab" href="#noael-tab">NOAEL Approach</a>
+                <a class="nav-link" data-bs-toggle="tab" href="#noael-tab">NOAEL Approach</a>
               </li>
               <li class="nav-item">
-                <a class="nav-link" data-bs-toggle="tab" href="#mabel-tab">MABEL Approach</a>
+                <a class="nav-link active" data-bs-toggle="tab" href="#mabel-tab">MABEL Approach</a>
               </li>
               <li class="nav-item">
                 <a class="nav-link" data-bs-toggle="tab" href="#pk-based-tab">PK-based Approach</a>
@@ -95,129 +96,291 @@
         </div>
         <div class="card-body">
           <div class="tab-content p-2">
-            <div class="tab-pane fade show active" id="noael-tab">
-                <!-- ✨ [수정] 전체 레이아웃을 수직으로 변경하고, 2단 분할(row, col-md-6) 제거 -->
+            <div class="tab-pane fade" id="noael-tab">
+                <!-- NOAEL Tutorial Content -->
                 <div id="noael-step-1">
                     <h5>Step 1: 문제 확인</h5>
                     <p class="text-muted">아래 문제를 읽고, FIH 용량 계산에 필요한 핵심 정보들을 파악하십시오.</p>
-                    <!-- ✨ [수정] alert-info 클래스를 card, card-body로 변경하여 배경색 제거 -->
                     <div class="card card-body bg-light mb-3">
                         <p>SNU Pharmaceutics는 human CD3를 표적으로 하는 단일클론항체 Glio-2025를 개발하였습니다. 현재 SNU Pharmaceutics는 Glio-2025의 First-in-Human (FIH) 임상시험을 준비 중입니다.</p>
                         <p class="mb-2">아래의 반복투여 독성시험 데이터를 바탕으로 NOAEL 기반 접근법에 따른 FIH dose를 산정하시오.</p>
                         <table class="table table-bordered table-sm bg-white mb-0">
                             <thead class="table-light">
-                                <tr>
-                                    <th>Species</th>
-                                    <th>NOAEL (mg/kg)</th>
-                                </tr>
+                                <tr><th>Species</th><th>NOAEL (mg/kg)</th></tr>
                             </thead>
                             <tbody>
-                                <tr>
-                                    <td>Sprague-Dawley Rat</td>
-                                    <td>50.00</td>
-                                </tr>
-                                <tr>
-                                    <td>Beagle dog</td>
-                                    <td>30.00</td>
-                                </tr>
-                                <tr>
-                                    <td>Cynomolgus monkey</td>
-                                    <td>10.00</td>
-                                </tr>
+                                <tr><td>Sprague-Dawley Rat</td><td>50.00</td></tr>
+                                <tr><td>Beagle dog</td><td>30.00</td></tr>
+                                <tr><td>Cynomolgus monkey</td><td>10.00</td></tr>
                             </tbody>
                         </table>
                     </div>
-                    <div class="d-grid mt-3">
+                    <div class="d-grid mt-3" id="noael-start-btn-container">
                         <button class="btn btn-primary" id="noael-start-btn">계산 시작하기 <i class="bi bi-arrow-right"></i></button>
                     </div>
                 </div>
-
-                <!-- ✨ [수정] hr 태그를 추가하여 스텝 간 구분 -->
-                <hr class="my-4">
-
-                <div id="noael-step-2" class="d-none">
-                    <h5>Step 2: 가장 적절한 NOAEL 값 결정하기</h5>
-                    <p class="text-muted">문제에 제시된 동물 종 중, FIH 용량 계산에 가장 적절한(보수적인) NOAEL 값을 선택하세요.</p>
-                    <div class="list-group">
-                        <button type="button" class="list-group-item list-group-item-action" data-noael="50" data-species="Rat">Sprague-Dawley Rat: 50 mg/kg</button>
-                        <button type="button" class="list-group-item list-group-item-action" data-noael="30" data-species="Dog">Beagle dog: 30 mg/kg</button>
-                        <button type="button" class="list-group-item list-group-item-action" data-noael="10" data-species="Monkey">Cynomolgus monkey: 10 mg/kg</button>
+                <div id="noael-tutorial-content" class="d-none">
+                    <hr class="my-4">
+                    <div id="noael-step-2">
+                        <h5>Step 2: 가장 적절한 NOAEL 값 결정하기</h5>
+                        <p class="text-muted">문제에 제시된 동물 종 중, FIH 용량 계산에 가장 적절한(보수적인) NOAEL 값을 선택하세요.</p>
+                        <div class="list-group">
+                            <button type="button" class="list-group-item list-group-item-action" data-noael="50" data-species="Rat">Sprague-Dawley Rat: 50 mg/kg</button>
+                            <button type="button" class="list-group-item list-group-item-action" data-noael="30" data-species="Dog">Beagle dog: 30 mg/kg</button>
+                            <button type="button" class="list-group-item list-group-item-action" data-noael="10" data-species="Monkey">Cynomolgus monkey: 10 mg/kg</button>
+                        </div>
+                        <div id="noael-feedback" class="mt-2"></div>
                     </div>
-                    <div id="noael-feedback" class="mt-2"></div>
-                </div>
-
-                <!-- ✨ [수정] hr 태그를 추가하여 스텝 간 구분 -->
-                <hr class="my-4">
-
-                <div id="noael-step-3-4" class="d-none">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h5>Step 3: HED (Human Equivalent Dose) 변환</h5>
-                            <p class="text-muted">선택한 NOAEL 값을 아래 공식에 따라 HED로 변환합니다.</p>
-                            <div class="result-formula text-center mb-3">
-                                $ HED = NOAEL_{animal} \times (\frac{BW_{animal}}{BW_{human}})^{1-exp} $
+                    <div id="noael-step-3-4" class="d-none">
+                        <hr class="my-4">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5>Step 3: HED (Human Equivalent Dose) 변환</h5>
+                                <p class="text-muted">선택한 NOAEL 값을 아래 공식에 따라 HED로 변환합니다.</p>
+                                <div class="result-formula text-center mb-3">$ HED = NOAEL_{animal} \times (\frac{BW_{animal}}{BW_{human}})^{1-exp} $</div>
+                                <div class="mb-2 row align-items-center"><label class="col-sm-5 col-form-label-sm">선택된 NOAEL (mg/kg)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="noael-input-noael" readonly></div></div>
+                                <div class="mb-2 row align-items-center"><label class="col-sm-5 col-form-label-sm">Animal Weight (kg)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="noael-input-bw-animal" value="3"></div></div>
+                                <div class="mb-2 row align-items-center"><label class="col-sm-5 col-form-label-sm">Human Weight (kg)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="noael-input-bw-human" value="60"></div></div>
+                                <div class="mb-2 row align-items-center"><label class="col-sm-5 col-form-label-sm">Scaling Exponent (exp)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="noael-input-exp" value="1"></div></div>
                             </div>
-                            <div class="mb-2 row align-items-center">
-                                <label class="col-sm-5 col-form-label col-form-label-sm">선택된 NOAEL (mg/kg)</label>
-                                <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="noael-input-noael" readonly></div>
-                            </div>
-                            <div class="mb-2 row align-items-center">
-                                <label class="col-sm-5 col-form-label col-form-label-sm">Animal Weight (kg)</label>
-                                <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="noael-input-bw-animal" value="3"></div>
-                            </div>
-                            <div class="mb-2 row align-items-center">
-                                <label class="col-sm-5 col-form-label col-form-label-sm">Human Weight (kg)</label>
-                                <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="noael-input-bw-human" value="60"></div>
-                            </div>
-                            <div class="mb-2 row align-items-center">
-                                <label class="col-sm-5 col-form-label col-form-label-sm">Scaling Exponent (exp)</label>
-                                <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="noael-input-exp" value="1"></div>
+                            <div class="col-md-6">
+                                <h5>Step 4: FIH Starting Dose 결정</h5>
+                                <div class="mb-2 row align-items-center"><label class="col-sm-5 col-form-label-sm">Safety Factor</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="noael-input-sf" value="10"></div></div>
+                                <div id="noael-final-result" class="mt-3"></div>
                             </div>
                         </div>
-                        <div class="col-md-6">
-                            <h5>Step 4: FIH Starting Dose 결정</h5>
-                            <div class="mb-2 row align-items-center">
-                                <label class="col-sm-5 col-form-label col-form-label-sm">Safety Factor</label>
-                                <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="noael-input-sf" value="10"></div>
-                            </div>
-                            <div id="noael-final-result" class="mt-3"></div>
-                        </div>
-                    </div>
-                     <div class="alert alert-secondary small mt-3">
-                        <strong>Scaling Exponent (exp)란?</strong><br>
-                        `exp`는 종 간 용량 변환에 사용되는 scaling 지수입니다. FDA 가이드라인에 따르면, 일반적으로 종 간 체표면적(BSA) 차이를 기반으로 HED를 산출하며(mg/m² scaling), 이때 `exp` 값으로 0.67 또는 0.75를 선택합니다. 하지만 100 kDa가 넘는 항체의약품을 정맥주사(IV)로 투여하는 경우, `exp` 값을 1로 하는 mg/kg scaling을 권고하고 있습니다. 이는 NOAEL 값을 그대로 HED로 사용하는 것을 의미합니다.
+                        <div class="alert alert-secondary small mt-3"><strong>Scaling Exponent (exp)란?</strong><br>`exp`는 종 간 용량 변환에 사용되는 scaling 지수입니다. FDA 가이드라인에 따르면, 일반적으로 종 간 체표면적(BSA) 차이를 기반으로 HED를 산출하며(mg/m² scaling), 이때 `exp` 값으로 0.67 또는 0.75를 선택합니다. 하지만 100 kDa가 넘는 항체의약품을 정맥주사(IV)로 투여하는 경우, `exp` 값을 1로 하는 mg/kg scaling을 권고하고 있습니다. 이는 NOAEL 값을 그대로 HED로 사용하는 것을 의미합니다.</div>
                     </div>
                 </div>
             </div>
-            <div class="tab-pane fade" id="mabel-tab">
-              <!-- MABEL 튜토리얼 구현을 위해 이 부분은 다음 단계에서 수정될 예정입니다. -->
-              <div class="row g-4">
-                <div class="col-md-5">
-                  <h6><i class="bi bi-input-cursor-text"></i> Input Parameters</h6>
-                  <div class="mb-2 row"><label class="col-sm-5 col-form-label col-form-label-sm">K<sub>D</sub> (nM)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-input-kd"></div></div>
-                  <div class="mb-2 row"><label class="col-sm-5 col-form-label col-form-label-sm">Target RO (%)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-input-ro"></div></div>
-                  <div class="mb-2 row"><label class="col-sm-5 col-form-label col-form-label-sm">Volume of Dist. (L)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-input-vd"></div></div>
-                  <div class="mb-2 row"><label class="col-sm-5 col-form-label col-form-label-sm">Molecular Weight (g/mol)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-input-mw"></div></div>
-                  <div class="d-grid mt-3"><button class="btn btn-primary" id="mabel-start-btn">계산하기</button></div>
+            <div class="tab-pane fade show active" id="mabel-tab">
+                <!-- MABEL Tutorial Content -->
+                <div id="mabel-step-0">
+                    <h5>문제 확인</h5>
+                    <p class="text-muted">아래의 in vitro 및 in vivo 시험 데이터를 종합하여 MABEL 기반 접근법에 따른 FIH dose를 산정하시오.</p>
+                    <div class="card card-body bg-light mb-3">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>[In vitro data]</h6>
+                                <table class="table table-sm table-bordered bg-white mb-2">
+                                    <tbody>
+                                        <tr><td class="w-50"><strong>MW</strong></td><td>150 kDa</td></tr>
+                                        <tr><td><strong>KD</strong></td><td>8.6 nM</td></tr>
+                                        <tr><td><strong># of CD3/cell</strong></td><td>6.11E+04</td></tr>
+                                        <tr><td><strong># of T cells/L</strong></td><td>1.30E+09</td></tr>
+                                    </tbody>
+                                </table>
+                                <table class="table table-sm table-bordered bg-white mb-0">
+                                    <thead class="table-light"><tr><th>EC20 Values (Target)</th><th>EC20 (ng/mL)</th></tr></thead>
+                                    <tbody>
+                                        <tr><td>Binding to CD3</td><td>150.00</td></tr>
+                                        <tr><td>Cytokine release (INF-γ)</td><td>540.30</td></tr>
+                                        <tr><td>Cytokine release (IL-6)</td><td>209.20</td></tr>
+                                        <tr><td>Cytokine release (IL-1β)</td><td>450.20</td></tr>
+                                        <tr><td>Cytokine release (TNF-α)</td><td>360.30</td></tr>
+                                        <tr><td>T cell proliferation</td><td>210.00</td></tr>
+                                        <tr><td>Tumor cell cytotoxicity</td><td>100.30</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>[In vivo data]</h6>
+                                <p class="small">Glioma mouse 모델을 사용하여 0.5 mg/kg/day부터 25 mg/kg/day까지의 용량을 5일 연속 정맥 투여한 결과</p>
+                                <table class="table table-sm table-bordered bg-white mb-2">
+                                    <tbody>
+                                        <tr><td class="w-50"><strong>최소 유효 용량</strong></td><td>1.0 mg/kg/day</td></tr>
+                                        <tr><td><strong>평균 혈중 농도</strong></td><td>0.56 ug/mL</td></tr>
+                                    </tbody>
+                                </table>
+                                <div class="alert alert-secondary small">*Cynomolgus monkey 약동학 데이터 기반 human CL 예측값 (Practice 3 참조) = 41 mL/h/kg</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-grid mt-3" id="mabel-start-btn-container">
+                        <button class="btn btn-primary" id="mabel-start-btn">계산 시작하기 <i class="bi bi-arrow-right"></i></button>
+                    </div>
                 </div>
-                <div class="col-md-7">
-                    <h6 class="mb-3"><i class="bi bi-calculator"></i> Calculation Process & Result</h6>
-                    <div id="mabel-final-result" class="placeholder-text small">입력값을 넣고 계산 버튼을 누르세요.</div>
+
+                <div id="mabel-tutorial-content" class="d-none">
+                    <hr class="my-4">
+                    <div id="mabel-step-1">
+                        <h5>Step 1: 가장 적절한 EC20 값 결정하기</h5>
+                        <div class="alert alert-light border"><strong>MABEL이란?</strong><br>Minimum Anticipated Biological Effect Level의 약자로, 약효와 독성을 포함하여 어떠한 생물학적 효과라도 나타나는 최저 농도를 의미합니다. 따라서 가장 보수적인 접근을 위해 제시된 EC20 값들 중 <strong>가장 낮은 값</strong>을 선택해야 합니다.</div>
+                        <div class="list-group mt-3">
+                            <button type="button" class="list-group-item list-group-item-action" data-ec20="150.00">Binding to CD3: 150.00 ng/mL</button>
+                            <button type="button" class="list-group-item list-group-item-action" data-ec20="540.30">Cytokine release (INF-γ): 540.30 ng/mL</button>
+                            <button type="button" class="list-group-item list-group-item-action" data-ec20="209.20">Cytokine release (IL-6): 209.20 ng/mL</button>
+                            <button type="button" class="list-group-item list-group-item-action" data-ec20="450.20">Cytokine release (IL-1β): 450.20 ng/mL</button>
+                            <button type="button" class="list-group-item list-group-item-action" data-ec20="360.30">Cytokine release (TNF-α): 360.30 ng/mL</button>
+                            <button type="button" class="list-group-item list-group-item-action" data-ec20="210.00">T cell proliferation: 210.00 ng/mL</button>
+                            <button type="button" class="list-group-item list-group-item-action" data-ec20="100.30">Tumor cell cytotoxicity: 100.30 ng/mL</button>
+                        </div>
+                        <div id="mabel-feedback-step1" class="mt-2"></div>
+                    </div>
+
+                    <div id="mabel-step-2" class="d-none">
+                        <hr class="my-4">
+                        <h5>Step 2: HED (Human Equivalent Dose) 계산</h5>
+                        <p class="text-muted">선택된 EC20 값을 기준으로 HED를 계산합니다. HED는 In vitro 농도에 Human Plasma Volume (3L)을 곱하여 추정할 수 있습니다.</p>
+                        <div class="result-formula text-center mb-3">$ HED (\mu g) = EC_{20, in vitro} (\mu g/L) \times Human\ Plasma\ Volume (L) $</div>
+                        <div id="mabel-hed-table-container"></div>
+                    </div>
+                    
+                    <div id="mabel-step-3" class="d-none">
+                        <hr class="my-4">
+                        <h5>Step 3: Theoretical Receptor Occupancy (%RO) 계산</h5>
+                        <p class="text-muted">두 가지 다른 방법으로 %RO를 계산하여 FIH 용량의 타당성을 교차 검증할 수 있습니다.</p>
+                        <div class="row">
+                            <!-- Method 1 -->
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-header"><strong>Method 1: Simple Model</strong></div>
+                                    <div class="card-body">
+                                        <div class="result-formula text-center mb-3">$ \%RO = \frac{[Ab]}{[Ab]+K_d}\times{100} $</div>
+                                        <div class="mb-2 row align-items-center">
+                                            <label class="col-sm-5 col-form-label-sm">Total Drug [Ab] (nM) <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="FIH Starting Dose에서의 총 약물 농도. Step 2에서 계산된 HED를 혈장 부피와 분자량으로 변환하여 구합니다."></i></label>
+                                            <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-ro-m1-ab"></div>
+                                        </div>
+                                        <div class="mb-2 row align-items-center">
+                                            <label class="col-sm-5 col-form-label-sm">K<sub>d</sub> (nM) <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="해리 상수 (Dissociation constant)"></i></label>
+                                            <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-ro-m1-kd"></div>
+                                        </div>
+                                        <div id="mabel-ro-m1-result" class="mt-3"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Method 2 -->
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-header"><strong>Method 2: Complex Model</strong></div>
+                                    <div class="card-body">
+                                        <div class="result-formula text-center mb-2" style="font-size: 0.8rem;">$ \%RO = \frac{(K_D+TD+TT)-\sqrt{(K_D+TD+TT)^2-4 \cdot TD \cdot TT}}{2 \cdot TT} \times 100 $</div>
+                                        <div class="mb-2 row align-items-center">
+                                            <label class="col-sm-5 col-form-label-sm">Total Drug (TD) (nM) <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="Method 1의 [Ab]와 동일"></i></label>
+                                            <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-ro-m2-td"></div>
+                                        </div>
+                                        <div class="mb-2 row align-items-center">
+                                            <label class="col-sm-5 col-form-label-sm">Total Target (TT) (nM) <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="총 타겟 농도. (# of CD3/cell) - (# of T cells/L) / (Avogadro's constant)로 계산됩니다."></i></label>
+                                            <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-ro-m2-tt"></div>
+                                        </div>
+                                         <div class="mb-2 row align-items-center">
+                                            <label class="col-sm-5 col-form-label-sm">K<sub>d</sub> (nM) <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="해리 상수 (Dissociation constant)"></i></label>
+                                            <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-ro-m2-kd"></div>
+                                        </div>
+                                        <div id="mabel-ro-m2-result" class="mt-3"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="mabel-step-4" class="d-none">
+                         <hr class="my-4">
+                        <h5>Step 4: In vivo Efficacy 기반 용량 계산</h5>
+                        <p class="text-muted">동물 모델에서의 유효 용량 데이터를 기반으로 FIH 용량을 계산하여 MABEL 접근법과 비교 검토합니다.</p>
+                        <div class="result-formula text-center mb-3">$ Dose (mg/day) = CL_{human} (L/h/kg) \times C_{eff,ss} (\mu g/mL) \times 24 (h/day) \times 60 (kg) \times 10^{-3} (mg/\mu g) $</div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-2 row align-items-center">
+                                    <label class="col-sm-5 col-form-label-sm">Human CL (L/h/kg) <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="Human Clearance. 문제에 제시된 예측값을 사용합니다. (41 mL/h/kg = 0.041 L/h/kg)"></i></label>
+                                    <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-invivo-cl"></div>
+                                </div>
+                                <div class="mb-2 row align-items-center">
+                                    <label class="col-sm-5 col-form-label-sm">Efficacious Conc. (μg/mL) <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="동물 모델에서 최소 유효 용량 투여 시의 평균 혈중 농도(C_eff,ss)를 사용합니다."></i></label>
+                                    <div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="mabel-invivo-ceff"></div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div id="mabel-invivo-result" class="mt-3"></div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
-              </div>
             </div>
-            <div class="tab-pane fade" id="pk-based-tab">
-                <!-- PK-based 튜토리얼 구현을 위해 이 부분은 다음 단계에서 수정될 예정입니다. -->
-              <div class="row g-4">
-                <div class="col-md-5">
-                  <h6><i class="bi bi-input-cursor-text"></i> Input Parameters</h6>
-                  <div class="mb-2 row"><label class="col-sm-5 col-form-label col-form-label-sm">Target C<sub>max</sub> (nM)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="pk-cmax"></div></div>
-                  <div class="mb-2 row"><label class="col-sm-5 col-form-label col-form-label-sm">Volume of Dist. (L)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="pk-vd"></div></div>
-                  <div class="mb-2 row"><label class="col-sm-5 col-form-label col-form-label-sm">Molecular Weight (g/mol)</label><div class="col-sm-7"><input type="number" class="form-control form-control-sm" id="pk-mw"></div></div>
-                  <div class="d-grid mt-3"><button class="btn btn-primary" id="pk-based-calculate-btn">Calculate</button></div>
+            <div class="tab-pane fade show active" id="pk-based-tab">
+                <!-- PK-based Tutorial Content -->
+                <div id="pk-based-step-0">
+                    <h5>문제 확인</h5>
+                    <p class="text-muted">아래의 약동학 데이터를 바탕으로 PK 기반 접근법에 따른 FIH dose를 산정하시오.</p>
+                    <div class="card card-body bg-light mb-3">
+                        <h6>[Cynomolgus monkey에서 Glio-2025 반복 정맥투여(1, 5, 10 mg/kg)에 따른 용량별 약동학 파라미터]</h6>
+                        <table class="table table-bordered table-sm bg-white mb-2">
+                            <thead class="table-light text-center">
+                                <tr>
+                                    <th rowspan="2" class="align-middle">Dose</th>
+                                    <th colspan="3">Geometric mean (CV%)</th>
+                                </tr>
+                                <tr>
+                                    <th>C<sub>max</sub> (μg/mL)</th>
+                                    <th>AUC<sub>tau</sub> (μg·h/mL)</th>
+                                    <th>t<sub>1/2</sub> (h)</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-center">
+                                <tr><td><strong>1 mg/kg</strong></td><td>0.9 (28.3)</td><td>15.2 (26.5)</td><td>74.8 (30.4)</td></tr>
+                                <tr><td><strong>5 mg/kg</strong></td><td>5.4 (29.1)</td><td>76.5 (23.1)</td><td>72.0 (26.8)</td></tr>
+                                <tr><td><strong>10 mg/kg</strong></td><td>10.1 (26.8)</td><td>153.2 (21.2)</td><td>75.3 (23.5)</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="alert alert-secondary small p-2 mb-0">*약동학 데이터 기반 human CL 예측값 = 41 mL/h/kg</div>
+                    </div>
                 </div>
-                <div class="col-md-7"><h6 class="mb-3"><i class="bi bi-calculator"></i> Calculation Process & Result</h6><div id="pk-based-results" class="placeholder-text small">결과가 여기에 표시됩니다.</div></div>
-              </div>
+
+                <hr class="my-4">
+
+                <div id="pk-based-step-1">
+                    <h5>PK-guided Approach 개념 학습</h5>
+                    <p class="text-muted">PK 기반 접근법은 NOAEL과 그에 해당하는 AUC 값을 기반으로, 아래와 같은 원리에 따라 HED를 계산합니다.</p>
+                    <div class="card card-body mb-3">
+                        <ul class="mb-0">
+                            <li><strong>기반 정보:</strong> NOAEL 및 해당 용량에서의 AUC</li>
+                            <li><strong>사용 파라미터:</strong>
+                                <ul class="my-1">
+                                    <li>Index species (Cynomolgus monkey)에서 관찰된 <strong>NOAEL 용량의 AUC</strong></li>
+                                    <li>예측된 <strong>Human CL</strong></li>
+                                </ul>
+                            </li>
+                            <li><strong>계산 단계:</strong>
+                                <ol class="my-1">
+                                    <li><strong>Step 1:</strong> Multiply <code>AUC (in index species)</code> X <code>predicted human CL</code></li>
+                                    <li><strong>Step 2:</strong> Corrected by <code>safety factor</code></li>
+                                </ol>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <div id="pk-based-step-2">
+                    <h5>FIH Starting Dose 계산</h5>
+                    <p class="text-muted">위 개념에 따라 아래 파라미터들을 입력하여 FIH 용량을 계산하세요. NOAEL은 10 mg/kg으로 가정합니다.</p>
+                    <div class="result-formula text-center mb-3">
+                        $ FIH\ Dose\ (mg/kg) = \frac{AUC_{NOAEL, animal}\ (\mu g \cdot h/mL) \times CL_{human}\ (mL/h/kg)}{Safety\ Factor \times 1000\ (\mu g/mg)} $
+                    </div>
+                    <div class="row justify-content-center">
+                        <div class="col-lg-8">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="mb-3 row align-items-center">
+                                        <label class="col-sm-5 col-form-label">AUC at NOAEL (μg·h/mL) <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="NOAEL(10 mg/kg) 용량에서 관찰된 AUC 값"></i></label>
+                                        <div class="col-sm-7"><input type="number" class="form-control" id="pk-based-auc"></div>
+                                    </div>
+                                    <div class="mb-3 row align-items-center">
+                                        <label class="col-sm-5 col-form-label">Predicted Human CL (mL/h/kg) <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="동물실험 데이터로부터 예측된 사람의 Clearance 값"></i></label>
+                                        <div class="col-sm-7"><input type="number" class="form-control" id="pk-based-cl"></div>
+                                    </div>
+                                    <div class="mb-3 row align-items-center">
+                                        <label class="col-sm-5 col-form-label">Safety Factor <i class="bi bi-info-circle" data-bs-toggle="tooltip" title="안전계수. 일반적으로 10을 사용합니다."></i></label>
+                                        <div class="col-sm-7"><input type="number" class="form-control" id="pk-based-sf"></div>
+                                    </div>
+                                    <div id="pk-based-result" class="mt-4"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
           </div>
         </div>
