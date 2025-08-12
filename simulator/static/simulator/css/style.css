@@ -695,3 +695,39 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
   height: calc(100vh - 56px); 
   overflow: hidden; /* 컨테이너를 벗어나는 내용은 숨김 */
 }
+
+/* simulator/static/simulator/css/style.css */
+
+/* ... (기존 CSS 코드 맨 아래에 추가) ... */
+
+/* ------------------------------------ */
+/* 9. NCA Results Panel Styles          */
+/* ------------------------------------ */
+#nca-results-container .result-grid {
+  display: grid;
+  grid-template-columns: auto 1fr; /* Label | Value */
+  gap: 0.5rem 1rem; /* row-gap | column-gap */
+  align-items: center;
+}
+
+#nca-results-container .result-grid dt {
+  font-weight: 500;
+  color: var(--apple-text-secondary);
+  text-align: right;
+}
+
+#nca-results-container .result-grid dd {
+  font-weight: 600;
+  color: var(--apple-text-primary);
+  margin-bottom: 0;
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 0.9rem;
+}
+
+#nca-results-container .result-formula {
+    background-color: var(--apple-background-secondary);
+    padding: 0.75rem;
+    border-radius: 7px;
+    border: 1px solid var(--apple-card-border);
+    margin-top: 0.5rem;
+}
