@@ -158,7 +158,7 @@ const API = {
    * @returns {Promise<object>} - 파싱 결과 데이터
    */
   parseODE(odeText) {
-    return this._fetchWrapper("/parse/", { text: odeText });
+    return this._fetchWrapper("/afternoon/parse/", { text: odeText });
   },
 
   /**
@@ -167,7 +167,7 @@ const API = {
    * @returns {Promise<object>} - 시뮬레이션 결과 데이터
    */
   simulate(payload) {
-    return this._fetchWrapper("/simulate/", payload);
+    return this._fetchWrapper("/afternoon/simulate/", payload);
   },
   
   /**
@@ -176,7 +176,7 @@ const API = {
    * @returns {Promise<object>} - 피팅 결과 데이터
    */
   fit(payload) {
-    return this._fetchWrapper("/fit/", payload);
+    return this._fetchWrapper("/afternoon/fit/", payload);
   }
 };
 

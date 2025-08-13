@@ -213,6 +213,8 @@ function initializeFihTutorial() {
     const mabelInvivoResult = document.getElementById('mabel-invivo-result');
 
     // --- PK-based Elements ---
+    const pkBasedStartBtn = document.getElementById('pk-based-start-btn');
+    const pkBasedTutorialContent = document.getElementById('pk-based-tutorial-content');
     const pkBasedInputs = {
         auc: document.getElementById('pk-based-auc'),
         cl: document.getElementById('pk-based-cl'),
@@ -364,6 +366,11 @@ function initializeFihTutorial() {
     }
 
     // --- PK-based Tutorial Logic ---
+    pkBasedStartBtn.addEventListener('click', function() {
+        this.parentElement.style.display = 'none';
+        pkBasedTutorialContent.classList.remove('d-none');
+    });
+
     Object.values(pkBasedInputs).forEach(input => input.addEventListener('input', updatePkBasedDose));
 
     function updatePkBasedDose() {
