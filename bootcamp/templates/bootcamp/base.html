@@ -11,13 +11,37 @@
   </script>
   <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
   <link rel="stylesheet" href="{% static 'simulator/css/style.css' %}">
+  <!-- ✨ [수정] 푸터 그라데이션 및 텍스트 스타일 추가 -->
+  <style>
+    .nav-action-link {
+      color: var(--apple-text-secondary, #6e6e73) !important; /* ✨ !important 추가 */
+      text-decoration: none;
+      transition: color 0.2s ease-in-out;
+      font-size: 0.9rem;
+    }
+    .nav-action-link:hover {
+      color: var(--apple-system-blue, #007AFF) !important; /* ✨ !important 추가 */
+    }
+    .nav-action-link .bi {
+      vertical-align: -0.15em;
+    }
+    .footer-gradient {
+      background: linear-gradient(to bottom, transparent, rgba(30, 30, 32, 0.05) 90%, rgba(30, 30, 32, 0.1));
+      border-top: none; /* 경계선 제거 */
+    }
+    .footer-text-faint, .footer-text-faint p {
+      color: rgba(0, 0, 0, 0.5) !important;
+      font-size: smaller;
+      font-weight: 500;
+    }
+  </style>
   {% block head %}{% endblock %}
 </head>
-<body class="d-flex flex-column h-100">
-  <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom">
+<body class="d-flex flex-column h-100" style="background-color: var(--apple-background-secondary, #f5f5f7);">
+  <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
     <div class="container-fluid">
       <a class="navbar-brand fw-bold d-flex align-items-center" href="{% url 'welcome' %}">
-        <i class="bi bi-beaker fs-4 me-2"></i>
+        <i class="bi bi-beaker fs-4 me-2" style="color: var(--apple-system-blue, #007AFF);"></i>
         <span>PK Bootcamp 2025</span>
       </a>
       <div class="collapse navbar-collapse">
@@ -29,12 +53,12 @@
             <a class="nav-link {% if request.resolver_match.url_name == 'afternoon_index' %}active{% endif %}" href="{% url 'afternoon_index' %}">오후 세션</a>
           </li>
         </ul>
-        <div class="d-flex align-items-center">
-          <a href="https://snupharm.snu.ac.kr/" target="_blank" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-mortarboard-fill"></i> SNU Pharmacy
+        <div class="d-flex align-items-center gap-4">
+          <a href="https://snupharm.snu.ac.kr/" target="_blank" class="nav-action-link">
+            <i class="bi bi-mortarboard-fill me-1"></i> SNU Pharmacy
           </a>
-          <a href="https://github.com/snowflower1028/PK-ODE-Simulator" target="_blank" class="btn btn-outline-secondary btn-sm ms-2">
-            <i class="bi bi-github"></i> Source Code
+          <a href="https://github.com/snowflower1028/PK-ODE-Simulator" target="_blank" class="nav-action-link">
+            <i class="bi bi-github me-1"></i> Source Code
           </a>
         </div>
       </div>
@@ -45,12 +69,12 @@
     {% block content %}{% endblock %}
   </main>
 
-  <footer class="footer mt-auto py-3 bg-light border-top text-center">
-    <div class="container">
-      <div class="text-muted small">
-        Developed by Minsoo Lee (Prof Wooin Lee, W Lab)<br>
-        © 2025 College of Pharmacy, Seoul National University. All Rights Reserved.<br>
-        <span class="mt-2 d-block">해당 사이트의 모든 내용은 교육용이며 어떤 데이터 및 계산 결과의 유효성도 보장하지 않습니다.</span>
+  <footer class="footer mt-auto py-4 footer-gradient">
+    <div class="container text-center">
+      <div class="footer-text-faint small">
+        <p class="mb-1">Web Disigned and Developed by Minsoo Lee (Prof Wooin Lee, W Lab)</p>
+        <p class="mb-1">© 2025 College of Pharmacy, Seoul National University. All Rights Reserved.</p>
+        <p class="mb-0 mt-2" style="font-size: 0.75rem; opacity: 0.8;">해당 사이트의 모든 내용은 교육용이며 어떤 데이터 및 계산 결과의 유효성도 보장하지 않습니다.</p>
       </div>
     </div>
   </footer>

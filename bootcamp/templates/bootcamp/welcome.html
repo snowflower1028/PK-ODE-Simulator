@@ -1,17 +1,80 @@
 {% extends 'bootcamp/base.html' %}
+{% load static %}
 {% block title %}Welcome - PK Bootcamp{% endblock %}
 
+{% block head %}
+<!-- Welcome 페이지 전용 스타일 -->
+<style>
+  .session-card {
+    display: block;
+    text-decoration: none;
+    border-radius: 1rem;
+    border: 1px solid var(--apple-card-border, #e5e5e5);
+    background-color: var(--apple-background-primary, #ffffff);
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    height: 100%;
+  }
+  .session-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 28px rgba(0,0,0,0.08);
+  }
+  .about-us-link {
+    color: var(--apple-text-secondary, #6e6e73);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+  }
+  .about-us-link:hover {
+    color: var(--apple-system-blue, #007AFF);
+    text-decoration: underline;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container text-center vh-75 d-flex flex-column justify-content-center mt-4">
-  <h1 class="display-4">PK Bootcamp 2025에 오신 것을 환영합니다!</h1>
-  <p class="lead text-muted">아래에서 참여할 세션을 선택해주세요.</p>
-  <div class="d-grid gap-3 col-6 mx-auto">
-    <a href="{% url 'morning_session' %}" class="btn btn-primary btn-lg">
-      <i class="bi bi-brightness-high-fill me-2"></i> 오전 세션 (NCA & FIH Dose)
-    </a>
-    <a href="{% url 'afternoon_index' %}" class="btn btn-warning btn-lg">
-      <i class="bi bi-sunglasses me-2"></i> 오후 세션 (TMDD Modeling)
+<div class="container text-center py-5 my-5">
+  <h1 class="display-4 fw-bold">PK Bootcamp 2025</h1>
+  <!-- ✨ [수정] 설명 내용 업데이트 -->
+  <p class="lead text-muted mx-auto mt-3 mb-5" style="max-width: 720px;">
+    약물동태학(PK) 및 약력학(PD)의 핵심 이론을 실제 데이터 분석과 시뮬레이션을 통해 깊이 있게 학습하는 집중 교육 프로그램입니다. 본 웹 애플리케이션은 부트캠프의 교육 내용을 효과적으로 실습할 수 있도록 설계되었습니다. 올해의 Bootcamp에서는 고분자 단백질 의약품 개발 과정에서 요구되는 약물동태학적 특성 분석을 위한 모델링 접근법을 학습합니다. 비임상 데이터를 기반으로 인체 PK를 예측하고, 안전한 최초인체시험(FIH) 용량을 설정하기 위한 핵심 전략을 습득하는 것을 목표로 합니다.
+  </p>
+
+  <!-- 세션 선택 카드 -->
+  <div class="row g-4 justify-content-center">
+    <!-- 오전 세션 카드 -->
+    <div class="col-lg-5">
+      <a href="{% url 'morning_session' %}" class="session-card">
+        <div class="p-4 p-md-5">
+          <i class="bi bi-brightness-high-fill fs-1 mb-3" style="color: var(--apple-system-blue);"></i>
+          <h4 class="fw-bold mb-2">오전 세션</h4>
+          <p class="mb-3 text-primary">NCA & FIH Dose</p>
+          <p class="small text-secondary px-3">
+            비구획 분석(NCA)의 원리를 이해하고, 실제 데이터를 바탕으로 주요 PK 파라미터를 계산합니다. 또한, 비임상 데이터를 활용하여 안전한 임상 1상 초기 용량(FIH Dose)을 설정하는 세 가지 주요 접근법을 학습합니다.
+          </p>
+        </div>
+      </a>
+    </div>
+    <!-- 오후 세션 카드 -->
+    <div class="col-lg-5">
+      <a href="{% url 'afternoon_index' %}" class="session-card">
+        <div class="p-4 p-md-5">
+          <i class="bi bi-sunglasses fs-1 mb-3" style="color: #ff9500;"></i>
+          <h4 class="fw-bold mb-2">오후 세션</h4>
+          <p class="mb-3" style="color: #ff9500;">TMDD Modeling</p>
+          <p class="small text-secondary px-3">
+            표적 매개 약물 동태(TMDD) 모델의 이론을 배우고, 미분방정식(ODE) 모델을 직접 구축합니다. 인터랙티브 시뮬레이터를 통해 파라미터 변화가 약물 농도에 미치는 영향을 시각적으로 탐색합니다.
+          </p>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <!-- ✨ [수정] About Us 버튼 위치 및 디자인 변경 -->
+  <div class="mt-5">
+    <a href="https://www.pkbootcampsnu.com/" target="_blank" class="about-us-link">
+      <i class="bi bi-info-circle me-1"></i> About PK Bootcamp
     </a>
   </div>
+
 </div>
 {% endblock %}
