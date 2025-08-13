@@ -1,43 +1,59 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-100">
 <head>
   <meta charset="UTF-8">
   <title>{% block title %}PK Bootcamp{% endblock %}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <script>
-    MathJax = {
-      tex: {
-        inlineMath: [['$', '$'], ['\\(', '\\)']]
-      },
-      svg: {
-        fontCache: 'global'
-      }
-    };
+    MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] }, svg: { fontCache: 'global' } };
   </script>
-  <script type="text/javascript" id="MathJax-script" async
-    src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js">
-  </script>
+  <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
   <link rel="stylesheet" href="{% static 'simulator/css/style.css' %}">
   {% block head %}{% endblock %}
 </head>
-<body>
+<body class="d-flex flex-column h-100">
   <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom">
     <div class="container-fluid">
-      <a class="navbar-brand" href="{% url 'welcome' %}">
-        <i class="bi bi-capsule-pill"></i> PK Bootcamp 2025
+      <a class="navbar-brand fw-bold d-flex align-items-center" href="{% url 'welcome' %}">
+        <i class="bi bi-beaker fs-4 me-2"></i>
+        <span>PK Bootcamp 2025</span>
       </a>
-      <div class="navbar-nav">
-        <a class="nav-link {% if request.resolver_match.url_name == 'morning_session' %}active{% endif %}" href="{% url 'morning_session' %}">오전 세션</a>
-        <a class="nav-link {% if request.resolver_match.view_name|slice:':9' == 'simulator' %}active{% endif %}" href="{% url 'afternoon_index' %}">오후 세션</a>
+      <div class="collapse navbar-collapse">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'morning_session' %}active{% endif %}" href="{% url 'morning_session' %}">오전 세션</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'afternoon_index' %}active{% endif %}" href="{% url 'afternoon_index' %}">오후 세션</a>
+          </li>
+        </ul>
+        <div class="d-flex align-items-center">
+          <a href="https://snupharm.snu.ac.kr/" target="_blank" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-mortarboard-fill"></i> SNU Pharmacy
+          </a>
+          <a href="https://github.com/snowflower1028/PK-ODE-Simulator" target="_blank" class="btn btn-outline-secondary btn-sm ms-2">
+            <i class="bi bi-github"></i> Source Code
+          </a>
+        </div>
       </div>
     </div>
   </nav>
 
-  <main>
+  <main class="flex-shrink-0">
     {% block content %}{% endblock %}
   </main>
+
+  <footer class="footer mt-auto py-3 bg-light border-top text-center">
+    <div class="container">
+      <div class="text-muted small">
+        Developed by Minsoo Lee (Prof Wooin Lee, W Lab)<br>
+        © 2025 College of Pharmacy, Seoul National University. All Rights Reserved.<br>
+        <span class="mt-2 d-block">해당 사이트의 모든 내용은 교육용이며 어떤 데이터 및 계산 결과의 유효성도 보장하지 않습니다.</span>
+      </div>
+    </div>
+  </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   {% block scripts %}{% endblock %}

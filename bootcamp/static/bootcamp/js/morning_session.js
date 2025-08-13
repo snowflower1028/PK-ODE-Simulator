@@ -119,7 +119,10 @@ function initializeNcaAnalyzer() {
     
     function calculateNCA(eventData) {
         const points = eventData?.points;
-        if (!points || points.length < 2) { clearResults(); return; }
+        if (!points || points.length < 2) {
+            clearResults();
+            return;
+        }
         try {
             const selectedPoints = points.map(p => ({ time: p.x, logConc: Math.log(p.y) }));
             const n = selectedPoints.length;
@@ -128,15 +131,53 @@ function initializeNcaAnalyzer() {
             const sumXY = selectedPoints.reduce((acc, p) => acc + p.time * p.logConc, 0);
             const sumX2 = selectedPoints.reduce((acc, p) => acc + p.time * p.time, 0);
             const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+            
             const lambda_z = -slope;
             const t_half = lambda_z > 0 ? Math.LN2 / lambda_z : Infinity;
+            
             let auc_last = 0;
             for (let i = 0; i < timeData.length - 1; i++) {
                 auc_last += (concData[i] + concData[i+1]) / 2 * (timeData[i+1] - timeData[i]);
             }
             const cmax = Math.max(...concData);
             const tmax = timeData[concData.indexOf(cmax)];
-            ncaResultsContainer.innerHTML = `<h6 class="subsection-title mt-0 pt-0 border-0">주요 PK 파라미터</h6><dl class="result-grid"><dt>Cmax</dt><dd>${cmax.toFixed(2)} nM</dd><dt>Tmax</dt><dd>${tmax.toFixed(2)} hr</dd><dt><strong>AUC_last</strong></dt><dd><strong>${auc_last.toFixed(2)} nM*hr</strong></dd></dl><hr><h6 class="subsection-title">Terminal Phase 분석 <span class="text-muted small">(${n}개 점 선택됨)</span></h6><div class="result-formula"><p class="small text-muted mb-1">$ \\lambda_z = - (\\text{ln-linear 기울기}) $</p><dl class="result-grid mb-0"><dt>Lambda_z ($ \\lambda_z $)</dt><dd>${lambda_z.toFixed(4)} hr⁻¹</dd></dl></div><div class="result-formula mt-2"><p class="small text-muted mb-1">$ t_{1/2} = \\frac{\\ln(2)}{\\lambda_z} $</p><dl class="result-grid mb-0"><dt>Half-life ($ t_{1/2} $)</dt><dd>${t_half.toFixed(2)} hr</dd></dl></div><hr><h6 class="subsection-title">상세 AUC 계산 과정</h6><div class="table-responsive" style="max-height: 250px;"><table class="table table-sm table-striped"><thead class="table-light"><tr><th>Time Interval (h)</th><th>부분 AUC</th><th>누적 AUC</th></tr></thead><tbody>${(() => {let p = ''; let c = 0; for (let i = 0; i < timeData.length - 1; i++) { const a = (concData[i] + concData[i+1]) / 2 * (timeData[i+1] - timeData[i]); c += a; p += `<tr><td>${timeData[i].toFixed(2)} - ${timeData[i+1].toFixed(2)}</td><td>${a.toFixed(2)}</td><td>${c.toFixed(2)}</td></tr>`; } return p; })()}</tbody></table></div>`;
+
+            const c_last = concData[concData.length - 1];
+            const t_last = timeData[timeData.length - 1];
+            const auc_last_inf = lambda_z > 0 ? c_last / lambda_z : 0;
+            const auc_inf = auc_last + auc_last_inf;
+
+            ncaResultsContainer.innerHTML = `
+                <div>
+                    <h6 class="subsection-title mt-0 pt-0 border-0">주요 PK 파라미터</h6>
+                    <dl class="result-grid">
+                      <dt>Cmax</dt><dd>${cmax.toFixed(2)} nM</dd>
+                      <dt>Tmax</dt><dd>${tmax.toFixed(2)} hr</dd>
+                      <dt><strong>$AUC_{last}$</strong></dt><dd><strong>${auc_last.toFixed(2)} nM·hr</strong></dd>
+                      <dt><strong>$AUC_{inf}$</strong></dt><dd><strong>${auc_inf.toFixed(2)} nM·hr</strong></dd>
+                    </dl>
+                </div>
+                <div class="mt-4">
+                    <h6 class="subsection-title">Terminal Phase 분석 <span class="text-muted small">(${n}개 점 선택됨)</span></h6>
+                    <div class="result-formula"><p class="small text-muted mb-1">$ \\lambda_z = - (\\text{ln-linear 기울기}) $</p><dl class="result-grid mb-0"><dt>$ \\lambda_z $</dt><dd>${lambda_z.toFixed(4)} hr⁻¹</dd></dl></div>
+                    <div class="result-formula mt-2"><p class="small text-muted mb-1">$ t_{1/2} = \\frac{\\ln(2)}{\\lambda_z} $</p><dl class="result-grid mb-0"><dt>$ t_{1/2} $</dt><dd>${t_half.toFixed(2)} hr</dd></dl></div>
+                </div>
+                <div class="mt-4">
+                    <h6 class="subsection-title">상세 AUC 계산 과정</h6>
+                    <div class="table-responsive" style="max-height: 250px;"><table class="table table-sm text-center"><thead class="table-light"><tr><th>Time Interval (h)</th><th>부분 AUC</th><th>누적 AUC</th></tr></thead><tbody>${
+                        (() => {
+                            let partialAucHtml = '';
+                            let cumulativeAuc = 0;
+                            for (let i = 0; i < timeData.length - 1; i++) {
+                                const partialAuc = (concData[i] + concData[i+1]) / 2 * (timeData[i+1] - timeData[i]);
+                                cumulativeAuc += partialAuc;
+                                partialAucHtml += `<tr><td>${timeData[i].toFixed(2)} - ${timeData[i+1].toFixed(2)}</td><td>${partialAuc.toFixed(2)}</td><td>${cumulativeAuc.toFixed(2)}</td></tr>`;
+                            }
+                            partialAucHtml += `<tr><td>${t_last.toFixed(2)} - ∞</td><td>${auc_last_inf.toFixed(2)}</td><td>${auc_inf.toFixed(2)}</td></tr>`;
+                            return partialAucHtml;
+                        })()
+                    }</tbody></table></div>
+                </div>`;
             MathJax.typesetPromise([ncaResultsContainer]);
         } catch (error) {
             console.error("Error during NCA calculation:", error);
@@ -147,17 +188,12 @@ function initializeNcaAnalyzer() {
     function displayNcaAnswers() {
         const answerData = EXAMPLE_NCA_ANSWERS[currentDose];
         if (!answerData) { alert('현재 용량 그룹에 대한 정답 데이터가 없습니다.'); return; }
-        const answerHtml = `<div class="alert alert-info mt-3"><h6 class="alert-heading">정답</h6><ul class="list-unstyled mb-0 small"><li><strong>Lambda_z:</strong> ${answerData.lambda_z.toFixed(4)} hr⁻¹</li><li><strong>Half-life:</strong> ${answerData.t_half.toFixed(2)} hr</li><li><strong>AUC_last:</strong> ${answerData.auc_last.toFixed(1)} nM*hr</li></ul></div>`;
+
+        const answerHtml = `<div class="alert alert-info mt-3"><h6 class="alert-heading">정답</h6><ul class="list-unstyled mb-0 small"><li><strong>$ \\lambda_z $:</strong> ${answerData.lambda_z.toFixed(4)} hr⁻¹</li><li><strong>$ t_{1/2} $:</strong> ${answerData.t_half.toFixed(2)} hr</li><li><strong>$AUC_{last}$:</strong> ${answerData.auc_last.toFixed(1)} nM·hr</li></ul></div>`;
         const existingAnswer = ncaResultsContainer.querySelector('.alert-info');
         if (existingAnswer) existingAnswer.remove();
         ncaResultsContainer.insertAdjacentHTML('beforeend', answerHtml);
-    }
-
-    function clearResults() {
-        ncaResultsContainer.innerHTML = `<div class="placeholder-text">그래프에서 Terminal Phase를 선택하여 PK 파라미터를 계산하세요.</div>`;
-        if (isNcaPlotInitialized) {
-            Plotly.restyle(ncaPlotDiv, {selectedpoints: [null]});
-        }
+        MathJax.typesetPromise([ncaResultsContainer]);
     }
 }
 
