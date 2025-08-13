@@ -4,6 +4,12 @@
 <head>
   <meta charset="UTF-8">
   <title>{% block title %}PK Bootcamp{% endblock %}</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="{% static 'bootcamp/images/apple-touch-icon.png' %}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{% static 'bootcamp/images/favicon-32x32.png' %}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{% static 'bootcamp/images/favicon-16x16.png' %}">
+  <link rel="manifest" href="{% static 'bootcamp/images/site.webmanifest' %}">
+  <link rel="icon" href="{% static 'bootcamp/images/favicon.ico' %}" type="image/x-icon">
+  
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <script>
@@ -11,7 +17,6 @@
   </script>
   <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
   <link rel="stylesheet" href="{% static 'simulator/css/style.css' %}">
-  <!-- ✨ [수정] 푸터 그라데이션 및 텍스트 스타일 추가 -->
   <style>
     .nav-action-link {
       color: var(--apple-text-secondary, #6e6e73) !important; /* ✨ !important 추가 */
@@ -69,15 +74,17 @@
     {% block content %}{% endblock %}
   </main>
 
+  {% block footer %}
   <footer class="footer mt-auto py-4 footer-gradient">
     <div class="container text-center">
       <div class="footer-text-faint small">
-        <p class="mb-1">Web Disigned and Developed by Minsoo Lee (Prof Wooin Lee, W Lab)</p>
+        <p class="mb-1">Web Designed and Developed by Minsoo Lee (Prof Wooin Lee, W Lab)</p>
         <p class="mb-1">© 2025 College of Pharmacy, Seoul National University. All Rights Reserved.</p>
         <p class="mb-0 mt-2" style="font-size: 0.75rem; opacity: 0.8;">해당 사이트의 모든 내용은 교육용이며 어떤 데이터 및 계산 결과의 유효성도 보장하지 않습니다.</p>
       </div>
     </div>
   </footer>
+  {% endblock footer %}
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   {% block scripts %}{% endblock %}
