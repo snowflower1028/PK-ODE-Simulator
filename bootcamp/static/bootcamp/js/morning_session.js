@@ -1,22 +1,16 @@
 // --- 데이터 하드코딩 ---
 const EXAMPLE_NCA_DATA = {
     "Time (h)": [0.0833, 1.0, 3.0, 5.0, 12.0, 24.0, 72.0, 144.0, 216.0, 288.0, 360.0, 432.0, 504.0],
-    "0.25 mg": [0.494, 0.158, 0.0248, null, null, null, null, null, null, null, null, null, null],
     "0.5 mg": [0.959, 0.392, 0.0863, 0.0248, null, null, null, null, null, null, null, null, null],
-    "1.5 mg": [3.34, 1.41, 0.81, 0.669, 0.268, 0.0489, null, null, null, null, null, null, null],
-    "2.5 mg": [5.01, 3.51, 2.49, 2.13, 1.87, 1.04, 0.422, null, null, null, null, null, null],
-    "5 mg": [10.1, 7.41, 7.5, 7.44, 6.27, 5.14, 1.33, 0.0145, null, null, null, null, null],
-    "15 mg": [26.6, 26.6, 26.1, 26.4, 25.1, 21.9, 14.1, 6.8, 0.589, 0.0168, null, null, null],
+    "1.5 mg": [3.34, 1.41, 0.810, 0.669, 0.268, 0.0489, null, null, null, null, null, null, null],
+    "15 mg": [26.6, 26.6, 26.1, 26.4, 25.1, 21.9, 14.1, 6.80, 0.589, 0.0168, null, null, null],
     "50 mg": [103.0, 104.0, 98.7, 91.6, 86.3, 79.2, 61.8, 47.0, 23.4, 11.1, 4.65, 0.0932, 0.0142]
 };
 const EXAMPLE_NCA_ANSWERS = {
-    "0.25 mg": {"lambda_z": 0.4382, "t_half": 1.58, "auc_last": 2.9},
-    "0.5 mg": {"lambda_z": 0.3200, "t_half": 2.17, "auc_last": 4.3},
-    "1.5 mg": {"lambda_z": 0.0586, "t_half": 11.82, "auc_last": 37.1},
-    "2.5 mg": {"lambda_z": 0.0104, "t_half": 66.44, "auc_last": 51.4},
-    "5 mg": {"lambda_z": 0.0217, "t_half": 31.90, "auc_last": 194.6},
-    "15 mg": {"lambda_z": 0.0181, "t_half": 38.28, "auc_last": 372.8},
-    "50 mg": {"lambda_z": 0.0175, "t_half": 39.68, "auc_last": 788.3}
+    "0.5 mg": {"lambda_z": 0.737, "t_half": 0.941, "auc_last": 1.21},
+    "1.5 mg": {"lambda_z": 0.135, "t_half": 5.133, "auc_last": 11.1},
+    "15 mg": {"lambda_z": 0.0417, "t_half": 16.6, "auc_last": 2496},
+    "50 mg": {"lambda_z": 0.0402, "t_half": 17.2, "auc_last": 13922}
 };
 
 const FIH_DEFAULTS = {
