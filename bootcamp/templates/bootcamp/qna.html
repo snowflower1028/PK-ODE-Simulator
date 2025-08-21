@@ -1,0 +1,263 @@
+{% extends 'bootcamp/base.html' %}
+{% load static %}
+{% block title %}실시간 Q&A - PK Bootcamp{% endblock %}
+
+{% block head %}
+<!-- Firebase SDK (읽기 전용) -->
+<script type="module">
+  // Firebase v11.6.1
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+  import { getFirestore, collection, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+  // --- Firebase 초기화 ---
+  const firebaseConfig = {
+    apiKey: "{{ FIREBASE_API_KEY }}",
+    authDomain: "{{ FIREBASE_AUTH_DOMAIN }}",
+    projectId: "{{ FIREBASE_PROJECT_ID }}",
+    storageBucket: "{{ FIREBASE_STORAGE_BUCKET }}",
+    messagingSenderId: "{{ FIREBASE_MESSAGING_SENDER_ID }}",
+    appId: "{{ FIREBASE_APP_ID }}"
+  };
+
+  if (!firebaseConfig.projectId) {
+    console.error("Firebase 설정이 올바르지 않습니다. 환경 변수를 확인해주세요.");
+    const container = document.getElementById('questions-container');
+    if (container) {
+        container.innerHTML = `<div class="alert alert-danger text-center"><strong>Firebase 연결 오류!</strong><br>서버의 환경 변수 설정이 올바르지 않습니다. 관리자에게 문의하세요.</div>`;
+    }
+  } else {
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // --- DOM 요소 ---
+    const qnaForm = document.getElementById('qna-form');
+    const questionsContainer = document.getElementById('questions-container');
+
+    // --- 이벤트 리스너 ---
+    document.addEventListener('DOMContentLoaded', () => {
+      if (qnaForm) {
+        qnaForm.addEventListener('submit', handleQuestionSubmit);
+      }
+      if (questionsContainer) {
+        questionsContainer.addEventListener('click', handleDeleteClick);
+      }
+      listenForQuestions();
+    });
+
+    // --- 함수 ---
+
+    /**
+     * Django의 CSRF 토큰을 쿠키에서 가져오는 헬퍼 함수
+     */
+    function getCSRFToken() {
+        const cookies = document.cookie.split('; ');
+        for (const cookie of cookies) {
+            const [name, value] = cookie.split('=');
+            if (name === 'csrftoken') {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 질문 제출 폼을 처리하는 함수 (Django API 호출)
+     */
+    async function handleQuestionSubmit(event) {
+      event.preventDefault();
+      const nameInput = event.target.elements.name;
+      const questionInput = event.target.elements.question;
+      const pinInput = event.target.elements.pin;
+      const submitButton = event.target.elements.submitButton;
+
+      const name = nameInput.value.trim();
+      const question = questionInput.value.trim();
+      const pin = pinInput.value.trim();
+
+      if (!name || !question || !pin) {
+        alert('이름, 질문, 비밀번호를 모두 입력해주세요.');
+        return;
+      }
+      if (!/^\d{4}$/.test(pin)) {
+        alert('비밀번호는 4자리 숫자로 입력해주세요.');
+        return;
+      }
+
+      submitButton.disabled = true;
+      submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 전송 중...';
+
+      try {
+        const response = await fetch('/api/qna/', {
+            method: 'POST',
+            // ✨ [보안 수정] CSRF 토큰을 헤더에 추가
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({ name, question, pin })
+        });
+        
+        // 서버 응답이 JSON이 아닐 경우를 대비한 예외 처리
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            const errorText = await response.text();
+            throw new Error("서버에서 예기치 않은 응답을 받았습니다: " + errorText);
+        }
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || '알 수 없는 오류가 발생했습니다.');
+        
+        qnaForm.reset();
+      } catch (error) {
+        console.error("Error submitting question:", error);
+        alert('질문 등록 실패: ' + error.message);
+      } finally {
+        submitButton.disabled = false;
+        submitButton.innerHTML = '질문하기';
+      }
+    }
+
+    /**
+     * 삭제 버튼 클릭을 처리하는 함수 (Django API 호출)
+     */
+    async function handleDeleteClick(event) {
+        const deleteButton = event.target.closest('.delete-btn');
+        if (!deleteButton) return;
+
+        const docId = deleteButton.dataset.id;
+        const enteredPin = prompt("질문을 삭제하려면 4자리 비밀번호를 입력하세요.");
+
+        if (enteredPin === null || enteredPin.trim() === '') return;
+        if (!/^\d{4}$/.test(enteredPin)) {
+            alert('비밀번호는 4자리 숫자입니다.');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/qna/', {
+                method: 'DELETE',
+                // CSRF 토큰을 헤더에 추가
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({ id: docId, pin: enteredPin })
+            });
+            
+            const contentType = response.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                const errorText = await response.text();
+                throw new Error("서버에서 예기치 않은 응답을 받았습니다: " + errorText);
+            }
+
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || '알 수 없는 오류가 발생했습니다.');
+            
+            alert('질문이 삭제되었습니다.');
+        } catch (error) {
+            console.error("Error deleting document:", error);
+            alert('삭제 실패: ' + error.message);
+        }
+    }
+
+    /**
+     * Firestore에서 실시간으로 질문을 가져와 화면에 표시하는 함수 (XSS 방지 적용)
+     */
+    function listenForQuestions() {
+      const q = query(collection(db, "questions"), orderBy("timestamp", "desc"));
+
+      onSnapshot(q, (querySnapshot) => {
+        if (!questionsContainer) return;
+        
+        if (querySnapshot.empty) {
+          questionsContainer.innerHTML = '<p class="text-center text-muted">아직 등록된 질문이 없습니다. 첫 질문을 남겨보세요!</p>';
+          return;
+        }
+
+        questionsContainer.innerHTML = '';
+        querySnapshot.forEach((doc) => {
+          const questionData = doc.data();
+          const questionElement = document.createElement('div');
+          questionElement.className = 'card mb-3';
+          
+          const timestamp = questionData.timestamp ? questionData.timestamp.toDate().toLocaleString() : '방금 전';
+
+          const cardBody = document.createElement('div');
+          cardBody.className = 'card-body';
+          const p = document.createElement('p');
+          p.className = 'card-text';
+          p.textContent = questionData.question;
+          cardBody.appendChild(p);
+
+          const cardFooter = document.createElement('div');
+          cardFooter.className = 'card-footer bg-transparent d-flex justify-content-between align-items-center';
+          
+          const authorSpan = document.createElement('span');
+          authorSpan.className = 'text-muted small';
+          const strong = document.createElement('strong');
+          strong.textContent = questionData.name;
+          authorSpan.appendChild(strong);
+          authorSpan.append(` - ${timestamp}`);
+
+          const deleteButton = document.createElement('button');
+          deleteButton.className = 'btn btn-sm btn-outline-danger delete-btn';
+          deleteButton.dataset.id = doc.id;
+          deleteButton.innerHTML = '<i class="bi bi-trash"></i>';
+
+          cardFooter.appendChild(authorSpan);
+          cardFooter.appendChild(deleteButton);
+
+          questionElement.appendChild(cardBody);
+          questionElement.appendChild(cardFooter);
+
+          questionsContainer.appendChild(questionElement);
+        });
+      });
+    }
+  }
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <h2 class="text-center mb-4">실시간 질문 게시판 (Q&A Board)</h2>
+      
+      <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+          <form id="qna-form">
+            <div class="row">
+              <div class="col-md-8 mb-3">
+                <label for="name-input" class="form-label">이름</label>
+                <input type="text" class="form-control" id="name-input" name="name" placeholder="이름을 입력하세요" required>
+              </div>
+              <div class="col-md-4 mb-3">
+                <label for="pin-input" class="form-label">비밀번호 (4자리 숫자)</label>
+                <input type="text" class="form-control" id="pin-input" name="pin" placeholder="삭제 시 필요" required maxlength="4" inputmode="numeric">
+              </div>
+            </div>
+            <div class="mb-3">
+              <label for="question-input" class="form-label">질문 내용</label>
+              <textarea class="form-control" id="question-input" name="question" rows="4" placeholder="궁금한 점을 질문하세요" required></textarea>
+            </div>
+            <div class="d-grid">
+              <button type="submit" name="submitButton" class="btn btn-primary">질문하기</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div id="questions-container">
+        <div class="text-center">
+          <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-2">질문을 불러오는 중입니다...</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

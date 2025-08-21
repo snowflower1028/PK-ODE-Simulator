@@ -11,9 +11,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import json
 from dotenv import load_dotenv
 import dj_database_url
 from pathlib import Path
+import firebase_admin
+from firebase_admin import credentials
 
 load_dotenv()
 
@@ -32,6 +35,24 @@ DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'snu-pk-bootcamp-2025-a52098fee279.herokuapp.com']
 
+firebase_service_account_json_str = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON')
+
+if firebase_service_account_json_str:
+    try:
+        # 문자열을 파이썬 딕셔너리로 변환
+        service_account_info = json.loads(firebase_service_account_json_str)
+        
+        # 딕셔너리를 사용하여 인증 정보 객체 생성
+        cred = credentials.Certificate(service_account_info)
+        
+        # 이미 초기화되었는지 확인 후 초기화
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred)
+            
+    except json.JSONDecodeError:
+        print("Firebase 서비스 계정 JSON 파싱 오류: 환경 변수 값을 확인하세요.")
+    except Exception as e:
+        print(f"Firebase 초기화 중 오류 발생: {e}")
 
 # Application definition
 

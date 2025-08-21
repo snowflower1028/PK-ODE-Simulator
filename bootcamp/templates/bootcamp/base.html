@@ -57,6 +57,9 @@
           <li class="nav-item">
             <a class="nav-link {% if request.resolver_match.url_name == 'afternoon_index' %}active{% endif %}" href="{% url 'afternoon_index' %}">오후 세션</a>
           </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.resolver_match.url_name == 'qna' %}active{% endif %}" href="{% url 'qna' %}">실시간 Q&A</a>
+          </li>
         </ul>
         <div class="d-flex align-items-center gap-4">
           <a href="https://snupharm.snu.ac.kr/" target="_blank" class="nav-action-link">
