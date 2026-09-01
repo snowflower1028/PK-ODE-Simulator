@@ -119,7 +119,60 @@
   }
 
   /* ---------------------------------------------------------- */
-  /* 4. Help 모달 탭 선택                                         */
+  /* 4. New Session                                              */
+  /* ---------------------------------------------------------- */
+  /* 상태가 State, DOM, Plotly, 피팅 모달에 흩어져 있어 부분 초기화는
+     빠뜨리기 쉽다. 새로 읽어들이는 편이 확실하고 의미도 정확하다. */
+  const newSessionBtn = document.getElementById("new-session-btn");
+  if (newSessionBtn) {
+    newSessionBtn.addEventListener("click", () => {
+      const ode = document.getElementById("ode-input");
+      const dirty = !!(ode && ode.value.trim());
+      if (dirty && !window.confirm(
+        "Start a new session? The current model, doses and observed data will be discarded."
+      )) return;
+      window.location.reload();
+    });
+  }
+
+  /* ---------------------------------------------------------- */
+  /* 5. 단축키                                                    */
+  /* ---------------------------------------------------------- */
+  /* 브라우저가 선점한 조합(Ctrl+N, Ctrl+R, Ctrl+L 등)은 피하고,
+     가로채도 사용자가 놀라지 않는 것만 쓴다. */
+  const SHORTCUTS = {
+    "ctrl+enter": "#simulate-btn",
+    "ctrl+s": "#export-session-btn",
+    "ctrl+o": "#import-session-input",
+    "ctrl+/": '[data-help-tab="#help-quickstart"]',
+  };
+
+  function chordOf(event) {
+    if (!event.ctrlKey && !event.metaKey) return null;
+    if (event.altKey) return null;
+    const key = event.key === "Enter" ? "enter" : event.key.toLowerCase();
+    return "ctrl+" + key;
+  }
+
+  document.addEventListener("keydown", (event) => {
+    const chord = chordOf(event);
+    if (!chord) return;
+
+    const selector = SHORTCUTS[chord];
+    if (!selector) return;
+
+    // 모달이나 오프캔버스가 열려 있으면 뒤쪽 화면을 조작하지 않는다.
+    if (document.querySelector(".modal.show, .offcanvas.show")) return;
+
+    const target = document.querySelector(selector);
+    if (!target || target.disabled) return;
+
+    event.preventDefault();
+    target.click();
+  });
+
+  /* ---------------------------------------------------------- */
+  /* 6. Help 모달 탭 선택                                         */
   /* ---------------------------------------------------------- */
   const helpModal = document.getElementById("helpModal");
   if (helpModal) {

@@ -1161,3 +1161,149 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     border-radius: 8px;
     background-color: rgba(0, 0, 0, 0.02);
 }
+
+
+/* ============================================================ */
+/* 13. Fitting Settings Modal                                   */
+/* ============================================================ */
+/* 다섯 개 섹션이 <hr> 만으로 나뉜 채 한 면에 쌓여 있었고, 모달 전체가
+   1400px 를 넘어 Start Fitting 버튼이 늘 화면 밖에 있었다.
+   본문만 스크롤시키고(modal-dialog-scrollable) 섹션은 카드로 분리한다. */
+.fit-settings-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    background-color: var(--apple-background-secondary);
+}
+
+.fit-section {
+    background-color: var(--apple-background-primary);
+    border: 1px solid var(--apple-card-border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+}
+.fit-section-title {
+    display: flex;
+    align-items: center;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+.fit-section-title .bi {
+    margin-right: 0.4rem;
+    color: var(--apple-text-secondary);
+}
+.fit-section-desc {
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    color: var(--apple-text-secondary);
+    margin-bottom: 0.85rem;
+}
+.fit-optional {
+    margin-left: 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    border: 1px solid var(--apple-card-border);
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+}
+
+/* 진행 상황 영역: 스크롤되는 본문 밖, 푸터 바로 위에 고정된다. */
+.fit-progress-region {
+    flex: 0 0 auto;
+    padding: 0.85rem 1.15rem;
+    border-top: 1px solid var(--apple-separator-color);
+    background-color: var(--apple-background-primary);
+    /* 결과 표까지 들어오면 이 영역이 설정 화면을 다 밀어내므로 상한을 둔다 */
+    max-height: 46vh;
+    overflow-y: auto;
+}
+.fit-progress-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.875rem;
+    margin-bottom: 0.4rem;
+}
+.fit-log-details {
+    margin-top: 0.7rem;
+}
+.fit-log-details > summary {
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    margin-bottom: 0.4rem;
+}
+.fit-log-details > summary:focus-visible {
+    outline: 2px solid var(--apple-system-blue);
+    outline-offset: 2px;
+}
+#fit-console-output-modal {
+    max-height: 132px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0.55rem 0.7rem;
+    border-radius: 7px;
+    background-color: #1d1d1f;
+    color: #e8e8ed;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 0.6875rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+#fit-result-modal:not(:empty) {
+    margin-top: 0.7rem;
+}
+
+
+/* ============================================================ */
+/* 14. Menu shortcut hints                                      */
+/* ============================================================ */
+.app-menu-kbd {
+    margin-left: auto;
+    padding-left: 1.25rem;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 0.6875rem;
+    color: var(--apple-text-tertiary);
+    background: none;
+    white-space: nowrap;
+}
+.app-menu .dropdown-item:hover .app-menu-kbd,
+.app-menu .dropdown-item:focus .app-menu-kbd {
+    color: rgba(255, 255, 255, 0.82);
+}
+
+
+/* ============================================================ */
+/* 15. Observed data upload                                     */
+/* ============================================================ */
+/* 기본 file input 은 브라우저 로케일 문구("파일 선택")를 그대로 노출해
+   영문 UI 안에서 튄다. input 은 숨기고 label 을 버튼으로 쓴다. */
+.obs-upload {
+    margin-bottom: 1rem;
+}
+.obs-upload .btn {
+    justify-content: center;
+}
+.obs-upload-hint {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    line-height: 1.55;
+    color: var(--apple-text-tertiary);
+}
+.obs-upload-hint code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 0.95em;
+    background-color: var(--apple-background-secondary);
+    border: 1px solid var(--apple-card-border);
+    border-radius: 4px;
+    padding: 0.05em 0.28em;
+    color: var(--apple-text-secondary);
+}
