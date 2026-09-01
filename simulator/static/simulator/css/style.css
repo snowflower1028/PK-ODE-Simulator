@@ -44,9 +44,10 @@ body {
     color: var(--apple-text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-size: 1rem; 
+    font-size: 1rem;
     line-height: 1.5;
     display: flex;
+    flex-direction: column;   /* 1행: 메뉴 바 / 2행: 사이드바 + 메인 */
     height: 100vh;
     overflow: hidden;
     background-color: var(--apple-background-secondary);
@@ -73,19 +74,21 @@ h2 { font-size: 1.5rem; font-weight: 700; } /* 사이드바 섹션 타이틀 등
     color: var(--apple-text-secondary);
 }
 h3 { font-size: 1.125rem; }
-    .subsection-title { /* 사이드바용 h3 대체 */
-    font-size: 1rem; /* 기존 스타일 유지 */
-    font-weight: 500;
-    color: var(--apple-text-secondary);
-    margin-bottom: 0.75rem;
-    border-top: 1px solid var(--apple-separator-color);
-    padding-top: 0.75rem;
-    margin-top: 1rem;
-}
-.value-settings-columns .subsection-title:first-child {
-    border-top: none;
-    padding-top: 0;
+/* 사이드바용 h3 대체.
+   구역을 나누는 일은 .sidebar-section 카드 경계가 맡는다. 예전에는 여기에
+   border-top 이 걸려 있어서 하위 항목(Derived Variables)이 상위 구역(Dosing)
+   보다 더 크게 분리되어 보이는 계층 역전이 있었다. 실선을 걷어내고 대신
+   작은 대문자 라벨로 낮춰, 구역 제목과 확실히 다른 층으로 읽히게 한다. */
+.subsection-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
     margin-top: 0;
+    margin-bottom: 0.6rem;
+    padding-top: 0;
+    border-top: none;
 }
 h4 { font-size: 1.125rem; }
 h5 { font-size: 1.1rem; } /* 카드 제목 등에 사용 */
@@ -131,25 +134,37 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 /* ------------------------------ */
 /* 3. Layout Styles               */
 /* ------------------------------ */
+/* 메뉴 바 아래, 사이드바와 메인을 담는 행 */
+.app-shell {
+    flex: 1 1 auto;
+    display: flex;
+    min-height: 0;   /* 자식의 overflow-y:auto 가 동작하려면 필요 */
+}
+
 .sidebar {
     flex-shrink: 0;
     width: var(--apple-sidebar-width);
-    height: 100vh;
-    max-width: 500px;
+    height: 100%;
+    max-width: 460px;
     min-width: 308px;
     overflow-y: auto;
-    background-color: var(--apple-background-primary);
+    /* 각 구역이 흰 카드로 떠 보이도록 사이드바 바닥은 회색으로 내린다.
+       (메인 패널과 같은 시각 언어) */
+    background-color: var(--apple-background-secondary);
     border-right: 1px solid var(--apple-separator-color);
-    padding: 1.5rem;
+    padding: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
+    counter-reset: sidebar-step;
 }
 
 .main-content {
     flex-grow: 1;
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    min-height: 0;
 }
 .main-toolbar {
     min-height: var(--apple-toolbar-height);
@@ -226,19 +241,7 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     /* height: var(--control-height-strict); /* 이미 .btn 에 적용됨 */
 }
 
-/* 'More' 드롭다운 버튼 스타일 */
-#advanced-settings-dropdown.btn {
-  background-color: transparent !important;
-  border: none !important;
-  box-shadow: none !important; /* 포커스 시 나타나는 그림자 제거 */
-  color: #6c757d; /* 부드러운 회색 텍스트 */
-}
-
-/* 마우스를 올렸을 때의 스타일 */
-#advanced-settings-dropdown.btn:hover {
-  background-color: rgba(0, 0, 0, 0.05) !important; /* 매우 연한 회색 배경 */
-}
-
+/* (툴바의 'More' 드롭다운은 Simulation 메뉴로 옮겨져 관련 스타일을 제거함) */
 
 .btn-primary {
     background-color: var(--apple-system-blue);
@@ -656,9 +659,13 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 /* 화면 너비가 1200px 이하일 때 */
 @media (max-width: 996px) {
   body {
-    flex-direction: column; /* flex 방향을 세로로 변경 */
     height: auto;           /* body 높이를 자동으로 조절 */
     overflow-y: auto;       /* body 자체에 스크롤 허용 */
+  }
+
+  .app-shell {
+    flex-direction: column; /* 사이드바를 메인 위로 쌓는다 */
+    min-height: 0;
   }
 
   .sidebar, .main-content {
@@ -666,18 +673,28 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     height: auto;           /* 높이를 자동으로 조절 */
     max-width: none;        /* 최대 너비 제한 해제 */
   }
-  
+
   .sidebar {
     border-right: none; /* 사이드바 오른쪽 경계선 제거 */
     border-bottom: 1px solid var(--apple-separator-color); /* 하단 경계선 추가 */
+    overflow-y: visible; /* 쌓인 상태에서는 내부 스크롤을 만들지 않는다 */
   }
-  
+
   .main-content {
     overflow: visible; /* 메인 콘텐츠의 overflow 숨김 해제 */
   }
 
   .main-scrollable-area {
     overflow-y: visible; /* 스크롤 영역의 overflow 숨김 해제 */
+  }
+
+  /* 메뉴 바는 좁은 화면에서 줄바꿈을 허용한다 */
+  .app-menubar {
+    height: auto;
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
   }
 }
 
@@ -728,4 +745,419 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 
 .symbol-order-toggle .btn-check:focus-visible + .btn {
     box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+}
+
+
+/* ============================================================ */
+/* 8. App Menu Bar                                              */
+/* ============================================================ */
+/* 앱의 이름과 전역 동작(세션, 내보내기, 도움말)이 사는 자리.
+   사이드바와 메인을 가로지르는 전체 폭 바이므로 body 의 첫 행에 놓인다. */
+.app-menubar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    height: 44px;
+    padding: 0 0.9rem;
+    background-color: var(--apple-background-primary);
+    border-bottom: 1px solid var(--apple-separator-color);
+    position: relative;
+    z-index: 1030;   /* 드롭다운이 아래 콘텐츠 위로 열리도록 */
+}
+
+.app-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    padding-right: 0.85rem;
+    border-right: 1px solid var(--apple-card-border);
+    white-space: nowrap;
+}
+.app-brand-mark {
+    font-size: 1rem;
+    align-self: center;
+    line-height: 1;
+}
+.app-brand-name {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--apple-text-primary);
+}
+.app-brand-ver {
+    font-size: 0.6875rem;
+    color: var(--apple-text-tertiary);
+    letter-spacing: 0.02em;
+}
+
+.app-menus {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+.app-menu-btn {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--apple-text-primary);
+    background: none;
+    border: 0;
+    border-radius: 6px;
+    padding: 0.25rem 0.6rem;
+    cursor: pointer;
+    transition: background-color 0.12s ease-in-out, color 0.12s ease-in-out;
+}
+.app-menu-btn:hover {
+    background-color: var(--apple-background-secondary);
+}
+.app-menu-btn[aria-expanded="true"] {
+    background-color: var(--apple-system-blue);
+    color: #fff;
+}
+.app-menu-btn:focus-visible {
+    outline: 2px solid var(--apple-system-blue);
+    outline-offset: 1px;
+}
+
+.app-menu {
+    --bs-dropdown-min-width: 15rem;
+    border: 1px solid var(--apple-card-border);
+    border-radius: 10px;
+    padding: 0.3rem;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.12);
+    background-color: var(--apple-background-primary);
+}
+.app-menu .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 6px;
+    /* 체크 표시가 들어갈 자리를 미리 비워 항목들이 흔들리지 않게 한다 */
+    padding: 0.35rem 0.55rem 0.35rem 1.65rem;
+    position: relative;
+    font-size: 0.875rem;
+    color: var(--apple-text-primary);
+    cursor: pointer;
+}
+.app-menu .dropdown-item .bi {
+    color: var(--apple-text-secondary);
+    font-size: 0.95em;
+}
+.app-menu .dropdown-item:hover,
+.app-menu .dropdown-item:focus {
+    background-color: var(--apple-system-blue);
+    color: #fff;
+}
+.app-menu .dropdown-item:hover .bi,
+.app-menu .dropdown-item:focus .bi,
+.app-menu .dropdown-item:hover .app-menu-hint,
+.app-menu .dropdown-item:focus .app-menu-hint {
+    color: rgba(255, 255, 255, 0.82);
+}
+.app-menu .dropdown-item.disabled {
+    color: var(--apple-text-tertiary);
+    pointer-events: none;
+    opacity: 0.55;
+}
+.app-menu .dropdown-item.app-menu-checked::before {
+    content: "\2713";
+    position: absolute;
+    left: 0.6rem;
+    font-weight: 600;
+}
+.app-menu-hint {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--apple-text-tertiary);
+}
+.app-menu .dropdown-header {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    padding: 0.5rem 0.55rem 0.2rem;
+}
+.app-menu .dropdown-divider {
+    border-top-color: var(--apple-card-border);
+    margin: 0.3rem 0.35rem;
+}
+/* 메뉴 안에 놓인 숫자 입력 (Time Points / Threshold) */
+.app-menu-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.2rem 0.55rem 0.2rem 1.65rem;
+}
+.app-menu-field label {
+    font-size: 0.875rem;
+    margin-bottom: 0;
+    white-space: nowrap;
+}
+.app-menu-field .form-control {
+    width: 86px;
+    flex: 0 0 auto;
+}
+
+
+/* ============================================================ */
+/* 9. Sidebar Sections as Cards                                 */
+/* ============================================================ */
+/* 예전에는 .sidebar-section 에 스타일이 전혀 없어서 세 구역을 나누는 것이
+   flex gap 여백뿐이었다. 메인 패널과 같은 카드 언어를 적용해 경계를 만든다. */
+.sidebar-section {
+    counter-increment: sidebar-step;
+    flex: 0 0 auto;
+    background-color: var(--apple-background-primary);
+    border: 1px solid var(--apple-card-border);
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    padding: 1rem;
+}
+
+/* 카드 머리: 제목 줄을 카드 폭 끝까지 빼내고 아래에 경계선을 둔다. */
+.sidebar-section > .sidebar-section-title,
+.sidebar-section > .value-settings-header {
+    margin: -1rem -1rem 0.9rem;
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid var(--apple-card-border);
+    align-items: center;
+}
+
+/* 작업 순서 배지. 번호는 CSS 카운터로 매기므로 마크업이 순서를 알 필요가 없다.
+   ODE 정의 -> 값 설정 -> 투여 등록 이라는 실제 진행 순서를 나타낸다. */
+.sidebar-section-title::before {
+    content: counter(sidebar-step);
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    margin-right: 0.55rem;
+    border-radius: 50%;
+    background-color: rgba(0, 122, 255, 0.1);
+    color: var(--apple-system-blue);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.derived-variables-section {
+    margin-top: 1rem;
+}
+
+
+/* ============================================================ */
+/* 10. Toolbar & Plot Card Controls                             */
+/* ============================================================ */
+/* 예전에는 시계 아이콘 두 개와 숫자만 있어 무엇의 0/48 인지 알 수 없었다. */
+.toolbar-label,
+.toolbar-unit {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    white-space: nowrap;
+}
+.main-toolbar .simulation-settings-compact {
+    gap: 0.5rem;
+}
+.main-toolbar .simulation-settings-compact .form-control {
+    max-width: 76px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.toolbar-range-arrow {
+    color: var(--apple-text-tertiary);
+    font-size: 0.875rem;
+}
+
+/* 플롯을 조작하는 컨트롤은 플롯 카드 머리에 둔다. */
+.plot-card-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.9rem;
+    background-color: var(--apple-background-primary);
+}
+.plot-card-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+/* 선택된 구획 뱃지는 이제 입력창이 아니라 카드 머리의 인라인 목록이다. */
+.selected-badges-container {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    min-height: 0;
+    min-width: 0;
+    padding: 0;
+    background: none;
+    border: none;
+}
+#selected-comp-badges .badge {
+    margin-right: 0 !important;
+}
+.plot-card-controls .placeholder-badge-area {
+    width: auto;
+}
+
+
+/* ============================================================ */
+/* 11. Help & About Modals                                      */
+/* ============================================================ */
+.help-tabs .nav-link {
+    font-size: 0.875rem;
+    color: var(--apple-text-secondary);
+    border-radius: 7px;
+    padding: 0.3rem 0.75rem;
+}
+.help-tabs .nav-link.active {
+    background-color: var(--apple-system-blue);
+    color: #fff;
+}
+.help-content p,
+.help-content li {
+    font-size: 0.9375rem;
+}
+.help-h {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    margin-top: 1.35rem;
+    margin-bottom: 0.5rem;
+}
+.help-content > .tab-pane > *:first-child {
+    margin-top: 0;
+}
+.help-code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.7;
+    background-color: var(--apple-background-secondary);
+    border: 1px solid var(--apple-card-border);
+    border-radius: 8px;
+    padding: 0.7rem 0.9rem;
+    margin-bottom: 0.9rem;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--apple-text-primary);
+}
+.help-content code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 0.875em;
+    background-color: var(--apple-background-secondary);
+    border: 1px solid var(--apple-card-border);
+    border-radius: 4px;
+    padding: 0.05em 0.3em;
+    color: var(--apple-text-primary);
+}
+.help-steps,
+.help-list {
+    padding-left: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.help-steps strong {
+    font-weight: 600;
+}
+
+.about-head {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-bottom: 1rem;
+}
+.about-mark {
+    font-size: 2rem;
+    line-height: 1;
+}
+.about-name {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+.about-ver {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--apple-text-tertiary);
+}
+.about-desc {
+    font-size: 0.9375rem;
+    color: var(--apple-text-secondary);
+    margin-bottom: 1.15rem;
+}
+.about-meta {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.4rem 1rem;
+    margin: 0;
+    font-size: 0.875rem;
+}
+.about-meta dt {
+    font-weight: 600;
+    color: var(--apple-text-tertiary);
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    align-self: center;
+}
+.about-meta dd {
+    margin: 0;
+    color: var(--apple-text-primary);
+}
+.about-meta a {
+    color: var(--apple-system-blue);
+    text-decoration: none;
+}
+.about-meta a:hover {
+    text-decoration: underline;
+}
+
+
+/* ============================================================ */
+/* 12. Sidebar density                                          */
+/* ============================================================ */
+/* 사이드바 버튼은 좁은 칸에서 줄바꿈되지 않도록 한 줄로 유지한다. */
+.sidebar-btn-row .btn {
+    white-space: nowrap;
+    flex: 0 1 auto;
+}
+
+/* 안내용 빈 상자가 화면 대부분을 차지하지 않도록 낮춘다.
+   (파싱 전에는 사이드바 세 카드가 거의 전부 플레이스홀더였다) */
+.sidebar .placeholder-text {
+    min-height: 64px;
+    font-size: 13px;
+    padding: 0.75rem;
+}
+.derived-variables-section .placeholder-text {
+    min-height: 48px;
+}
+#dose-list.dose-list-container:empty::before {
+    content: "No doses registered yet.";
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 48px;
+    font-size: 13px;
+    font-style: italic;
+    color: var(--apple-text-tertiary);
+    border: 1px dashed var(--apple-separator-color);
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.02);
 }

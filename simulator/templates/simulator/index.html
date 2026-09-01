@@ -3,26 +3,112 @@
 <head>
   {% load static %}
   <meta charset="UTF-8">
-  <title>PK Simulator + Fitting</title>
-  
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PK ODE Simulator</title>
+
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
   <script defer src="{% static 'simulator/js/script.js' %}"></script>
+  <script defer src="{% static 'simulator/js/menubar.js' %}"></script>
   <link rel="stylesheet" href="{% static 'simulator/css/style.css' %}">
 
 </head>
-<body> 
+<body>
+
+  <header class="app-menubar">
+    <div class="app-brand">
+      <span class="app-brand-mark" aria-hidden="true">🧪</span>
+      <span class="app-brand-name">PK ODE Simulator</span>
+      <span class="app-brand-ver">v1.2</span>
+    </div>
+
+    <nav class="app-menus" aria-label="Main menu">
+
+      <div class="dropdown">
+        <button class="app-menu-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">File</button>
+        <ul class="dropdown-menu app-menu">
+          <li>
+            <label for="import-session-input" class="dropdown-item"><i class="bi bi-box-arrow-in-up"></i> Open Session&hellip;</label>
+            <input type="file" id="import-session-input" accept=".json" hidden>
+          </li>
+          <li><button type="button" id="export-session-btn" class="dropdown-item"><i class="bi bi-box-arrow-down"></i> Save Session</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><h6 class="dropdown-header">Export</h6></li>
+          <li><button type="button" id="export-profile-btn" class="dropdown-item"><i class="bi bi-file-earmark-spreadsheet"></i> Simulated Profile <span class="app-menu-hint">.csv</span></button></li>
+          <li><button type="button" id="export-summary-btn" class="dropdown-item"><i class="bi bi-table"></i> PK Summary Table <span class="app-menu-hint">.csv</span></button></li>
+          <li><button type="button" id="export-plot-btn" class="dropdown-item"><i class="bi bi-image"></i> Plot Image <span class="app-menu-hint">.png</span></button></li>
+        </ul>
+      </div>
+
+      <div class="dropdown">
+        <button class="app-menu-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">Model</button>
+        <ul class="dropdown-menu app-menu">
+          <li><button type="button" class="dropdown-item" data-proxy="#parse-btn"><i class="bi bi-search"></i> Parse ODEs</button></li>
+          <li><button type="button" class="dropdown-item" data-proxy="#edit-symbols-btn"><i class="bi bi-pencil-square"></i> Edit Symbol Roles&hellip;</button></li>
+          <li><button type="button" class="dropdown-item" data-proxy="#show-processed-btn"><i class="bi bi-file-text"></i> Show Processed ODEs</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><h6 class="dropdown-header">Load Example</h6></li>
+          <li><button type="button" class="dropdown-item" data-example="iv1c">1-compartment IV bolus</button></li>
+          <li><button type="button" class="dropdown-item" data-example="oral1c">1-compartment oral absorption</button></li>
+          <li><button type="button" class="dropdown-item" data-example="iv2c">2-compartment IV bolus</button></li>
+          <li><button type="button" class="dropdown-item" data-example="mm">Michaelis&ndash;Menten elimination</button></li>
+        </ul>
+      </div>
+
+      <div class="dropdown">
+        <button class="app-menu-btn" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">Simulation</button>
+        <ul class="dropdown-menu app-menu">
+          <li><button type="button" class="dropdown-item" data-proxy="#simulate-btn"><i class="bi bi-play-fill"></i> Run Simulation</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><h6 class="dropdown-header">Solver Settings</h6></li>
+          <li class="app-menu-field">
+            <label for="dropdown-sim-steps"># Time Points</label>
+            <input id="dropdown-sim-steps" type="number" class="form-control form-control-sm" value="200" min="10" max="1000">
+          </li>
+          <li class="app-menu-field">
+            <label for="dropdown-sim-threshold">Threshold</label>
+            <input id="dropdown-sim-threshold" type="number" class="form-control form-control-sm" value="1e-9" step="any">
+          </li>
+          <li><hr class="dropdown-divider"></li>
+          <li><button type="button" class="dropdown-item" data-proxy="#log-scale" data-proxy-check="#log-scale">Log Y-axis</button></li>
+        </ul>
+      </div>
+
+      <div class="dropdown">
+        <button class="app-menu-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">Data</button>
+        <ul class="dropdown-menu app-menu">
+          <li><button type="button" class="dropdown-item" data-bs-toggle="offcanvas" data-bs-target="#obsPanel"><i class="bi bi-file-earmark-arrow-down"></i> Observed Datasets&hellip;</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><button type="button" class="dropdown-item" data-proxy="#fit-btn"><i class="bi bi-tools"></i> Fit Parameters&hellip;</button></li>
+        </ul>
+      </div>
+
+      <div class="dropdown">
+        <button class="app-menu-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">Help</button>
+        <ul class="dropdown-menu app-menu dropdown-menu-end">
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#helpModal" data-help-tab="#help-quickstart"><i class="bi bi-compass"></i> Quick Start</button></li>
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#helpModal" data-help-tab="#help-syntax"><i class="bi bi-braces"></i> ODE Syntax Reference</button></li>
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#helpModal" data-help-tab="#help-csv"><i class="bi bi-filetype-csv"></i> Observed CSV Format</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#aboutModal"><i class="bi bi-info-circle"></i> About PK ODE Simulator</button></li>
+        </ul>
+      </div>
+
+    </nav>
+  </header>
+
+  <div class="app-shell">
   <aside class="sidebar">
     <section class="sidebar-section">
       <h2 class="sidebar-section-title"><i class="bi bi-file-text"></i> ODE Systems</h2>
       <textarea id="ode-input" class="form-control mb-2" rows="6" placeholder="e.g. dCdt = -kel*C"></textarea>
-      <div class="d-flex gap-2"> 
-        <button id="parse-btn" class="btn btn-sm btn-outline-secondary">🔍 Parse</button>
-        <button id="edit-symbols-btn" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editSymbolsModal" disabled>
-            <i class="bi bi-pencil-square"></i> Edit Symbols
+      <div class="d-flex gap-2 sidebar-btn-row">
+        <button id="parse-btn" class="btn btn-sm btn-primary"><i class="bi bi-search"></i> Parse</button>
+        <button id="edit-symbols-btn" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editSymbolsModal" title="Edit symbol roles" disabled>
+            <i class="bi bi-pencil-square"></i> Symbols
         </button>
-        <button id="show-processed-btn" class="btn btn-sm btn-outline-info">📄 Show Processed ODEs</button>
+        <button id="show-processed-btn" class="btn btn-sm btn-outline-secondary" title="Show processed ODEs"><i class="bi bi-file-text"></i> Processed</button>
       </div>
     </section>
 
@@ -121,29 +207,11 @@
 <main class="main-content">
   <div class="main-toolbar">
     <div class="simulation-settings-compact">
-        <label class="form-label mb-0 me-1" for="sim-start-time" title="Start Time"><i class="bi bi-clock"></i></label>
-        <input id="sim-start-time" type="number" class="form-control" value="0" step="0.1" title="Start Time (h)">
-        <label class="form-label mb-0 me-1 ms-2" for="sim-end-time" title="End Time"><i class="bi bi-clock-fill"></i></label>
-        <input id="sim-end-time" type="number" class="form-control" value="48" step="0.1" title="End Time">
-        <div class="dropdown ms-3">
-          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="advanced-settings-dropdown" data-bs-toggle="dropdown" aria-expanded="false">
-            More
-          </button>
-          <div class="dropdown-menu dropdown-menu-end p-3 shadow-sm border-0" aria-labelledby="advanced-settings-dropdown" style="width: 260px;">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <label for="dropdown-sim-steps" class="form-label form-label-sm mb-0"># Time Points</label>
-              <input id="dropdown-sim-steps" type="number" class="form-control form-control-sm" value="200" min="10" max="1000" style="width: 80px;">
-            </div>
-            <div class="d-flex justify-content-between align-items-center">
-              <label for="dropdown-sim-threshold" class="form-label form-label-sm mb-0">Threshold</label>
-              <input id="dropdown-sim-threshold" type="number" class="form-control form-control-sm" value="1e-9" step="any" style="width: 80px;">
-            </div>
-          </div>
-        </div>
-        <div class="form-check form-switch ms-2" title="Use log scale for Y-axis">
-          <input class="form-check-input" type="checkbox" id="log-scale">
-          <label class="form-check-label small" for="log-scale">Log Y</label>
-        </div>
+        <span class="toolbar-label" id="sim-time-label">Time</span>
+        <input id="sim-start-time" type="number" class="form-control" value="0" step="0.1" aria-labelledby="sim-time-label" aria-label="Simulation start time (h)">
+        <span class="toolbar-range-arrow" aria-hidden="true">&rarr;</span>
+        <input id="sim-end-time" type="number" class="form-control" value="48" step="0.1" aria-label="Simulation end time (h)">
+        <span class="toolbar-unit">h</span>
     </div>
     <div class="action-buttons">
       <button class="btn btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#obsPanel" title="Observed Data">
@@ -155,25 +223,27 @@
   </div>
 
   <div class="main-scrollable-area">
-    <div class="mb-3">
-        <label class="form-label small">Simulate Compartments:</label>
-        <div class="d-flex align-items-start">
-            <div class="dropdown me-2" style="width:auto;">
-                <button class="btn dropdown-toggle" data-bs-toggle="dropdown" style="min-width: 180px;">
-                    Select Compartments
-                </button>
-                <ul class="dropdown-menu" id="sim-compartments-menu">
-                </ul>
-            </div>
-            <div id="selected-comp-badges" class="form-control selected-badges-container">
-                </div>
-          </div>
-        <small class="text-muted d-block mt-1">Multiple selections supported</small>
-    </div>
+    <div class="card">
+      <div class="card-header plot-card-header">
+        <h5 class="card-title mb-0"><i class="bi bi-graph-up"></i> Simulation Result</h5>
 
-    <div class="card"> 
+        <div class="plot-card-controls">
+          <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+              Compartments
+            </button>
+            <ul class="dropdown-menu" id="sim-compartments-menu">
+            </ul>
+          </div>
+          <div id="selected-comp-badges" class="selected-badges-container">
+            </div>
+          <div class="form-check form-switch mb-0 ms-auto" title="Use log scale for Y-axis">
+            <input class="form-check-input" type="checkbox" id="log-scale">
+            <label class="form-check-label small" for="log-scale">Log Y</label>
+          </div>
+        </div>
+      </div>
       <div class="card-body">
-        <h5 class="card-title"><i class="bi bi-graph-up"></i> Simulation Result</h5>
         <div id="plot-placeholder" class="text-center py-5 text-muted">
           <i class="bi bi-graph-up" style="font-size:2rem;"></i><br> Run simulation to see results.
         </div>
@@ -200,46 +270,9 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center">
-          <div>
-            <h5 class="card-title mb-1"><i class="bi bi-box-arrow-down"></i> Exports & Reports</h5>
-            <p class="card-text text-muted small mb-0">
-              Save/load your session or export results.
-            </p>
-          </div>
-
-          <div class="d-flex align-items-center gap-3">
-            <div class="btn-group" role="group" aria-label="Session Management">
-              <label for="import-session-input" class="btn btn-sm btn-outline-info" title="Load Session from JSON file">
-                <i class="bi bi-box-arrow-in-up"></i> Load Session
-              </label>
-              <input type="file" id="import-session-input" accept=".json" style="display: none;">
-              <button id="export-session-btn" type="button" class="btn btn-sm btn-outline-info" title="Save current session to a JSON file">
-                <i class="bi bi-box-arrow-down"></i> Save Session
-              </button>
-            </div>
-
-            <div class="vr"></div>
-
-            <div class="btn-group" role="group" aria-label="Data Export">
-              <button id="export-profile-btn" type="button" class="btn btn-sm btn-outline-success" title="Export Profile (CSV)">
-                <i class="bi bi-file-earmark-spreadsheet"></i> Profile
-              </button>
-              <button id="export-summary-btn" type="button" class="btn btn-sm btn-outline-primary" title="Export Summary (CSV)">
-                <i class="bi bi-table"></i> Summary
-              </button>
-              <button id="export-plot-btn" type="button" class="btn btn-sm btn-dark" title="Export Plot (PNG)">
-                <i class="bi bi-image"></i> Plot
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </main>
+  </div>
 
   <div class="modal fade" id="editSymbolsModal" tabindex="-1" aria-labelledby="editSymbolsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -419,6 +452,189 @@
           </div>
       </div>
   </div>
+  <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="helpModalLabel"><i class="bi bi-life-preserver"></i> Help</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <ul class="nav nav-pills help-tabs mb-3" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#help-quickstart" type="button" role="tab">Quick Start</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" data-bs-toggle="pill" data-bs-target="#help-syntax" type="button" role="tab">ODE Syntax</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" data-bs-toggle="pill" data-bs-target="#help-csv" type="button" role="tab">Observed CSV</button>
+            </li>
+          </ul>
+
+          <div class="tab-content help-content">
+
+            <div class="tab-pane fade show active" id="help-quickstart" role="tabpanel">
+              <ol class="help-steps">
+                <li>
+                  <strong>Model</strong> — Write your ODE system in the sidebar, then press <em>Parse</em>.
+                  Compartments, parameters and derived variables are detected automatically.
+                </li>
+                <li>
+                  <strong>Values</strong> — Fill in the initial value of each compartment and a value for
+                  each parameter. Derived variables are computed for you and shown read-only.
+                </li>
+                <li>
+                  <strong>Dosing</strong> — Choose a compartment, pick IV bolus or infusion, enter the
+                  amount and start time, then <em>Add Dose</em>. Turn on <em>repeat dosing</em> for a
+                  multiple-dose schedule.
+                </li>
+                <li>
+                  <strong>Run</strong> — Set the time range in the toolbar and press
+                  <em>Run Simulation</em>. Pick which compartments to plot in the chart header.
+                </li>
+                <li>
+                  <strong>Fit</strong> <span class="text-muted">(optional)</span> — Load observed data
+                  from <em>Data &rarr; Observed Datasets</em>, then open <em>Fit Parameters</em>, select
+                  the parameters to estimate, define your experimental groups and start the fit.
+                </li>
+              </ol>
+              <p class="text-muted small mb-0">
+                Everything you set up can be saved with <em>File &rarr; Save Session</em> and restored later
+                with <em>File &rarr; Open Session</em>.
+              </p>
+            </div>
+
+            <div class="tab-pane fade" id="help-syntax" role="tabpanel">
+              <p>Write one equation per line. Two kinds of lines are recognised:</p>
+
+              <h6 class="help-h">Differential equations</h6>
+              <p>
+                The left-hand side must be written as <code>d&lt;Name&gt;dt</code>. The name between
+                <code>d</code> and <code>dt</code> becomes a compartment.
+              </p>
+              <pre class="help-code">dA1dt = -ka*A1
+dA2dt = ka*A1 - (CL/V)*A2</pre>
+
+              <h6 class="help-h">Derived variables</h6>
+              <p>
+                Any other <code>name = expression</code> line defines a derived variable. Derived variables
+                are substituted into the ODEs before solving, so they never become input parameters &mdash;
+                use <em>Model &rarr; Show Processed ODEs</em> to see the result of that substitution.
+              </p>
+              <pre class="help-code">C2  = A2/V
+Kd  = koff/kon</pre>
+
+              <h6 class="help-h">Parameters</h6>
+              <p>
+                Every remaining symbol &mdash; one that appears on a right-hand side but is never defined
+                &mdash; becomes an input parameter you supply a value for. Above, that is
+                <code>ka</code>, <code>CL</code>, <code>V</code>, <code>koff</code> and <code>kon</code>.
+                Use <em>Model &rarr; Edit Symbol Roles</em> if you need to reclassify one.
+              </p>
+
+              <h6 class="help-h">Operators and functions</h6>
+              <ul class="help-list">
+                <li><code>+ - * / **</code> &mdash; <code>^</code> is also accepted and read as a power.</li>
+                <li><code>t</code> is the time variable.</li>
+                <li>
+                  Built-in functions:
+                  <code>sqrt</code>, <code>exp</code>, <code>log</code>/<code>ln</code>, <code>abs</code>,
+                  <code>sin</code>, <code>cos</code>, <code>tan</code>,
+                  <code>asin</code>, <code>acos</code>, <code>atan</code>,
+                  <code>sinh</code>, <code>cosh</code>, <code>tanh</code>.
+                </li>
+                <li>Blank lines and lines without <code>=</code> are ignored. Non-ASCII characters are stripped.</li>
+              </ul>
+
+              <h6 class="help-h">Full example &mdash; Michaelis&ndash;Menten elimination</h6>
+              <pre class="help-code">dA1dt = -Vmax*C/(Km + C)
+C     = A1/V</pre>
+            </div>
+
+            <div class="tab-pane fade" id="help-csv" role="tabpanel">
+              <p>
+                Observed data is uploaded as CSV from <em>Data &rarr; Observed Datasets</em>. You can select
+                several files at once; each becomes its own dataset.
+              </p>
+
+              <h6 class="help-h">Required shape</h6>
+              <ul class="help-list">
+                <li>The first row is the header.</li>
+                <li>
+                  One column must be named <code>Time</code> (case-insensitive). It holds the sampling
+                  times in the same unit as your simulation.
+                </li>
+                <li>
+                  Every other column is a measured series. Name them however you like &mdash; after upload
+                  you map each column to a model variable in the Observed Datasets panel.
+                </li>
+              </ul>
+
+              <pre class="help-code">Time,Plasma,Metabolite
+0,0,0
+0.5,72.4,1.1
+1,88.1,3.6
+2,77.3,7.9
+4,51.2,11.4</pre>
+
+              <h6 class="help-h">How values are read</h6>
+              <ul class="help-list">
+                <li>A row whose number of fields does not match the header is skipped.</li>
+                <li>A row with a non-numeric <code>Time</code> is skipped.</li>
+                <li>Any other non-numeric or empty cell is treated as a missing point, not as zero.</li>
+              </ul>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="aboutModal" tabindex="-1" aria-labelledby="aboutModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="aboutModalLabel"><i class="bi bi-info-circle"></i> About</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body about-body">
+          <div class="about-head">
+            <span class="about-mark" aria-hidden="true">🧪</span>
+            <div>
+              <h4 class="about-name">PK ODE Simulator</h4>
+              <p class="about-ver">Version 1.2</p>
+            </div>
+          </div>
+
+          <p class="about-desc">
+            An interactive web app for simulating pharmacokinetic profiles from a custom ODE system,
+            and for estimating parameters against observed data. Write your model as differential
+            equations, define dosing, run the simulation, and fit &mdash; all in the browser.
+          </p>
+
+          <dl class="about-meta">
+            <dt>Author</dt>
+            <dd>Minsoo Lee &middot; College of Pharmacy, Seoul National University</dd>
+            <dt>Contact</dt>
+            <dd><a href="mailto:minsoo.lee@snu.ac.kr">minsoo.lee@snu.ac.kr</a></dd>
+            <dt>Source</dt>
+            <dd><a href="https://github.com/snowflower1028/PK-ODE-Simulator" target="_blank" rel="noopener noreferrer">github.com/snowflower1028/PK-ODE-Simulator</a></dd>
+            <dt>License</dt>
+            <dd>MIT</dd>
+            <dt>Built with</dt>
+            <dd>Django &middot; SymPy &middot; SciPy &middot; Plotly</dd>
+          </dl>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#helpModal">Open Help</button>
+          <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer></script>
 </body>
 </html>
