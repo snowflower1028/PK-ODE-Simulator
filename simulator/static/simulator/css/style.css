@@ -708,13 +708,7 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 /* ------------------------------ */
 /* Value Settings 표시 순서 토글    */
 /* ------------------------------ */
-.value-settings-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-}
+/* (.value-settings-header 는 .sidebar-section-header 로 통합되어 제거함) */
 
 .symbol-order-toggle .btn {
     font-size: 11px !important;
@@ -918,22 +912,63 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 }
 
 /* 카드 머리: 제목 줄을 카드 폭 끝까지 빼내고 아래에 경계선을 둔다. */
-.sidebar-section > .sidebar-section-title,
-.sidebar-section > .value-settings-header {
-    margin: -1rem -1rem 0.9rem;
-    padding: 0.65rem 1rem;
-    border-bottom: 1px solid var(--apple-card-border);
+.sidebar-section > .sidebar-section-header {
+    display: flex;
     align-items: center;
+    gap: 0.5rem;
+    margin: -1rem -1rem 0.9rem;
+    padding: 0.35rem 0.75rem 0.35rem 0.4rem;
+    border-bottom: 1px solid var(--apple-card-border);
+}
+/* 접힌 카드는 머리만 남으므로 아래 여백을 걷어낸다. */
+.sidebar-section:has(> .sidebar-section-body:not(.show)) > .sidebar-section-header {
+    margin-bottom: -1rem;
+    border-bottom: none;
+}
+
+.sidebar-section-header .sidebar-section-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+}
+
+/* 제목 전체가 여닫이 버튼이다. */
+.sidebar-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.3rem 0.35rem;
+    background: none;
+    border: 0;
+    border-radius: 7px;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.sidebar-section-toggle:hover {
+    background-color: var(--apple-background-secondary);
+}
+.sidebar-section-toggle:focus-visible {
+    outline: 2px solid var(--apple-system-blue);
+    outline-offset: -1px;
+}
+.sidebar-section-toggle > span {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* 작업 순서 배지. 번호는 CSS 카운터로 매기므로 마크업이 순서를 알 필요가 없다.
    ODE 정의 -> 값 설정 -> 투여 등록 이라는 실제 진행 순서를 나타낸다. */
-.sidebar-section-title::before {
+.sidebar-section-toggle::before {
     content: counter(sidebar-step);
     flex: 0 0 auto;
     width: 20px;
     height: 20px;
-    margin-right: 0.55rem;
     border-radius: 50%;
     background-color: rgba(0, 122, 255, 0.1);
     color: var(--apple-system-blue);
@@ -943,6 +978,45 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     align-items: center;
     justify-content: center;
     line-height: 1;
+}
+
+/* 버튼이 gap 으로 간격을 잡으므로 제목 아이콘의 기본 margin 은 걷어낸다. */
+.sidebar-section-toggle .bi {
+    margin-right: 0;
+    flex: 0 0 auto;
+}
+
+.sidebar-chevron {
+    flex: 0 0 auto;
+    /* <i> 는 기본이 inline 이라 transform 이 먹지 않는다. */
+    display: inline-block;
+    font-size: 0.75rem;
+    line-height: 1;
+    color: var(--apple-text-tertiary);
+    transition: transform 0.18s ease-in-out;
+}
+/* aria-expanded 를 그대로 읽는다. Bootstrap collapse 가 토글해 주므로
+   따로 상태를 들고 있을 필요가 없다. */
+.sidebar-section-toggle[aria-expanded="false"] .sidebar-chevron {
+    transform: rotate(-90deg);
+}
+
+/* 접혀 있을 때 카드 안에 무엇이 들어 있는지 알려 주는 개수 배지 */
+.sidebar-section-badge {
+    flex: 0 0 auto;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0.25rem 0.45rem;
+    border-radius: 5px;
+    background-color: rgba(0, 122, 255, 0.1);
+    color: var(--apple-system-blue);
+    font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidebar-chevron { transition: none; }
+    .sidebar-section-body.collapsing { transition: none; }
 }
 
 .derived-variables-section {

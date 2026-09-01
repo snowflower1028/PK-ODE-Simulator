@@ -88,6 +88,10 @@
     const target = document.querySelector(item.dataset.proxy);
     if (!target || target.disabled) return;
 
+    // 대상이 접힌 사이드바 카드 안에 있으면 먼저 펼친다.
+    // 안 그러면 메뉴를 눌러도 화면에서는 아무 일도 안 일어난 것처럼 보인다.
+    revealSection(target);
+
     target.click();
 
     // 토글이라면 방금 바뀐 상태를 메뉴에 즉시 반영한다
@@ -97,6 +101,14 @@
       if (menu) syncMenu(menu);
     }
   });
+
+  /** 요소가 접힌 사이드바 카드 안에 있으면 그 카드를 펼친다. */
+  function revealSection(element) {
+    const body = element.closest(".sidebar-section-body");
+    if (!body || body.classList.contains("show")) return;
+    const toggle = document.querySelector('[data-bs-target="#' + body.id + '"]');
+    if (toggle) toggle.click();
+  }
 
   /** 예제 ODE 를 입력창에 채우고 곧바로 Parse 한다. */
   function loadExample(key) {
@@ -111,6 +123,7 @@
       if (!ok) return;
     }
 
+    revealSection(input);
     input.value = example.text;
     input.dispatchEvent(new Event("input", { bubbles: true }));
 
@@ -172,7 +185,69 @@
   });
 
   /* ---------------------------------------------------------- */
-  /* 6. Help 모달 탭 선택                                         */
+  /* 6. 사이드바 카드 접기                                        */
+  /* ---------------------------------------------------------- */
+  /* 여닫는 동작 자체는 Bootstrap collapse 가 처리한다. 여기서는
+     마지막 상태만 기억해 다음 방문에 되살린다. */
+  const COLLAPSE_KEY = "pkSimulator.collapsedSections";
+
+  function readCollapsed() {
+    try {
+      const raw = localStorage.getItem(COLLAPSE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return []; // 프라이빗 모드 등 — 기본값(모두 펼침)으로 둔다
+    }
+  }
+
+  function writeCollapsed(ids) {
+    try {
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(ids));
+    } catch (e) {
+      /* 저장 못 해도 동작에는 지장 없다 */
+    }
+  }
+
+  const sectionBodies = Array.prototype.slice.call(
+    document.querySelectorAll(".sidebar-section-body")
+  );
+
+  if (sectionBodies.length) {
+    // 저장된 상태 복원. 애니메이션 없이 즉시 접어야 첫 화면이 덜컥이지 않는다.
+    const collapsed = readCollapsed();
+    sectionBodies.forEach((body) => {
+      if (!collapsed.includes(body.id)) return;
+      body.classList.remove("show");
+      const toggle = document.querySelector('[data-bs-target="#' + body.id + '"]');
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    });
+
+    function persist() {
+      writeCollapsed(
+        sectionBodies.filter((b) => !b.classList.contains("show")).map((b) => b.id)
+      );
+    }
+    document.addEventListener("shown.bs.collapse", persist);
+    document.addEventListener("hidden.bs.collapse", persist);
+  }
+
+  /* 접힌 Dosing 카드에서도 등록된 투여 개수는 보이게 한다.
+     script.js 의 renderDoses() 를 건드리지 않기 위해 목록을 관찰한다. */
+  const doseList = document.getElementById("dose-list");
+  const doseBadge = document.getElementById("dose-count-badge");
+  if (doseList && doseBadge) {
+    const syncDoseBadge = () => {
+      const n = doseList.querySelectorAll(".dose-badge").length;
+      doseBadge.textContent = String(n);
+      doseBadge.hidden = n === 0;
+      doseBadge.title = n === 1 ? "1 dose registered" : n + " doses registered";
+    };
+    new MutationObserver(syncDoseBadge).observe(doseList, { childList: true, subtree: true });
+    syncDoseBadge();
+  }
+
+  /* ---------------------------------------------------------- */
+  /* 7. Help 모달 탭 선택                                         */
   /* ---------------------------------------------------------- */
   const helpModal = document.getElementById("helpModal");
   if (helpModal) {
