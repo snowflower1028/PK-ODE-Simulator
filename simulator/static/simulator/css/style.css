@@ -327,37 +327,73 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 /* Data 버튼 같이 텍스트와 아이콘이 모두 있는 경우, 아이콘만 있는 버튼용 스타일은 불필요 */
 /* .main-toolbar .action-buttons .btn.icon-only .bi { margin-right: 0; } */
 
+/* 등록된 투여 목록.
+   예전에는 점선 상자 안에 알약 모양 뱃지가 인라인으로 떠 있어서, 카드 폭의
+   절반쯤만 쓰고 오른쪽이 비었다. 한 줄에 하나씩 폭을 꽉 채우는 행으로 바꾼다.
+   비어 있을 때의 점선 안내는 renderDoses 가 넣는 .placeholder-text 가 맡는다. */
 .dose-list-container {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem; /* 뱃지 사이의 간격 */
-  padding: 0.5rem;
-  border: 1px dashed var(--apple-separator-color);
-  border-radius: 8px;
-  min-height: 60px;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0;
+  border: none;
+  min-height: 0;
 }
 
 .dose-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.4rem 0.8rem;
-  background-color: var(--apple-system-blue);
-  color: white;
-  border-radius: 1rem; /* 타원형 뱃지 */
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.5rem 0.55rem 0.5rem 0.65rem;
+  background-color: rgba(0, 122, 255, 0.06);
+  border: 1px solid rgba(0, 122, 255, 0.16);
+  border-radius: 8px;
+  color: var(--apple-text-primary);
   font-size: 13px;
+  line-height: 1.5;
 }
 
-.dose-badge span {
-  margin-right: 0.75rem;
+/* 투여 방식 태그 — 값보다 먼저 눈에 들어오게 짧은 대문자 라벨로 둔다 */
+.dose-type {
+  flex: 0 0 auto;
+  margin-top: 0.05rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background-color: rgba(0, 122, 255, 0.14);
+  color: var(--apple-system-blue);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
-/* 뱃지 내부의 삭제 버튼 스타일 */
+.dose-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dose-summary strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 반복 투여는 둘째 줄로 내려 한 줄이 길어지지 않게 한다 */
+.dose-repeat {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  color: var(--apple-text-secondary);
+}
+
 .dose-badge .btn-close {
-  filter: brightness(0) invert(1); /* 흰색 아이콘으로 변경 */
-  opacity: 0.7;
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+  opacity: 0.45;
+  --bs-btn-close-white-filter: none;
 }
 .dose-badge .btn-close:hover {
-  opacity: 1;
+  opacity: 0.9;
 }
 
 .symbol-list {
@@ -1040,7 +1076,7 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .sidebar-chevron { transition: none; }
+    .sidebar-section-chevron .bi { transition: none; }
     .sidebar-section-body.collapsing { transition: none; }
 }
 
@@ -1231,9 +1267,11 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 /* 12. Sidebar density                                          */
 /* ============================================================ */
 /* 사이드바 버튼은 좁은 칸에서 줄바꿈되지 않도록 한 줄로 유지한다. */
+/* 세 버튼과 두 간격의 합이 위 textarea 의 너비와 정확히 맞도록 균등 분배한다. */
 .sidebar-btn-row .btn {
     white-space: nowrap;
-    flex: 0 1 auto;
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 /* 안내용 빈 상자가 화면 대부분을 차지하지 않도록 낮춘다.
@@ -1246,34 +1284,8 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 .derived-variables-section .placeholder-text {
     min-height: 48px;
 }
-#dose-list.dose-list-container:empty::before {
-    content: "No doses registered yet.";
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    min-height: 48px;
-    font-size: 13px;
-    font-style: italic;
-    color: var(--apple-text-tertiary);
-    border: 1px dashed var(--apple-separator-color);
-    border-radius: 8px;
-    background-color: rgba(0, 0, 0, 0.02);
-}
+/* (#dose-list 는 renderDoses 가 항상 채우므로 :empty 플레이스홀더 규칙을 제거함) */
 
-
-/* ============================================================ */
-/* 13. Fitting Settings Modal                                   */
-/* ============================================================ */
-/* 다섯 개 섹션이 <hr> 만으로 나뉜 채 한 면에 쌓여 있었고, 모달 전체가
-   1400px 를 넘어 Start Fitting 버튼이 늘 화면 밖에 있었다.
-   본문만 스크롤시키고(modal-dialog-scrollable) 섹션은 카드로 분리한다. */
-.fit-settings-body {
-    display: flex;
-    flex-direction: column;
-    gap: 0.9rem;
-    background-color: var(--apple-background-secondary);
-}
 
 .fit-section {
     background-color: var(--apple-background-primary);

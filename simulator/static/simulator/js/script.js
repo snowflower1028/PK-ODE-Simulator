@@ -446,19 +446,26 @@ const UI = {
     }
 
     container.innerHTML = State.doseList.map((d, i) => {
-      // 투여 정보를 요약하는 텍스트 생성
-      let summaryText = `Amount of "${d.amount}" of ${d.type} to <strong>${d.compartment}</strong> at ${d.start_time}h`;
-      if (d.type === 'infusion' && d.duration > 0) {
-          summaryText += ` over ${d.duration}h`;
-      }
+      // 한 줄로 읽히도록 "무엇을 / 어디에 / 언제" 순서로 적는다.
+      //   Bolus     250 into Ag at 0 h
+      //   Infusion  300 into A1 over 1 h, starting at 0 h
+      const isInfusion = d.type === 'infusion' && d.duration > 0;
+      const typeLabel = isInfusion ? 'Infusion' : 'Bolus';
+
+      let summaryText = isInfusion
+        ? `<strong>${d.amount}</strong> into <strong>${d.compartment}</strong> over ${d.duration} h, starting at ${d.start_time} h`
+        : `<strong>${d.amount}</strong> into <strong>${d.compartment}</strong> at ${d.start_time} h`;
+
+      // 반복 일정은 둘째 줄로 내린다 (CSS 에서 block 처리)
       if (d.repeat_every && d.repeat_until) {
-          summaryText += ` (repeats every ${d.repeat_every}h until ${d.repeat_until}h)`;
+        summaryText += `<span class="dose-repeat">Repeats every ${d.repeat_every} h until ${d.repeat_until} h</span>`;
       }
 
       return `
         <div class="dose-badge">
-          <span>${summaryText}</span>
-          <button class="btn-close btn-close-white btn-sm remove-dose-btn" data-index="${i}" title="Remove dose"></button>
+          <span class="dose-type">${typeLabel}</span>
+          <span class="dose-summary">${summaryText}</span>
+          <button class="btn-close btn-sm remove-dose-btn" data-index="${i}" title="Remove dose" aria-label="Remove dose"></button>
         </div>
       `;
     }).join("");
@@ -1305,7 +1312,12 @@ const Handlers = {
     UI.renderDoses();
     
     event.target.reset();
+    // reset() 은 값만 되돌릴 뿐 change 를 쏘지 않으므로, 값에 따라 보였다 숨었다
+    // 하는 칸들은 직접 알려 줘야 한다. 안 그러면 스위치는 꺼졌는데 반복 입력칸만
+    // 남는 것처럼 폼과 화면이 어긋난다.
     DOM.sidebar.doseTypeSelect.dispatchEvent(new Event('change')); // Infusion 필드 숨김 처리
+    const repeatToggle = document.getElementById('repeat-dose-toggle');
+    if (repeatToggle) repeatToggle.dispatchEvent(new Event('change')); // 반복 필드 숨김 처리
   },
 
   /**
