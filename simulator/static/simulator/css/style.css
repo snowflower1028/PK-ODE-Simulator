@@ -286,6 +286,9 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 .btn-info:hover { background-color: #4AB5E0; border-color: #4AB5E0; }
 .btn-outline-info { color: #5AC8FA; border-color: #5AC8FA; }
 .btn-outline-info:hover { background-color: rgba(90, 200, 250, 0.08); }
+/* .btn 의 'border: 1px solid transparent' 때문에 Bootstrap 의 outline 테두리가 지워지므로
+   여기서 다시 지정한다. 색은 호버 시 채워지는 색(#198754)과 동일하게 맞춘다. */
+.btn-outline-success { color: #198754; border-color: #198754; }
 
 /* 피팅 모달의 'Suggest Bounds' 버튼 스타일 */
 .btn-suggest-bounds {
@@ -685,3 +688,44 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.08);
 }
 
+/* ------------------------------ */
+/* Value Settings 표시 순서 토글    */
+/* ------------------------------ */
+.value-settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.symbol-order-toggle .btn {
+    font-size: 11px !important;
+    font-weight: 500;
+    padding: 0.1rem 0.45rem;
+    color: var(--apple-text-secondary);
+    background-color: transparent;
+    border: 1px solid var(--apple-control-border);
+    white-space: nowrap;
+}
+
+.symbol-order-toggle .btn:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+    color: var(--apple-text-primary);
+}
+
+.symbol-order-toggle .btn-check:checked + .btn {
+    color: var(--apple-system-blue);
+    background-color: rgba(0, 122, 255, 0.1);
+    border-color: var(--apple-system-blue);
+    z-index: 1;
+}
+
+.symbol-order-toggle .btn-check:checked + .btn:hover {
+    background-color: rgba(0, 122, 255, 0.16);
+    color: var(--apple-system-blue);
+}
+
+.symbol-order-toggle .btn-check:focus-visible + .btn {
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+}

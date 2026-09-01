@@ -27,7 +27,15 @@
     </section>
 
     <section class="sidebar-section">
-      <h2 class="sidebar-section-title"><i class="bi bi-sliders"></i> Value Settings</h2>
+      <div class="value-settings-header">
+        <h2 class="sidebar-section-title mb-0"><i class="bi bi-sliders"></i> Value Settings</h2>
+        <div class="btn-group btn-group-sm symbol-order-toggle" role="group" aria-label="Symbol display order">
+          <input type="radio" class="btn-check" name="symbolOrder" id="symbol-order-ode" value="ode" checked>
+          <label class="btn" for="symbol-order-ode" title="Show symbols in the order they appear in your ODEs">ODE order</label>
+          <input type="radio" class="btn-check" name="symbolOrder" id="symbol-order-alpha" value="alpha">
+          <label class="btn" for="symbol-order-alpha" title="Show symbols in alphabetical order">A–Z</label>
+        </div>
+      </div>
       <div class="value-settings-columns">
         <div>
           <h3 class="subsection-title">Initial Values</h3>

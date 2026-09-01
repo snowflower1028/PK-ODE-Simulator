@@ -6,8 +6,11 @@ const State = {
   observations: [], // 기존 window._obs를 대체하며, 이름을 더 명확하게 변경
   
   // 3. 모델 파싱 결과 상태
-  compartments: [],       // 기존 window._compartments 대체
-  parameters: [],         // 기존 window._parameters 대체
+  compartments: [],       // 기존 window._compartments 대체 (알파벳순, 계산용 기준)
+  parameters: [],         // 기존 window._parameters 대체 (알파벳순, 계산용 기준)
+  compartmentsOdeOrder: [], // ODE 에 적힌 순서 (표시 전용)
+  parametersOdeOrder: [],   // ODE 에 적힌 순서 (표시 전용)
+  symbolOrder: 'ode',       // 'ode' | 'alpha' — Value Settings 표시 순서
   processedODE: "",         // 기존 window._processedODE 대체
   derivedExpressions: {}, // 기존 window._derivedExpressions 대체
 
@@ -22,6 +25,43 @@ const State = {
   latestPKSummary: null, // 마지막 PK 요약 결과를 저장하는 변수
 };
 
+/**
+ * Value Settings 표시 순서 헬퍼.
+ * 계산에 쓰이는 State.compartments / State.parameters 는 건드리지 않고,
+ * 화면에 뿌릴 때만 순서를 바꾼다.
+ */
+const SymbolOrder = {
+  STORAGE_KEY: 'pkSimulator.symbolOrder',
+
+  load() {
+    try {
+      const v = localStorage.getItem(this.STORAGE_KEY);
+      if (v === 'ode' || v === 'alpha') State.symbolOrder = v;
+    } catch (e) { /* 프라이빗 모드 등에서 접근 불가 — 기본값 사용 */ }
+    return State.symbolOrder;
+  },
+
+  save(value) {
+    State.symbolOrder = value;
+    try { localStorage.setItem(this.STORAGE_KEY, value); } catch (e) { /* 무시 */ }
+  },
+
+  /** base(알파벳순 기준 목록)를 현재 설정에 맞는 순서로 돌려준다. */
+  apply(base, odeOrder) {
+    if (State.symbolOrder !== 'ode' || !Array.isArray(odeOrder) || odeOrder.length === 0) {
+      return [...base].sort((a, b) => a.localeCompare(b));
+    }
+    // ODE 순서에 있는 것 먼저, 빠진 것은 알파벳순으로 뒤에 붙인다.
+    const inOde = odeOrder.filter(x => base.includes(x));
+    const rest = base.filter(x => !inOde.includes(x)).sort((a, b) => a.localeCompare(b));
+    return [...inOde, ...rest];
+  },
+
+  compartments() { return this.apply(State.compartments, State.compartmentsOdeOrder); },
+  parameters()   { return this.apply(State.parameters,   State.parametersOdeOrder); },
+};
+
+
 /** ----- DOM 구획 ----- **/
 const DOM = {
   // --- 사이드바 (Sidebar) ---
@@ -32,6 +72,7 @@ const DOM = {
     showProcessedBtn: document.getElementById("show-processed-btn"),
     initValuesContainer: document.getElementById("init-values"),
     paramValuesContainer: document.getElementById("param-values"),
+    symbolOrderRadios: document.querySelectorAll('input[name="symbolOrder"]'),
     derivedValuesContainer: document.getElementById("derived-values"),
     doseForm: document.getElementById("dose-form"),
     doseListContainer: document.getElementById("dose-list"),
@@ -256,7 +297,10 @@ const UI = {
    * 파싱된 심볼(구획, 파라미터)에 대한 입력 필드와 메뉴를 렌더링합니다.
    */
   renderSymbolInputs() {
-    const { compartments, parameters, derivedExpressions } = State;
+    const { derivedExpressions } = State;
+    // 표시 순서만 바꾼 목록 (계산용 State 배열은 그대로 둔다)
+    const compartments = SymbolOrder.compartments();
+    const parameters = SymbolOrder.parameters();
     const { initValuesContainer, paramValuesContainer, derivedValuesContainer, doseForm } = DOM.sidebar;
     const { compartmentsMenu } = DOM.simulation;
     const compartmentSelect = doseForm.querySelector('#compartment');
@@ -1104,6 +1148,42 @@ const Handlers = {
   // --- 사이드바 및 공용 핸들러 ---
 
   /**
+   * Value Settings 의 표시 순서 토글(ODE order / A-Z)을 처리합니다.
+   * 계산에는 영향이 없고 입력 필드의 나열 순서만 바뀝니다.
+   * 이미 입력한 값이 지워지지 않도록, 다시 그리기 전에 현재 값을 읽어 두었다가 되돌려 놓습니다.
+   */
+  handleSymbolOrderChange(event) {
+    const value = event.target.value;
+    if (value !== 'ode' && value !== 'alpha') return;
+
+    // 현재 입력값 보존
+    const keep = { init: {}, param: {} };
+    State.compartments.forEach(c => {
+      const el = DOM.sidebar.initValuesContainer.querySelector(`#init_${c}`);
+      if (el) keep.init[c] = el.value;
+    });
+    State.parameters.forEach(pn => {
+      const el = DOM.sidebar.paramValuesContainer.querySelector(`#param_${pn}`);
+      if (el) keep.param[pn] = el.value;
+    });
+
+    SymbolOrder.save(value);
+    UI.renderSymbolInputs();
+
+    // 값 복원
+    Object.entries(keep.init).forEach(([c, v]) => {
+      const el = DOM.sidebar.initValuesContainer.querySelector(`#init_${c}`);
+      if (el) el.value = v;
+    });
+    Object.entries(keep.param).forEach(([pn, v]) => {
+      const el = DOM.sidebar.paramValuesContainer.querySelector(`#param_${pn}`);
+      if (el) el.value = v;
+    });
+
+    UI.updateSelectedBadges();
+  },
+
+  /**
    * 'Parse' 버튼 클릭을 처리합니다.
    * ODE 텍스트를 API로 보내고, 결과를 받아 State를 업데이트한 후 UI를 다시 렌더링합니다.
    */
@@ -1117,6 +1197,8 @@ const Handlers = {
         // State 업데이트
         State.compartments = response.data.compartments || [];
         State.parameters = response.data.parameters || [];
+        State.compartmentsOdeOrder = response.data.compartments_ode_order || [];
+        State.parametersOdeOrder = response.data.parameters_ode_order || [];
         State.processedODE = response.data.processed_ode;
         State.derivedExpressions = response.data.derived_expressions || {};
 
@@ -1836,6 +1918,10 @@ const App = {
   init() {
     console.log("Application initializing...");
 
+    // 저장된 표시 순서 설정을 복원해 라디오 버튼에 반영
+    const order = SymbolOrder.load();
+    DOM.sidebar.symbolOrderRadios.forEach(r => { r.checked = (r.value === order); });
+
     this._bindEvents();
     this._initialRender();
   },
@@ -1846,6 +1932,8 @@ const App = {
   _bindEvents() {
     // --- 사이드바 이벤트 바인딩 ---
     DOM.sidebar.parseBtn.addEventListener('click', Handlers.handleParseClick);
+    DOM.sidebar.symbolOrderRadios.forEach(r =>
+      r.addEventListener('change', Handlers.handleSymbolOrderChange));
     DOM.sidebar.showProcessedBtn.addEventListener('click', Handlers.handleShowProcessedClick);
     DOM.sidebar.doseForm.addEventListener('submit', Handlers.handleDoseFormSubmit);
     DOM.sidebar.doseTypeSelect.addEventListener('change', Handlers.handleDoseTypeChange);

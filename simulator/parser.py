@@ -62,16 +62,26 @@ def _initial_symbols(ode_rows, param_rows):
     comps = {c for c, _ in ode_rows}
     token_rx = re.compile(r"[A-Za-z_][\w]*")
     tokens: Set[str] = set()
+    # 사용자가 적은 순서(첫 등장 순서)를 함께 기록해 둔다.
+    # UI 에서 "ODE 입력 순서"로 정렬해 보여주기 위한 정보이며, 계산에는 쓰이지 않는다.
+    token_order: List[str] = []
+
+    def _scan(text: str):
+        for tok in token_rx.findall(text):
+            tokens.add(tok)
+            if tok not in token_order:
+                token_order.append(tok)
+
     for _, rhs in ode_rows:
-        tokens.update(token_rx.findall(rhs))
+        _scan(rhs)
     for rhs in param_rows.values():
-        tokens.update(token_rx.findall(rhs))
+        _scan(rhs)
 
     # 정의된 파라미터 심볼 포함
     param_syms = tokens - comps - _BUILTIN.keys()
     symtbl     = {s: symbols(s) for s in comps.union(param_syms)}
     symtbl.update(_BUILTIN)
-    return comps, param_syms, symtbl
+    return comps, param_syms, symtbl, token_order
 
 # ───────────────────────────────────────────────
 # 3. 파라미터 RHS 파싱 + 의존성 그래프
@@ -166,7 +176,7 @@ def parse_ode_input(text: str) -> Dict[str, Any]:
     lines                   = _preprocess(text)
     ode_rows, param_rows    = _classify(lines)
 
-    comps, param_syms, symtbl = _initial_symbols(ode_rows, param_rows)
+    comps, param_syms, symtbl, token_order = _initial_symbols(ode_rows, param_rows)
     parsed_defs, graph, rev   = _parse_param_defs(param_rows, symtbl)
     topo_order                = _topo(graph, rev)
 
@@ -177,10 +187,24 @@ def parse_ode_input(text: str) -> Dict[str, Any]:
     proc_lines  = _substitute_odes(ode_rows, derived_exprs, symtbl)
     equations   = _build_eq(proc_lines, symtbl)
 
+    # ── 표시 순서용 정보 ────────────────────────────
+    # compartments/parameters 는 계산 경로가 의존하므로 기존대로 알파벳순을 유지하고,
+    # "사용자가 ODE 에 적은 순서"는 별도 키로 함께 돌려준다.
+    comp_order = []
+    for c, _ in ode_rows:
+        if c not in comp_order:
+            comp_order.append(c)
+    comp_order += [c for c in sorted(comps) if c not in comp_order]
+
+    param_order = [t for t in token_order if t in base_params]
+    param_order += [p for p in sorted(base_params) if p not in param_order]
+
     # 최종 반환 딕셔너리. lambdify 관련 키는 제거됨.
     return {
         "compartments"        : sorted(comps),
         "parameters"          : sorted(base_params),
+        "compartments_ode_order": comp_order,
+        "parameters_ode_order"  : param_order,
         "derived_expressions" : derived_exprs,
         "processed_ode"       : "\n".join(proc_lines),
         "equations"           : equations,
