@@ -1,0 +1,34 @@
+{
+  "ode": "dA1dt = -(CL/V1)*A1 - (Q/V1)*A1 + (Q/V2)*A2\ndA2dt = (Q/V1)*A1 - (Q/V2)*A2\nC1 = A1/V1\nC2 = A2/V2",
+  "initials": {
+    "A1": 0.0,
+    "A2": 0.0
+  },
+  "parameters": {
+    "CL": 3.0,
+    "V1": 15.0,
+    "Q": 8.0,
+    "V2": 45.0
+  },
+  "doses": [
+    {
+      "compartment": "A1",
+      "type": "bolus",
+      "amount": 400.0,
+      "start_time": 0.0,
+      "duration": 0,
+      "repeat_every": null,
+      "repeat_until": null
+    }
+  ],
+  "simulationSettings": {
+    "start": 0,
+    "end": 48.0,
+    "steps": 481,
+    "logScale": false,
+    "selectedCompartments": [
+      "C1",
+      "C2"
+    ]
+  }
+}

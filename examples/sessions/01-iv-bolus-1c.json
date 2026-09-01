@@ -1,0 +1,31 @@
+{
+  "ode": "dA1dt = -(CL/V)*A1\nC1 = A1/V",
+  "initials": {
+    "A1": 0.0
+  },
+  "parameters": {
+    "CL": 3.5,
+    "V": 28.0
+  },
+  "doses": [
+    {
+      "compartment": "A1",
+      "type": "bolus",
+      "amount": 500.0,
+      "start_time": 0.0,
+      "duration": 0,
+      "repeat_every": null,
+      "repeat_until": null
+    }
+  ],
+  "simulationSettings": {
+    "start": 0,
+    "end": 24.0,
+    "steps": 241,
+    "logScale": false,
+    "selectedCompartments": [
+      "A1",
+      "C1"
+    ]
+  }
+}

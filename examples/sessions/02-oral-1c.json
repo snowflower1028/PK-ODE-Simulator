@@ -1,0 +1,34 @@
+{
+  "ode": "dAgdt = -ka*Ag\ndA1dt = ka*Ag - (CL/V)*A1\nC1 = A1/V",
+  "initials": {
+    "Ag": 0.0,
+    "A1": 0.0
+  },
+  "parameters": {
+    "ka": 1.2,
+    "CL": 4.0,
+    "V": 32.0
+  },
+  "doses": [
+    {
+      "compartment": "Ag",
+      "type": "bolus",
+      "amount": 250.0,
+      "start_time": 0.0,
+      "duration": 0,
+      "repeat_every": null,
+      "repeat_until": null
+    }
+  ],
+  "simulationSettings": {
+    "start": 0,
+    "end": 36.0,
+    "steps": 361,
+    "logScale": false,
+    "selectedCompartments": [
+      "Ag",
+      "A1",
+      "C1"
+    ]
+  }
+}

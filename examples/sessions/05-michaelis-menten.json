@@ -1,0 +1,31 @@
+{
+  "ode": "dA1dt = -Vmax*C/(Km + C)\nC = A1/V",
+  "initials": {
+    "A1": 0.0
+  },
+  "parameters": {
+    "Vmax": 12.0,
+    "Km": 4.0,
+    "V": 20.0
+  },
+  "doses": [
+    {
+      "compartment": "A1",
+      "type": "bolus",
+      "amount": 600.0,
+      "start_time": 0.0,
+      "duration": 0,
+      "repeat_every": null,
+      "repeat_until": null
+    }
+  ],
+  "simulationSettings": {
+    "start": 0,
+    "end": 48.0,
+    "steps": 481,
+    "logScale": false,
+    "selectedCompartments": [
+      "C"
+    ]
+  }
+}

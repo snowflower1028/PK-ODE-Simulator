@@ -1,0 +1,30 @@
+{
+  "ode": "dA1dt = -(CL/V)*A1\nC1 = A1/V",
+  "initials": {
+    "A1": 0.0
+  },
+  "parameters": {
+    "CL": 5.0,
+    "V": 40.0
+  },
+  "doses": [
+    {
+      "compartment": "A1",
+      "type": "infusion",
+      "amount": 300.0,
+      "start_time": 0.0,
+      "duration": 1.0,
+      "repeat_every": 12.0,
+      "repeat_until": 60.0
+    }
+  ],
+  "simulationSettings": {
+    "start": 0,
+    "end": 96.0,
+    "steps": 961,
+    "logScale": false,
+    "selectedCompartments": [
+      "C1"
+    ]
+  }
+}
