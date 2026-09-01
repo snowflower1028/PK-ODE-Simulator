@@ -273,10 +273,23 @@
         <div class="modal-body">
           <section id="fit-param-selection-section">
             <div>
-              <h6><i class="bi bi-ui-checks"></i> Select Parameters to Fit</h6>
-              <p class="text-muted small">Check the parameters you want to estimate. Current values will be used as initial guesses.</p>
+              <h6><i class="bi bi-ui-checks"></i> Select Parameters &amp; Scope</h6>
+              <p class="text-muted small">Check the parameters you want to estimate. Current values are used as initial guesses. <strong>Global</strong> = one value shared by all groups, <strong>Local</strong> = a separate value per group.</p>
             </div>
-            <div id="modal-param-list" class="mb-3" style="max-height: 200px; overflow-y: auto;">
+            <div class="table-responsive mb-3" style="max-height: 240px; overflow-y: auto;">
+              <table class="table table-sm table-borderless align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th style="width: 40px;">Fit?</th>
+                    <th>Parameter</th>
+                    <th style="width: 170px;">Scope</th>
+                  </tr>
+                </thead>
+                <tbody id="modal-param-table-body">
+                  </tbody>
+              </table>
+            </div>
+            <div id="modal-param-list" class="mb-3 d-none" style="max-height: 200px; overflow-y: auto;">
               </div>
           </section>
 
@@ -294,6 +307,27 @@
 
             <div id="modal-param-bounds-list" class="mb-3">
                 </div>
+          </section>
+
+          <hr>
+
+          <section id="fit-error-model-section">
+            <h6><i class="bi bi-graph-up-arrow"></i> Error Model (MLE)</h6>
+            <p class="text-muted small">Residual error model used for the maximum-likelihood objective.</p>
+            <div class="d-flex gap-3 flex-wrap">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="errorModel" id="errConst" value="constant" checked>
+                <label class="form-check-label" for="errConst">Additive (Constant)</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="errorModel" id="errProp" value="proportional">
+                <label class="form-check-label" for="errProp">Proportional</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="errorModel" id="errComb" value="combined">
+                <label class="form-check-label" for="errComb">Combined</label>
+              </div>
+            </div>
           </section>
           
           <hr>

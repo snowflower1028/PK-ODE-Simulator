@@ -1,0 +1,19 @@
+# 저장소에는 항상 LF로 저장한다. (Windows/macOS 혼용 시 전체 파일이 '수정됨'으로
+# 보이는 줄바꿈 churn을 막아준다. 작업 디렉터리의 줄바꿈은 그대로 유지된다.)
+* text=auto
+
+*.py   text
+*.js   text
+*.css  text
+*.html text
+*.md   text
+*.txt  text
+*.yaml text
+*.yml  text
+*.sh   text eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.sqlite3 binary

@@ -25,12 +25,37 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
+# 로컬 개발에서는 .env 의 DJANGO_SECRET_KEY 를 사용한다(.env 는 git에 올라가지 않음).
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'snu-pk-bootcamp-2025-a52098fee279.herokuapp.com']
+if not SECRET_KEY:
+    if DEBUG:
+        # 개발 편의를 위한 임시 키. 운영에서는 절대 사용되지 않는다.
+        SECRET_KEY = 'django-insecure-local-development-only-do-not-use-in-production'
+    else:
+        raise RuntimeError(
+            "DJANGO_SECRET_KEY environment variable is required when DEBUG is False."
+        )
+
+# 배포 호스트는 환경변수로 주입한다.
+#  - Render 는 RENDER_EXTERNAL_HOSTNAME 을 자동으로 넣어준다.
+#  - 커스텀 도메인 등은 DJANGO_ALLOWED_HOSTS 에 콤마로 구분해 추가한다.
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+
+_extra_hosts = os.environ.get('DJANGO_ALLOWED_HOSTS', '')
+ALLOWED_HOSTS += [h.strip() for h in _extra_hosts.split(',') if h.strip()]
+
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
+# HTTPS 로 서비스되는 호스트는 CSRF 신뢰 출처에도 등록해야 POST 요청이 통과한다.
+CSRF_TRUSTED_ORIGINS = [
+    f'https://{h}' for h in ALLOWED_HOSTS if h not in ('127.0.0.1', 'localhost')
+]
 
 
 # Application definition
@@ -128,11 +153,54 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-# STATICFILES_DIRS = [os.path.join(BASE_DIR, 'simulator/static'), os.path.join(BASE_DIR, 'static')]
+
+# Django 5.1 부터 STATICFILES_STORAGE 설정은 제거되었고 STORAGES 로 대체되었다.
+# (기존 STATICFILES_STORAGE 는 조용히 무시되어 whitenoise 압축/해시가 적용되지 않았다.)
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+
+# --- 운영 환경 보안 설정 ---------------------------------------------------
+# 플랫폼(Render/Heroku)의 리버스 프록시 뒤에서 HTTPS 여부를 올바르게 인식시킨다.
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = os.environ.get('DJANGO_SECURE_SSL_REDIRECT', 'True') == 'True'
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30  # 30 days
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+# ODE 파싱 결과 캐시. 워커 프로세스별 로컬 메모리 캐시로 충분하다.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'pk-simulator-ode-cache',
+        'TIMEOUT': 3600,
+        'OPTIONS': {'MAX_ENTRIES': 500},
+    }
+}
+
+# 서버 로그를 플랫폼 로그 스트림으로 내보낸다.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler'},
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.environ.get('DJANGO_LOG_LEVEL', 'INFO'),
+    },
+}

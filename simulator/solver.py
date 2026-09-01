@@ -3,6 +3,14 @@ import numpy as np
 import pandas as pd
 from sympy import lambdify, symbols, Expr
 from scipy.integrate import solve_ivp
+import threading
+
+# scipy 의 LSODA 는 ODEPACK 의 Fortran 루틴을 감싼 것이라 프로세스 안에서
+# 재진입(reentrant)이 되지 않는다. 한 프로세스에서 두 요청이 동시에 적분을 돌리면
+#   "Integrator `lsoda` can be used to solve only a single problem at a time."
+# 로 500 이 난다. gunicorn 을 스레드 모드로 돌리거나 개발서버에 동시 접속이
+# 몰리면 실제로 발생하므로, 적분 구간 전체를 프로세스 단위 락으로 직렬화한다.
+_INTEGRATOR_LOCK = threading.RLock()
 
 
 def generate_rhs_function(
@@ -127,13 +135,14 @@ def solve_ode_system(
         t_next_event = upcoming_event_times[0] if upcoming_event_times else t_span[1]
         
         # 현재 구간 [t_current, t_next_event]에 대해 시뮬레이션
-        sol_segment = solve_ivp(
-            fun=effective_rhs,
-            t_span=(t_current, t_next_event),
-            y0=y_current,
-            method='LSODA',       # Stiff 시스템에 강건한 솔버
-            dense_output=True,    # 보간을 위해 dense_output 활성화
-        )
+        with _INTEGRATOR_LOCK:
+            sol_segment = solve_ivp(
+                fun=effective_rhs,
+                t_span=(t_current, t_next_event),
+                y0=y_current,
+                method='LSODA',       # Stiff 시스템에 강건한 솔버
+                dense_output=True,    # 보간을 위해 dense_output 활성화
+            )
         
         all_solutions.append(sol_segment.sol) # 보간 함수(dense output) 저장
         
@@ -257,13 +266,14 @@ def solve_ode_system_old(
                             
         return dy
 
-    sol = solve_ivp(
-        fun=wrapped_dydt,
-        t_span=tuple(t_span),
-        y0=y0,
-        t_eval=t_eval,
-        vectorized=False
-    )
+    with _INTEGRATOR_LOCK:
+        sol = solve_ivp(
+            fun=wrapped_dydt,
+            t_span=tuple(t_span),
+            y0=y0,
+            t_eval=t_eval,
+            vectorized=False
+        )
 
     df = pd.DataFrame(sol.y.T, columns=compartments)
     df.insert(0, 'Time', sol.t)

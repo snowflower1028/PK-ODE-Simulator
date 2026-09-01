@@ -83,6 +83,11 @@ const DOM = {
     fittingSettings: {
       element: document.getElementById('fittingSettingsModal'),
       paramList: document.getElementById('modal-param-list'),
+      // 파라미터 체크박스는 #modal-param-table-body(테이블)에 렌더링되고,
+      // 테이블이 없을 때만 #modal-param-list 로 폴백된다.
+      // 체크 상태를 조회할 때는 두 경우를 모두 포함하는 섹션 전체를 기준으로 해야 한다.
+      paramSelectionScope: document.getElementById('fit-param-selection-section')
+                        || document.getElementById('fittingSettingsModal'),
       paramBoundsList: document.getElementById('modal-param-bounds-list'),
       fetchInitialParamsBtn: document.getElementById("fetch-initial-params-btn"),
       groupsContainer: document.getElementById('fitting-groups-container'),
@@ -626,43 +631,103 @@ const UI = {
   _fittingModalInstance: null,
 
   /**
-   * 피팅 설정 모달을 열고 내부 UI를 최신 상태로 초기화합니다.
+   * 피팅 설정 모달을 열고 내부 UI(파라미터 Scope, Error Model 등)를 초기화합니다.
    */
   openFittingSettingsModal() {
-    // 모달 인스턴스가 없으면 새로 생성
+    // 1. 모달 인스턴스 준비
     if (!this._fittingModalInstance) {
       this._fittingModalInstance = new bootstrap.Modal(DOM.modals.fittingSettings.element);
     }
-    
-    const { paramList, groupsContainer, progressSection, startBtn } = DOM.modals.fittingSettings;
-    
-    // 1. 피팅할 파라미터 목록 채우기
-    paramList.innerHTML = State.parameters.map(p_name => {
-      const paramValueEl = DOM.sidebar.paramValuesContainer.querySelector(`#param_${p_name}`);
-      const currentValue = paramValueEl ? paramValueEl.value : 'N/A';
-      return `
-        <div class="form-check">
-          <input class="form-check-input modal-fit-param-cb" type="checkbox" value="${p_name}" id="modal_fit_${p_name}">
-          <label class="form-check-label" for="modal_fit_${p_name}">
-            ${p_name} <small class="text-muted">(current: ${currentValue})</small>
-          </label>
-        </div>`;
-    }).join('');
 
-    // 2. 그룹 UI 초기화 및 첫 그룹 자동 추가
-    groupsContainer.innerHTML = '';
-    State.fittingGroupCounter = 0; // State의 카운터 초기화
+    // 2. 필수 데이터 확인 (ODEs 파싱 여부, 관측 데이터 유무)
+    if (State.compartments.length === 0 || State.parameters.length === 0) {
+      return alert("Please parse ODEs first to define parameters for fitting.");
+    }
+    if (State.observations.length === 0) {
+      return alert("⚠️ Please upload at least one observed data file before starting a fit.");
+    }
+
+    // 3. 파라미터 테이블 렌더링 (체크박스 + Scope 라디오 버튼)
+    // HTML 구조가 <table> 형태의 #modal-param-table-body를 가지고 있다고 가정합니다.
+    const paramTableBody = document.getElementById('modal-param-table-body');
+    
+    if (paramTableBody) {
+      paramTableBody.innerHTML = State.parameters.map(p_name => {
+        // 메인 화면의 현재 파라미터 값 가져오기 (참고용)
+        const mainInput = DOM.sidebar.paramValuesContainer.querySelector(`#param_${p_name}`);
+        const currentValue = mainInput ? mainInput.value : 'N/A';
+
+        return `
+          <tr>
+            <td class="align-middle text-center" style="width: 40px;">
+              <input class="form-check-input modal-fit-param-cb" type="checkbox" value="${p_name}" id="cb_${p_name}">
+            </td>
+            <td class="align-middle">
+              <label class="form-check-label mb-0 fw-bold" for="cb_${p_name}" style="cursor: pointer;">
+                ${p_name}
+              </label>
+              <div class="text-muted small" style="font-size: 0.75rem;">Current: ${currentValue}</div>
+            </td>
+            <td class="align-middle">
+              <div class="btn-group btn-group-sm" role="group" aria-label="Parameter Scope">
+                <input type="radio" class="btn-check param-scope-radio" name="scope_${p_name}" id="scope_${p_name}_g" value="global" checked disabled>
+                <label class="btn btn-outline-secondary" for="scope_${p_name}_g" title="One value shared across all groups">Global</label>
+
+                <input type="radio" class="btn-check param-scope-radio" name="scope_${p_name}" id="scope_${p_name}_l" value="local" disabled>
+                <label class="btn btn-outline-secondary" for="scope_${p_name}_l" title="Individual value for each group">Local</label>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // 이벤트 위임: 체크박스 변경 시 Scope 라디오 버튼 활성화/비활성화 처리
+      paramTableBody.onchange = (e) => {
+        if (e.target.classList.contains('modal-fit-param-cb')) {
+          const pName = e.target.value;
+          const isChecked = e.target.checked;
+          
+          // 해당 파라미터의 Scope 라디오 버튼들 활성화/비활성화
+          const scopeRadios = document.querySelectorAll(`input[name="scope_${pName}"]`);
+          scopeRadios.forEach(r => r.disabled = !isChecked);
+
+          // Bounds UI 업데이트 (선택된 파라미터가 변경되었으므로)
+          this.renderFitParamBoundsUI();
+        }
+      };
+
+    } else {
+      // (Fallback) 만약 HTML이 업데이트되지 않아 테이블 바디를 찾을 수 없는 경우
+      console.warn("Element #modal-param-table-body not found. Falling back to simple list.");
+      DOM.modals.fittingSettings.paramList.innerHTML = State.parameters.map(p => 
+        `<div class="form-check">
+           <input class="form-check-input modal-fit-param-cb" type="checkbox" value="${p}" id="modal_fit_${p}">
+           <label class="form-check-label" for="modal_fit_${p}">${p}</label>
+         </div>`
+      ).join('');
+    }
+
+    // 4. 피팅 그룹 초기화
+    DOM.modals.fittingSettings.groupsContainer.innerHTML = '';
+    State.fittingGroupCounter = 0; 
     this.addFittingGroup();
 
-    // 3. 파라미터 경계값(Bounds) UI 초기화
+    // 5. Bounds UI 초기화 (아무것도 선택되지 않은 상태로 시작)
     this.renderFitParamBoundsUI();
-    
-    // 4. 모달 상태 초기화 (진행률 숨기기, 버튼 활성화)
-    progressSection.style.display = 'none';
-    startBtn.disabled = false;
-    startBtn.innerHTML = '<i class="bi bi-play-circle"></i> Start Fitting';
 
-    // 5. 모달 표시
+    // 6. Error Model 초기화 (기본값: Additive/Constant)
+    const defaultErrModel = document.getElementById('errConst');
+    if (defaultErrModel) defaultErrModel.checked = true;
+
+    // 7. 진행 상태 섹션 숨기기 및 버튼 초기화
+    const { progressSection, startBtn } = DOM.modals.fittingSettings;
+    if (progressSection) progressSection.style.display = 'none';
+    if (startBtn) {
+      startBtn.disabled = false;
+      startBtn.innerHTML = '<i class="bi bi-play-circle"></i> Start Fitting';
+    }
+
+    // 8. 모달 표시
     this._fittingModalInstance.show();
   },
 
@@ -743,8 +808,8 @@ const UI = {
    * 선택된 피팅 파라미터에 대한 경계값(Bounds) 입력 UI를 렌더링합니다.
    */
   renderFitParamBoundsUI() {
-    const { paramBoundsList, paramList, fetchInitialParamsBtn } = DOM.modals.fittingSettings;
-    const checkedParams = paramList.querySelectorAll('.modal-fit-param-cb:checked');
+    const { paramBoundsList, paramSelectionScope, fetchInitialParamsBtn } = DOM.modals.fittingSettings;
+    const checkedParams = paramSelectionScope.querySelectorAll('.modal-fit-param-cb:checked');
 
     // 1. 선택된 파라미터가 없으면 버튼을 숨기고 placeholder를 표시합니다.
     if (checkedParams.length === 0) {
@@ -784,9 +849,15 @@ const UI = {
    */
   updateInputFields(params) {
     params.forEach(p => {
-      const inputEl = DOM.sidebar.paramValuesContainer.querySelector(`#param_${p.name}`);
+      // 백엔드는 "ka (Global)" / "V (Group 2)" 형태의 표시용 이름을 보낸다.
+      // 사이드바 입력칸(#param_ka)에 반영할 수 있는 것은 Global 파라미터뿐이므로
+      // base_name 을 사용하고, scope 가 local 이거나 error 인 항목은 건너뛴다.
+      if (p.scope && p.scope !== 'global') return;
+      const key = p.base_name || String(p.name).replace(/\s*\(.*\)\s*$/, '');
+      if (!key) return;
+      const inputEl = DOM.sidebar.paramValuesContainer.querySelector(`#param_${key}`);
       if (inputEl) {
-        inputEl.value = p.value;
+        inputEl.value = Number(p.value).toPrecision(6);
       }
     });
   },
@@ -803,18 +874,26 @@ const UI = {
     const rows = params.map(p => {
       // CV% 계산: (표준오차 / 추정치) * 100
       // 추정치가 0이거나 표준오차 계산이 불가능한 경우 'N/A' 처리
-      const cvText = (p.stderr !== null && p.value !== 0) 
-        ? `${((p.stderr / p.value) * 100).toFixed(2)}%` 
+      // 표준오차/신뢰구간은 Hessian 계산이 실패하면 null 로 올 수 있고,
+      // 예전 백엔드 응답에는 아예 없을 수도 있다(undefined). 둘 다 방어한다.
+      const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+      const cvText = isNum(p.cv_pct)
+        ? `${p.cv_pct.toFixed(2)}%`
+        : (isNum(p.stderr) && isNum(p.value) && p.value !== 0
+            ? `${Math.abs((p.stderr / p.value) * 100).toFixed(2)}%`
+            : 'N/A');
+
+      const ciText = (isNum(p.ci_lower) && isNum(p.ci_upper))
+        ? `[${p.ci_lower.toPrecision(4)}, ${p.ci_upper.toPrecision(4)}]`
         : 'N/A';
-        
-      const ciText = (p.ci_lower !== null && p.ci_upper !== null) 
-        ? `[${p.ci_lower.toPrecision(4)}, ${p.ci_upper.toPrecision(4)}]` 
-        : 'N/A';
+
+      const valText = isNum(p.value) ? p.value.toPrecision(6) : String(p.value);
 
       return `
         <tr>
           <td>${p.name}</td>
-          <td>${p.value.toPrecision(6)}</td>
+          <td>${valText}</td>
           <td>${cvText}</td>
           <td>${ciText}</td>
         </tr>`;
@@ -834,7 +913,7 @@ const UI = {
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <p class="small text-muted mb-0 text-end">Cost (SSR): ${cost.toPrecision(6)}</p>`;
+      <p class="small text-muted mb-0 text-end">SSR: ${(typeof cost === 'number' && Number.isFinite(cost)) ? cost.toPrecision(6) : 'N/A'}</p>`;
       
     fitSummaryCard.style.display = "block";
   },
@@ -1415,8 +1494,8 @@ const Handlers = {
    * 초기값으로 사용하고, 1/10배와 10배를 경계값으로 자동 설정합니다.
    */
   handleFetchInitialParamsClick() {
-    const { paramList, paramBoundsList } = DOM.modals.fittingSettings;
-    const checkedParams = paramList.querySelectorAll('.modal-fit-param-cb:checked');
+    const { paramSelectionScope, paramBoundsList } = DOM.modals.fittingSettings;
+    const checkedParams = paramSelectionScope.querySelectorAll('.modal-fit-param-cb:checked');
 
     if (checkedParams.length === 0) {
       alert("Please select at least one parameter to fetch initial values.");
@@ -1453,95 +1532,182 @@ const Handlers = {
     alert(`${checkedParams.length} parameter(s) had their bounds automatically set.`);
   },
 
-  /**
-   * 'Start Fitting' 버튼 클릭을 처리합니다.
-   * 모달에서 모든 설정 값을 수집하여 유효성을 검사하고,
-   * API를 통해 서버에 피팅을 요청한 후 결과를 처리합니다.
-   */
-  async handleStartFittingClick() {
-    // 0. 상태 확인 및 UI 초기화
-    if (State.isFitting) return; // 중복 실행 방지
+/**
+ * 'Start Fitting' 버튼 클릭을 처리합니다.
+ * - 모달에서 설정된 파라미터 Scope(Global/Local), Bounds, Error Model, Fitting Groups 정보를 수집합니다.
+ * - 유효성을 검사하고 API 서버에 MLE Fitting을 요청합니다.
+ * - 결과를 받아 UI에 표시하고 시뮬레이션을 자동 실행합니다.
+ */
+async handleStartFittingClick() {
+  // 0. 중복 실행 방지 및 UI 초기화
+  if (State.isFitting) return;
+
+  const startBtn = DOM.modals.fittingSettings.startBtn;
+  const progressSection = DOM.modals.fittingSettings.progressSection;
+
+  try {
+    State.isFitting = true;
+    progressSection.style.display = 'block'; // 진행률 섹션 표시
+    UI.resetFitProgress(); // 진행바, 로그 초기화
+    UI.setLoading(startBtn, true);
+
+    // --- 1. 데이터 수집: 파라미터, Scope, Bounds ---
+    const selectedFitParams = [];
+    const paramScopes = {};
+    const bounds = {};
+
+    // 체크된 파라미터들을 순회하며 정보 수집
+    const checkedParamBoxes = DOM.modals.fittingSettings.paramSelectionScope.querySelectorAll('.modal-fit-param-cb:checked');
     
-    const startBtn = DOM.modals.fittingSettings.startBtn;
-    const progressSection = DOM.modals.fittingSettings.progressSection;
+    if (checkedParamBoxes.length === 0) {
+      throw new Error("Please select at least one parameter to fit.");
+    }
 
-    try {
-      State.isFitting = true;
-      progressSection.style.display = 'block'; // 진행률 섹션 표시
-      UI.resetFitProgress();
-      UI.setLoading(startBtn, true);
-      // TODO: UI 모듈에 피팅 진행률 UI를 초기화하는 함수를 만들고 여기서 호출 (예: UI.resetFitProgress())
+    checkedParamBoxes.forEach(cb => {
+      const pName = cb.value;
+      selectedFitParams.push(pName);
+
+      // 1-1. Scope 수집 (Global vs Local)
+      // 모달에 해당 파라미터에 대한 라디오 버튼(name="scope_{pName}")이 있다고 가정
+      const scopeRadio = document.querySelector(`input[name="scope_${pName}"]:checked`);
+      const scope = scopeRadio ? scopeRadio.value : 'global'; // 기본값 global
+      paramScopes[pName] = scope;
+
+      // 1-2. Bounds 수집
+      // Scope가 Local이더라도, 초기 Bounds는 사용자가 입력한 하나의 범위를 공통으로 적용한다고 가정
+      const lowerEl = DOM.modals.fittingSettings.paramBoundsList.querySelector(`.modal-param-lower[data-param-name="${pName}"]`);
+      const upperEl = DOM.modals.fittingSettings.paramBoundsList.querySelector(`.modal-param-upper[data-param-name="${pName}"]`);
       
-      // 1. 데이터 수집 (DOM -> JS Object)
-      const selectedFitParams = [...DOM.modals.fittingSettings.paramList.querySelectorAll('.modal-fit-param-cb:checked')].map(cb => cb.value);
-      
-      const bounds = {};
-      selectedFitParams.forEach(pName => {
-        const lowerEl = DOM.modals.fittingSettings.paramBoundsList.querySelector(`.modal-param-lower[data-param-name="${pName}"]`);
-        const upperEl = DOM.modals.fittingSettings.paramBoundsList.querySelector(`.modal-param-upper[data-param-name="${pName}"]`);
-        bounds[pName] = [
-          lowerEl?.value.trim() === '' ? null : parseFloat(lowerEl.value),
-          upperEl?.value.trim() === '' ? null : parseFloat(upperEl.value)
-        ];
-      });
+      const lbVal = lowerEl?.value.trim() === '' ? null : parseFloat(lowerEl.value);
+      const ubVal = upperEl?.value.trim() === '' ? null : parseFloat(upperEl.value);
 
-      const weightingScheme = document.querySelector('input[name="fitWeighting"]:checked')?.value || 'none';
-      
-      const initials = {}, currentParams = {};
-      State.compartments.forEach(c => initials[c] = +DOM.sidebar.initValuesContainer.querySelector(`#init_${c}`).value);
-      State.parameters.forEach(p => currentParams[p] = +DOM.sidebar.paramValuesContainer.querySelector(`#param_${p}`).value);
-
-      const fittingGroups = [];
-      const groupCards = DOM.modals.fittingSettings.groupsContainer.querySelectorAll('.fitting-group-card');
-      
-      for (const card of groupCards) {
-        const obsIndex = card.querySelector('.group-obs-select').value;
-        const comp = card.querySelector('.group-dose-comp').value;
-        const amount = +card.querySelector('.group-dose-amount').value;
-        const time = +card.querySelector('.group-dose-time').value;
-
-        if (obsIndex === "" || !State.observations[parseInt(obsIndex, 10)]) { // 관측 데이터 인덱스 확인
-            throw new Error(`Group ${parseInt(card.dataset.groupId, 10) + 1} has no observed data selected.`);
-        }
-        
-        const selectedObs = State.observations[parseInt(obsIndex, 10)];
-
-        fittingGroups.push({
-          doses: [{ compartment: comp, type: 'bolus', amount: amount, start_time: time }],
-          observed: selectedObs.data,
-          mappings: selectedObs.mappings 
-        });
+      // 유효성 검사
+      if ((lbVal !== null && isNaN(lbVal)) || (ubVal !== null && isNaN(ubVal))) {
+        throw new Error(`Invalid bounds for parameter '${pName}'. Please enter numeric values.`);
+      }
+      if (lbVal !== null && ubVal !== null && lbVal > ubVal) {
+        throw new Error(`Lower bound cannot be greater than upper bound for '${pName}'.`);
       }
 
-      // 2. 유효성 검사
-      if (selectedFitParams.length === 0) throw new Error("Please select at least one parameter to fit.");
-      if (fittingGroups.length === 0) throw new Error("Please add at least one experimental group.");
-      // 추가적인 상세 유효성 검사... (예: 그룹 정보가 모두 채워졌는지)
+      bounds[pName] = [lbVal, ubVal];
+    });
 
-      // 3. API 요청 페이로드(Payload) 생성
-      const payload = {
-          equations: DOM.sidebar.odeInput.value.trim(),
-          initials: initials,
-          parameters: currentParams,
-          fit_params: selectedFitParams,
-          bounds: bounds,
-          weighting: weightingScheme,
-          fitting_groups: fittingGroups,
-      };
-      if (!payload.fit_params || payload.fit_params.length === 0) throw new Error("Please select at least one parameter to fit.");
-   
-      // 4. API 호출
-      const response = await API.fit(payload);
+    // --- 2. 데이터 수집: Error Model (MLE) ---
+    // 모달에 Error Model 라디오 버튼(name="errorModel")이 있다고 가정
+    const errorModelRadio = document.querySelector('input[name="errorModel"]:checked');
+    const errorModel = errorModelRadio ? errorModelRadio.value : 'constant'; // 기본값 constant (additive)
 
-      // 5. 성공 처리
-      if (response.status === "ok") {
+    // --- 3. 데이터 수집: 초기값 및 현재 파라미터 값 ---
+    const initials = {};
+    const currentParams = {};
+    State.compartments.forEach(c => {
+      const val = parseFloat(DOM.sidebar.initValuesContainer.querySelector(`#init_${c}`).value);
+      initials[c] = isNaN(val) ? 0 : val;
+    });
+    State.parameters.forEach(p => {
+      const val = parseFloat(DOM.sidebar.paramValuesContainer.querySelector(`#param_${p}`).value);
+      currentParams[p] = isNaN(val) ? 0.1 : val;
+    });
+
+    // --- 4. 데이터 수집: Fitting Groups (실험 그룹) ---
+    const fittingGroups = [];
+    const groupCards = DOM.modals.fittingSettings.groupsContainer.querySelectorAll('.fitting-group-card');
+
+    if (groupCards.length === 0) {
+      throw new Error("Please add at least one experimental group.");
+    }
+
+    for (const card of groupCards) {
+      const groupId = parseInt(card.dataset.groupId, 10) + 1;
+      const obsIndexStr = card.querySelector('.group-obs-select').value;
+      const comp = card.querySelector('.group-dose-comp').value;
+      const amountStr = card.querySelector('.group-dose-amount').value;
+      const timeStr = card.querySelector('.group-dose-time').value;
+
+      // 그룹 데이터 유효성 검사
+      if (obsIndexStr === "" || !State.observations[parseInt(obsIndexStr, 10)]) {
+        throw new Error(`Group ${groupId}: Please select observed data.`);
+      }
+      if (!comp) {
+        throw new Error(`Group ${groupId}: Please select a dosing compartment.`);
+      }
+      const amount = parseFloat(amountStr);
+      const time = parseFloat(timeStr);
+      if (isNaN(amount) || amount <= 0) {
+        throw new Error(`Group ${groupId}: Please enter a valid dose amount.`);
+      }
+      if (isNaN(time)) {
+        throw new Error(`Group ${groupId}: Please enter a valid dose time.`);
+      }
+
+      const selectedObs = State.observations[parseInt(obsIndexStr, 10)];
+
+      fittingGroups.push({
+        doses: [{ compartment: comp, type: 'bolus', amount: amount, start_time: time }],
+        observed: selectedObs.data,
+        mappings: selectedObs.mappings // 컬럼 매핑 정보 포함
+      });
+    }
+
+    // --- 5. API 요청 페이로드 생성 ---
+    const payload = {
+      equations: DOM.sidebar.odeInput.value.trim(),
+      initials: initials,
+      parameters: currentParams,
+      fit_params: selectedFitParams,
+      bounds: bounds,
+      fitting_groups: fittingGroups,
+      
+      // [신규 기능] 파라미터 범위 및 에러 모델 정보 추가
+      param_scopes: paramScopes,
+      error_model: errorModel,
+      
+      // 기존 weighting 필드는 error_model로 대체되므로 필요하다면 하위 호환성을 위해 남겨두거나 제거
+      weighting: 'none' 
+    };
+
+    // --- 6. API 호출 ---
+    // progress bar 애니메이션을 위해 가짜 타이머 시작 (선택 사항)
+    let fakeProgress = 0;
+    const progressInterval = setInterval(() => {
+        fakeProgress = Math.min(fakeProgress + 5, 90);
+        const bar = DOM.modals.fittingSettings.progressBar;
+        if(bar) bar.style.width = `${fakeProgress}%`;
+    }, 500);
+
+    const response = await API.fit(payload);
+    
+    clearInterval(progressInterval); // API 응답 오면 타이머 중지
+
+    // --- 7. 결과 처리 ---
+    if (response.status === "ok") {
       UI.displayFitSuccess(response.data);
-      UI.updateInputFields(response.data.params);
+      
+      // 결과 요약 테이블 렌더링 (Global/Local 파라미터 모두 포함됨)
+      // response.data.params는 [{name: "V (Group 1)", value: ...}, ...] 형태일 수 있음
       UI.renderFitSummary(response.data.params, response.data.ssr_total);
-      this.handleSimulateClick(); // 자동 재시뮬레이션
+
+      // 메인 입력창 업데이트 (Global 파라미터 이름이 정확히 일치하는 경우에만 업데이트)
+      // Local 파라미터는 메인 입력창에 1:1로 매핑되지 않으므로 건너뜀
+      if (response.data.params && Array.isArray(response.data.params)) {
+          // 배열 형태의 params를 {name: value} 객체로 변환 (Global param 업데이트용)
+          const simpleParams = {};
+          response.data.params.forEach(p => {
+              // 이름에 "(Group ...)" 등이 없는 순수 파라미터명인 경우만 추출 시도
+              // 하지만 백엔드에서 이름을 변경해서 보낸다면 이 로직은 수정 필요
+              // 여기서는 단순성을 위해 그대로 둠.
+              simpleParams[p.name] = p.value;
+          });
+          UI.updateInputFields(response.data.params); 
+      }
+
+      // 피팅된 값으로 자동 시뮬레이션 실행 (결과 시각화)
+      this.handleSimulateClick(); 
+      
     } else {
       throw new Error(response.message || "Fitting failed on the server.");
     }
+
   } catch (err) {
     UI.displayFitError(err.message);
   } finally {

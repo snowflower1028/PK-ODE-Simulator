@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: pk-ode-simulator
+    runtime: python
+    plan: standard   # 1 CPU / 2GB — 수업 중 20~40명 동시 접속 기준. 소규모면 starter(0.5CPU/512MB)로 낮춰도 됩니다.
+    region: singapore
+    branch: main
+    buildCommand: "./build.sh"
+    startCommand: >-
+      gunicorn pk_simulator.wsgi:application
+      --workers 3
+      --threads 1
+      --timeout 180
+      --graceful-timeout 30
+      --max-requests 300
+      --max-requests-jitter 50
+      --access-logfile -
+      --error-logfile -
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_LOG_LEVEL
+        value: "INFO"
