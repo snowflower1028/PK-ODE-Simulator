@@ -1307,3 +1307,138 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     padding: 0.05em 0.28em;
     color: var(--apple-text-secondary);
 }
+
+
+/* ============================================================ */
+/* 16. Outline button variants                                  */
+/* ============================================================ */
+/* .btn 이 border-color 를 transparent 로 덮어써서, style.css 에 규칙이 없는
+   Bootstrap outline 변종은 테두리가 사라진다. 실제로 쓰이는 danger 를 채운다.
+   (ed53c60 의 'invisible Profile button border' 와 같은 원인) */
+.btn-outline-danger {
+    color: #FF3B30;
+    border-color: #FF3B30;
+    background-color: transparent;
+}
+.btn-outline-danger:hover {
+    background-color: rgba(255, 59, 48, 0.08);
+    border-color: #FF3B30;
+    color: #FF3B30;
+}
+.btn-outline-danger:active,
+.btn-outline-danger:focus {
+    background-color: rgba(255, 59, 48, 0.14);
+    border-color: #FF3B30;
+    color: #E03024;
+    box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.18);
+}
+
+
+/* ============================================================ */
+/* 17. Observed Datasets panel                                  */
+/* ============================================================ */
+/* 선택 상태가 Bootstrap 기본 파랑(#0d6efd)으로 꽉 채워져 있어서
+   앱 팔레트와 어긋나고, 데이터셋을 구분해 주는 색점이 파란 배경에
+   묻혀 보이지 않았다. 옅은 강조 + 왼쪽 색 레일로 바꾼다. */
+#obs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    border: none;
+}
+#obs-list .obs-item {
+    border: 1px solid var(--apple-card-border);
+    border-radius: 9px;
+    padding: 0.55rem 0.7rem;
+    color: var(--apple-text-primary);
+    background-color: var(--apple-background-primary);
+    transition: background-color 0.12s ease-in-out, border-color 0.12s ease-in-out;
+}
+#obs-list .obs-item:hover {
+    background-color: var(--apple-background-secondary);
+}
+#obs-list .obs-item.active {
+    background-color: rgba(0, 122, 255, 0.07);
+    border-color: var(--apple-system-blue);
+    color: var(--apple-text-primary);
+    box-shadow: inset 3px 0 0 var(--apple-system-blue);
+}
+#obs-list .obs-item h6 {
+    margin-bottom: 0.15rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+#obs-list .obs-item small {
+    color: var(--apple-text-tertiary);
+}
+
+#obs-detail-view hr {
+    margin-top: 1.15rem;
+    margin-bottom: 1.15rem;
+}
+#obs-detail-view h6 {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+}
+#obs-detail-view .table {
+    font-size: 0.8125rem;
+}
+#obs-detail-view .table thead th {
+    font-weight: 600;
+    color: var(--apple-text-secondary);
+    background-color: var(--apple-background-secondary);
+}
+#obs-detail-view .table td {
+    font-variant-numeric: tabular-nums;
+}
+
+
+/* ============================================================ */
+/* 18. Processed ODEs modal                                     */
+/* ============================================================ */
+/* 내용은 JS 가 Bootstrap 유틸리티 클래스로 그리므로 여기서 덮어쓴다.
+   (script.js 를 건드리지 않기 위함) */
+#processedModal .modal-body h6 {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    display: flex;
+    align-items: center;
+}
+#processedModal .bg-light {
+    background-color: var(--apple-background-secondary) !important;
+    border-color: var(--apple-card-border) !important;
+    border-radius: 8px !important;
+    padding: 0.6rem 0.75rem !important;
+}
+#processedModal .badge {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-weight: 500;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    padding: 0.28em 0.55em;
+}
+#processedModal .badge.text-bg-primary {
+    background-color: rgba(0, 122, 255, 0.12) !important;
+    color: var(--apple-system-blue) !important;
+}
+#processedModal .badge.text-bg-secondary {
+    background-color: rgba(0, 0, 0, 0.06) !important;
+    color: var(--apple-text-secondary) !important;
+}
+#processedModal pre {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.8;
+    margin-bottom: 0;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--apple-text-primary);
+}
