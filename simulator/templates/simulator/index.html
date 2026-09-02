@@ -11,6 +11,7 @@
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
   <script defer src="{% static 'simulator/js/script.js' %}{{ asset_v }}"></script>
   <script defer src="{% static 'simulator/js/menubar.js' %}{{ asset_v }}"></script>
+  <script defer src="{% static 'simulator/js/sensitivity.js' %}{{ asset_v }}"></script>
   <link rel="stylesheet" href="{% static 'simulator/css/style.css' %}{{ asset_v }}">
 
 </head>
@@ -263,9 +264,9 @@
           <i class="bi bi-file-earmark-arrow-down"></i> Observed Data
         </button>
         <button id="fit-btn" class="btn btn-warning"><i class="bi bi-tools"></i> Fit Parameters</button>
-        <button id="sensitivity-btn" class="btn btn-outline-secondary" disabled
-                title="Not built yet — sweep a parameter and see how the profile moves">
-          <i class="bi bi-sliders2"></i> Sensitivity Analysis <span class="btn-soon">soon</span>
+        <button id="sensitivity-btn" class="btn btn-outline-secondary"
+                title="Sweep one parameter and see how the profile moves">
+          <i class="bi bi-sliders2"></i> Sensitivity Analysis
         </button>
         <button id="simulate-btn" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</button>
       </div>
@@ -332,6 +333,17 @@
       </div>
     </div>
 
+    <div class="card" id="sensitivity-card" style="display:none;">
+      <div class="card-header sim-card-header">
+        <h5 class="card-title mb-0"><i class="bi bi-sliders2"></i> Sensitivity</h5>
+        <span class="sens-caption" id="sensitivity-caption"></span>
+      </div>
+      <div class="card-body">
+        <div id="sensitivity-plot"></div>
+        <div id="sensitivity-table"></div>
+      </div>
+    </div>
+
   </div>
 </main>
   </div>
@@ -380,6 +392,66 @@
       </div>
     </div>
   </div>
+  <div class="modal fade" id="sensitivityModal" tabindex="-1" aria-labelledby="sensitivityModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="sensitivityModalLabel"><i class="bi bi-sliders2"></i> Sensitivity Analysis</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body fit-settings-body">
+          <section class="fit-section">
+            <h6 class="fit-section-title"><i class="bi bi-ui-radios"></i> Parameter</h6>
+            <p class="fit-section-desc">
+              One parameter at a time. Sweeping two at once multiplies the runs and
+              buries the curves &mdash; to compare several, use the summary metrics instead.
+            </p>
+            <div class="sens-row">
+              <select id="sens-param" class="form-select form-select-sm"></select>
+              <span class="sens-current" id="sens-current"></span>
+            </div>
+          </section>
+
+          <section class="fit-section">
+            <h6 class="fit-section-title"><i class="bi bi-arrows-expand"></i> Range</h6>
+            <p class="fit-section-desc">
+              Multiples of the current value, spaced evenly on a log scale so the
+              baseline sits in the middle. PK parameters span very different
+              magnitudes, and a multiple means the same thing for all of them.
+            </p>
+            <div class="sens-row">
+              <label for="sens-from" class="sens-label">From</label>
+              <span class="sens-times">&times;</span>
+              <input id="sens-from" type="number" class="form-control form-control-sm" value="0.5" step="any" min="0.01">
+              <label for="sens-to" class="sens-label">To</label>
+              <span class="sens-times">&times;</span>
+              <input id="sens-to" type="number" class="form-control form-control-sm" value="2" step="any" min="0.01">
+              <label for="sens-points" class="sens-label">Points</label>
+              <input id="sens-points" type="number" class="form-control form-control-sm" value="7" min="2" max="40" step="1">
+            </div>
+            <p class="sens-preview" id="sens-preview"></p>
+          </section>
+
+          <section class="fit-section">
+            <h6 class="fit-section-title"><i class="bi bi-graph-up"></i> Show</h6>
+            <p class="fit-section-desc">Which variable to draw. Its Cmax, Tmax, AUC and half-life are tabulated for every value.</p>
+            <div class="sens-row">
+              <select id="sens-variable" class="form-select form-select-sm"></select>
+            </div>
+          </section>
+
+          <p class="sens-status" id="sens-status" role="status" aria-live="polite"></p>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="sens-run"><i class="bi bi-play-circle"></i> Run sweep</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="fittingSettingsModal" tabindex="-1" aria-labelledby="fittingSettingsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable"> <div class="modal-content">
         <div class="modal-header">

@@ -6,4 +6,5 @@ urlpatterns = [
     path("parse/", views.parse_ode_view, name="parse_ode"),
     path("fit/", views.fit, name="fit"),
     path('simulate/', views.simulate, name='simulate'),  # POST로 받을 API endpoint
+    path('sweep/', views.sweep, name='sweep'),           # 파라미터 하나를 훑는 민감도 분석
 ]

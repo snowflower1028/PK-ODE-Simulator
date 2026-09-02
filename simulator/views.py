@@ -20,6 +20,167 @@ from .solver import solve_ode_system
 from .analyzer import analyze_observed, analyze_simulated
 
 
+# ---------------------------------------------------------------------------
+# 시뮬레이션 한 번을 돌리는 공통부
+# ---------------------------------------------------------------------------
+# simulate 와 sweep 이 같은 일을 한다. 스윕은 같은 ODE 를 파라미터만 바꿔
+# 여러 번 푸는 것이므로, 파싱은 한 번만 하고 적분만 반복하면 된다.
+
+def _parsed_ode(ode_text: str):
+    """파싱 결과를 캐시에서 꺼내거나 만들어 둔다."""
+    cache_key = 'parsed_ode_sympy_' + hashlib.md5(ode_text.encode('utf-8')).hexdigest()
+    parsed = cache.get(cache_key)
+    if parsed is None:
+        parsed = parse_ode_input(ode_text)
+        cache.set(cache_key, parsed, timeout=3600)
+    return parsed
+
+
+def _rhs_callable(parsed):
+    """파싱 결과를 수치 적분이 쓸 수 있는 함수로 만든다.
+
+    lambdify 는 값이 아니라 식에만 의존하므로 스윕 동안 한 번만 만들면 된다.
+    """
+    compartments = parsed.get("compartments", [])
+    parameters = parsed.get("parameters", [])
+    equations = parsed.get("equations", {})
+
+    comp_syms = symbols(compartments)
+    param_syms = symbols(parameters)
+    t_sym = symbols('t')
+    y_args = tuple(comp_syms) if isinstance(comp_syms, (list, tuple)) else (comp_syms,)
+    p_args = tuple(param_syms) if isinstance(param_syms, (list, tuple)) else (param_syms,)
+
+    lambdified = lambdify((t_sym, y_args, p_args),
+                          [equations[c] for c in compartments], modules='numpy')
+
+    def equations_callable(t, y_array, p_array):
+        return lambdified(t, y_array, p_array)
+
+    return equations_callable
+
+
+def _solve_profile(parsed, rhs, init_values, param_values,
+                   t_start, t_end, t_steps, doses):
+    """한 번 풀고 파생 변수까지 붙인 DataFrame 을 돌려준다."""
+    df = solve_ode_system(
+        equations_callable=rhs,
+        compartments=parsed.get("compartments", []),
+        parameters=parsed.get("parameters", []),
+        init_values=init_values,
+        param_values=param_values,
+        t_span=[t_start, t_end],
+        t_eval=np.linspace(t_start, t_end, t_steps),
+        doses=doses,
+    )
+
+    available = {**df.to_dict(orient='series'), **param_values}
+    for new_col, expr_str in parsed.get("derived_expressions", {}).items():
+        try:
+            df[new_col] = pd.eval(expr_str, local_dict=available, engine='python')
+            available[new_col] = df[new_col]
+        except Exception as e:
+            print(f"Warning: could not evaluate '{new_col} = {expr_str}': {e}")
+    return df
+
+
+@require_POST
+def sweep(request):
+    """파라미터 하나를 값 목록에 걸쳐 훑으며 매번 다시 푼다.
+
+    솔버 한 번이 수십 밀리초라 (2-compartment / 500점 기준 42ms) 스무 번을
+    돌아도 1초를 넘지 않는다. 그래서 한 요청에서 전부 계산해 한 번에 돌려준다.
+    """
+    try:
+        data = json.loads(request.body)
+        spec = data.get("sweep") or {}
+
+        target = spec.get("target")
+        values = spec.get("values") or []
+        if not target:
+            return JsonResponse({"status": "error", "message": "No parameter chosen to sweep."}, status=400)
+        if not values:
+            return JsonResponse({"status": "error", "message": "No values to sweep over."}, status=400)
+        if len(values) > 40:
+            return JsonResponse({"status": "error", "message": "Too many sweep points (max 40)."}, status=400)
+
+        ode_text = data.get("equations", "")
+        if not ode_text.strip():
+            return JsonResponse({"status": "error", "message": "ODE input cannot be empty."}, status=400)
+
+        parsed = _parsed_ode(ode_text)
+        if not parsed.get("compartments") or not parsed.get("equations"):
+            return JsonResponse({"status": "error", "message": "Failed to parse the ODE system."}, status=400)
+
+        if target not in parsed.get("parameters", []):
+            return JsonResponse(
+                {"status": "error", "message": f"'{target}' is not a parameter of this model."}, status=400)
+
+        rhs = _rhs_callable(parsed)
+        derived = parsed.get("derived_expressions", {})
+
+        base_params = dict(data.get("parameters", {}))
+        init_values = data.get("initials", {})
+        doses = data.get("doses", [])
+        t_start = float(data.get("t_start", 0))
+        t_end = float(data.get("t_end", 48))
+        t_steps = int(data.get("t_steps", 200))
+
+        # 그릴 변수 하나만 돌려준다. 스윕은 값마다 곡선이 하나씩 늘어나므로
+        # 변수까지 여러 개면 화면에서도 응답 크기에서도 감당이 안 된다.
+        variable = spec.get("variable")
+        plottable = list(parsed["compartments"]) + list(derived.keys())
+        if variable not in plottable:
+            variable = plottable[0] if plottable else None
+
+        baseline = base_params.get(target)
+        runs = []
+        for value in values:
+            params = dict(base_params)
+            params[target] = float(value)
+
+            df = _solve_profile(parsed, rhs, init_values, params,
+                                t_start, t_end, t_steps, doses)
+            if variable not in df.columns:
+                continue
+
+            pk = analyze_simulated(
+                df, [variable], doses,
+                concentration_vars=set(derived.keys()),
+                derived_expressions=derived,
+            )
+            runs.append({
+                "value": float(value),
+                "label": f"{target} = {float(value):g}",
+                "profile": {
+                    "Time": df["Time"].tolist(),
+                    variable: df[variable].tolist(),
+                },
+                "pk": pk.get(variable, {}),
+            })
+
+        # 기준값과 가장 가까운 지점을 굵게 그리기 위해 알려 준다.
+        baseline_index = None
+        if baseline is not None and runs:
+            baseline_index = min(range(len(runs)),
+                                 key=lambda i: abs(runs[i]["value"] - float(baseline)))
+
+        return JsonResponse({
+            "status": "ok",
+            "data": {
+                "target": target,
+                "variable": variable,
+                "baseline": baseline,
+                "baseline_index": baseline_index,
+                "runs": runs,
+            },
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
 @require_POST
 def simulate(request):
     try:
@@ -202,6 +363,7 @@ _ASSET_FILES = (
     "simulator/css/style.css",
     "simulator/js/script.js",
     "simulator/js/menubar.js",
+    "simulator/js/sensitivity.js",
 )
 
 

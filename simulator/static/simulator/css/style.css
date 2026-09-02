@@ -1835,3 +1835,99 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
         flex: 1 1 10rem;
     }
 }
+
+
+/* ============================================================ */
+/* 27. Sensitivity analysis                                     */
+/* ============================================================ */
+.sens-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.sens-row .form-select,
+.sens-row .form-control {
+    width: auto;
+    min-width: 5rem;
+    flex: 0 0 auto;
+}
+#sens-param,
+#sens-variable {
+    min-width: 9rem;
+}
+
+.sens-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    margin-bottom: 0;
+    white-space: nowrap;
+}
+.sens-label + .sens-times {
+    margin-left: -0.25rem;
+}
+.sens-times {
+    color: var(--apple-text-tertiary);
+    font-size: 0.875rem;
+}
+.sens-current {
+    font-size: 0.8125rem;
+    color: var(--apple-text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 실제로 돌 값을 미리 보여 준다. 배수 범위는 로그 간격이라
+   숫자로 보지 않으면 어디가 가운데인지 알기 어렵다. */
+.sens-preview {
+    margin: 0.7rem 0 0;
+    padding: 0.5rem 0.7rem;
+    border-radius: 7px;
+    background-color: var(--apple-background-secondary);
+    border: 1px solid var(--apple-card-border);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.7;
+    color: var(--apple-text-secondary);
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+
+.sens-status {
+    margin: 0.75rem 0 0;
+    min-height: 1.25rem;
+    font-size: 0.8125rem;
+    color: var(--apple-text-secondary);
+}
+.sens-status.is-ok { color: var(--apple-system-blue); }
+.sens-status.is-warn { color: #B25000; }
+
+/* 결과 카드 */
+.sens-caption {
+    font-size: 0.8125rem;
+    color: var(--apple-text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+#sensitivity-plot {
+    min-height: 380px;
+}
+#sensitivity-table {
+    margin-top: 1rem;
+}
+#sensitivity-table td,
+#sensitivity-table th {
+    font-variant-numeric: tabular-nums;
+}
+.sens-base {
+    margin-left: 0.35rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    background-color: rgba(0, 0, 0, 0.07);
+    color: var(--apple-text-secondary);
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
