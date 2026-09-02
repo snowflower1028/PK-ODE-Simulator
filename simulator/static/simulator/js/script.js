@@ -241,7 +241,8 @@ function escapeAttr(text) {
     .replace(/>/g, "&gt;");
 }
 
-const PK_TABLE_CONFIG = [
+/* 단회 투여일 때 보여 주는 열. */
+const PK_TABLE_SINGLE = [
   {
     key: 'c_max', displayName: 'C<sub>max</sub>',
     definition: 'Highest observed concentration.',
@@ -281,6 +282,71 @@ const PK_TABLE_CONFIG = [
     key: 'vz', displayName: 'V<sub>z</sub>',
     definition: 'Volume of distribution during the terminal phase. Reported as Vz/F for extravascular dosing.',
     formula: 'Dose / (λz · AUC(0–∞))',
+  },
+];
+
+
+/* 반복 투여일 때 보여 주는 열.
+ *
+ * 단회 지표는 여기서 뜻을 잃는다 — 톱니 곡선 전체를 적분한 값은 노출량이
+ * 아니라 시뮬레이션을 얼마나 오래 돌렸는지이고, Tmax 는 마지막 투여의
+ * 봉우리일 뿐이다. 그래서 열을 통째로 바꾼다. 한 투여 간격을 보고, 그
+ * 간격이 되풀이된다고 읽는다. */
+const PK_TABLE_STEADY = [
+  {
+    key: 'ss_c_max', displayName: 'C<sub>max,ss</sub>',
+    definition: 'Highest concentration within the dosing interval.',
+    formula: 'max(C) over one interval τ',
+  },
+  {
+    key: 'ss_t_max', displayName: 'T<sub>max,ss</sub>',
+    definition: 'Time of the peak, counted from the dose that starts the interval.',
+    formula: 't at Cmax,ss − t at the dose',
+  },
+  {
+    key: 'ss_c_min', displayName: 'C<sub>min,ss</sub>',
+    definition: 'Lowest concentration within the interval. Before steady state it can fall earlier than the end of the interval, which is why it is reported separately from Ctrough.',
+    formula: 'min(C) over one interval τ',
+  },
+  {
+    key: 'ss_c_trough', displayName: 'C<sub>trough</sub>',
+    definition: 'Concentration immediately before the next dose. At steady state this equals Cmin.',
+    formula: 'C at the end of the interval',
+  },
+  {
+    key: 'ss_c_avg', displayName: 'C<sub>avg</sub>',
+    definition: 'Average concentration over the interval — the flat line with the same area under it.',
+    formula: 'AUCτ / τ',
+  },
+  {
+    key: 'ss_auc_tau', displayName: 'AUC<sub>τ</sub>',
+    definition: 'Area under the curve across one dosing interval. At steady state this equals the whole AUC(0–∞) of a single dose, which is what makes it the exposure you compare against.',
+    formula: '∫ C dt across one interval τ',
+  },
+  {
+    key: 'ss_fluctuation_pct', displayName: '%Fluct',
+    definition: 'How far the concentration swings across the interval, relative to its average. Large values mean deep troughs and high peaks between doses.',
+    formula: '(Cmax,ss − Cmin,ss) / Cavg × 100',
+  },
+  {
+    key: 'ss_accumulation_auc', displayName: 'R<sub>acc</sub>',
+    definition: 'How much exposure builds up by steady state, against the first interval. For an IV bolus this is 1/(1 − e^(−λz·τ)); with absorption it comes out higher, because absorption pushes exposure out of the first interval.',
+    formula: 'AUCτ at steady state / AUCτ of the first interval',
+  },
+  {
+    key: 'ss_cl', displayName: 'CL<sub>ss</sub>',
+    definition: 'Clearance at steady state. Reported as CL/F when the dose does not enter the observed compartment directly.',
+    formula: 'Dose / AUCτ',
+  },
+  {
+    key: 'ss_vz', displayName: 'V<sub>z,ss</sub>',
+    definition: 'Volume of distribution during the terminal phase, from the steady-state interval.',
+    formula: 'Dose / (λz · AUCτ)',
+  },
+  {
+    key: 'half_life', displayName: 't<sub>½</sub>',
+    definition: 'Terminal half-life, from the log-linear decline after the last dose.',
+    formula: 'ln 2 / λz',
   },
 ];
 
@@ -681,55 +747,93 @@ const UI = {
         return;
       }
 
-      // --- [핵심 변경 로직 시작] ---
+      // 반복 투여 행과 단회 투여 행은 열 자체가 다르므로 한 표에 담을 수
+      // 없다. 둘 다 있으면(시뮬레이션은 정상상태인데 실측은 단회인 경우)
+      // 표를 나눠서 그린다. 한 종류뿐이면 표도 하나다.
+      const steady = dataArray.filter(e => e.regimen === 'steady-state');
+      const single = dataArray.filter(e => e.regimen !== 'steady-state');
 
-      // 1. 설정을 기반으로 동적으로 테이블 헤더 생성
-      // 헤더마다 정의와 식을 담은 정보 표시를 붙인다. 파라미터 이름만으로는
-      // 무엇을 어떻게 계산했는지 알 수 없기 때문이다.
-      const headers = ['<th>Variable</th>']
-        .concat(PK_TABLE_CONFIG.map(col => {
-          if (!col.definition) return `<th>${col.displayName}</th>`;
-          const tip = col.formula ? col.definition + '  —  ' + col.formula : col.definition;
-          return `<th>${col.displayName}<button type="button" class="pk-info" tabindex="0"
-                    aria-label="About ${col.key}" data-tip="${escapeAttr(tip)}">i</button></th>`;
-        }))
-        .join('');
-
-      // 2. 각 데이터 행에 대해, 설정을 기반으로 동적으로 데이터 셀(<td>) 생성
-      const rows = dataArray.map((entry) => {
-        // 같은 표에 모델 곡선과 실측이 함께 오므로, 어느 쪽인지 한눈에 보이게 한다.
-        const how = entry.direct_integration
-          ? '<span class="pk-source is-model" title="Simulated curve — integrated directly, no NCA interpolation or extrapolation assumptions">model</span>'
-          : '<span class="pk-source is-obs" title="Observed data — noncompartmental analysis (linear-up / log-down, terminal extrapolation)">NCA</span>';
-        const warn = (entry.warnings && entry.warnings.length)
-          ? `<span class="pk-warn" title="${escapeAttr(entry.warnings.join('; '))}">!</span>`
-          : '';
-        const compartmentCell = `<td class="pk-var">${entry.compartment || 'N/A'}${how}${warn}</td>`;
-        
-        const valueCells = PK_TABLE_CONFIG.map(col => {
-          const value = entry[col.key];
-          const formattedValue = typeof value === 'number' ? value.toPrecision(4) : "-";
-          return `<td>${formattedValue}</td>`;
-        }).join('');
-        
-        return `<tr>${compartmentCell}${valueCells}</tr>`;
-      }).join("");
-
-      // --- [핵심 변경 로직 끝] ---
-
-      // 3. 최종 HTML 조합
-      pkSummaryContainer.innerHTML = `
-        <div class="table-responsive">
-          <table class="table table-sm table-hover"> 
-            <thead class="table-light">
-              <tr>${headers}</tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>`;
+      pkSummaryContainer.innerHTML =
+        UI._pkTable(steady, PK_TABLE_STEADY, UI._steadyStateCaption(steady)) +
+        UI._pkTable(single, PK_TABLE_SINGLE,
+                    steady.length && single.length
+                      ? '<p class="pk-regimen">Single dose — the rows below are not on the steady-state interval.</p>'
+                      : '');
 
       pkSummaryPlaceholder.style.display = "none";
       pkSummaryContainer.style.display = "block";
+  },
+
+  /** 한 종류의 행들을 표 하나로 그린다. 행이 없으면 아무것도 그리지 않는다. */
+  _pkTable(entries, columns, caption) {
+    if (!entries.length) return '';
+
+    // 헤더마다 정의와 식을 담은 정보 표시를 붙인다. 파라미터 이름만으로는
+    // 무엇을 어떻게 계산했는지 알 수 없기 때문이다.
+    const headers = ['<th>Variable</th>']
+      .concat(columns.map(col => {
+        if (!col.definition) return `<th>${col.displayName}</th>`;
+        const tip = col.formula ? col.definition + '  —  ' + col.formula : col.definition;
+        return `<th>${col.displayName}<button type="button" class="pk-info" tabindex="0"
+                  aria-label="About ${col.key}" data-tip="${escapeAttr(tip)}">i</button></th>`;
+      }))
+      .join('');
+
+    const rows = entries.map((entry) => {
+      // 같은 표에 모델 곡선과 실측이 함께 오므로, 어느 쪽인지 한눈에 보이게 한다.
+      const how = entry.direct_integration
+        ? '<span class="pk-source is-model" title="Simulated curve — integrated directly, no NCA interpolation or extrapolation assumptions">model</span>'
+        : '<span class="pk-source is-obs" title="Observed data — noncompartmental analysis (linear-up / log-down, terminal extrapolation)">NCA</span>';
+      const warn = (entry.warnings && entry.warnings.length)
+        ? `<span class="pk-warn" title="${escapeAttr(entry.warnings.join('; '))}">!</span>`
+        : '';
+      const compartmentCell = `<td class="pk-var">${entry.compartment || 'N/A'}${how}${warn}</td>`;
+
+      const valueCells = columns.map(col => {
+        const value = entry[col.key];
+        const formattedValue = typeof value === 'number' ? value.toPrecision(4) : "-";
+        return `<td>${formattedValue}</td>`;
+      }).join('');
+
+      return `<tr>${compartmentCell}${valueCells}</tr>`;
+    }).join("");
+
+    return `${caption || ''}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover">
+          <thead class="table-light">
+            <tr>${headers}</tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  },
+
+  /** 어느 구간을 보고 있는지, 그리고 그 값을 믿어도 되는지 표 위에 밝힌다.
+   *
+   *  정상상태에 이르지 못했으면 그 사실이 숫자보다 중요하다. 경고 아이콘
+   *  뒤에 숨기지 않고 표 위에 내놓는다. */
+  _steadyStateCaption(entries) {
+    if (!entries.length) return '';
+    const e = entries[0];
+    const fmt = v => (typeof v === 'number' ? +v.toPrecision(4) : '?');
+    const n = e.ss_n_intervals;
+    const where = `τ = ${fmt(e.ss_tau)}, measured over ${fmt(e.ss_interval_start)}–${fmt(e.ss_interval_end)}`
+                + (n ? ` (${n === 1 ? 'the only' : 'the last of ' + n} complete interval${n === 1 ? '' : 's'})` : '');
+
+    if (e.ss_at_steady_state === false) {
+      const drift = typeof e.ss_interval_change_pct === 'number'
+        ? e.ss_interval_change_pct.toFixed(1) : '?';
+      return `<p class="pk-regimen is-warn">Repeated dosing, ${where} — <strong>not at steady state</strong>.
+              AUC<sub>τ</sub> is still changing ${drift}% from one interval to the next, so these are
+              a snapshot of a rising curve, not steady-state values.</p>`;
+    }
+    if (e.ss_at_steady_state === true) {
+      return `<p class="pk-regimen">Steady state, ${where}. Every interval is the same, so these
+              describe all of them.</p>`;
+    }
+    return `<p class="pk-regimen is-warn">Repeated dosing, ${where} — only one interval is available,
+            so whether steady state was reached could not be checked. Simulate for longer.</p>`;
   },
   
   // --- 피팅 모달 (Fitting Modal) 관련 UI ---
@@ -1522,6 +1626,30 @@ const Handlers = {
         Vz: item.vz,
         MRT: item.mrt,
         Vss: item.vss,
+        // 반복 투여 항목. 단회 투여 행에서는 빈 칸으로 나간다. 화면 표에
+        // 싣지 않은 Ctrough·Swing·AUMCτ 도 여기에는 넣는다 — 스프레드시트로
+        // 가져가는 이유가 대개 더 파고들기 위해서다.
+        Regimen: item.regimen,
+        tau: item.ss_tau,
+        SS_interval_start: item.ss_interval_start,
+        SS_interval_end: item.ss_interval_end,
+        SS_n_intervals: item.ss_n_intervals,
+        'Cmax_ss': item.ss_c_max,
+        'Tmax_ss': item.ss_t_max,
+        'Cmin_ss': item.ss_c_min,
+        'Tmin_ss': item.ss_t_min,
+        Ctrough: item.ss_c_trough,
+        Cavg: item.ss_c_avg,
+        AUC_tau: item.ss_auc_tau,
+        AUMC_tau: item.ss_aumc_tau,
+        Fluctuation_pct: item.ss_fluctuation_pct,
+        Swing: item.ss_swing,
+        Racc_AUC: item.ss_accumulation_auc,
+        Racc_Cmax: item.ss_accumulation_c_max,
+        CL_ss: item.ss_cl,
+        Vz_ss: item.ss_vz,
+        At_steady_state: item.ss_at_steady_state,
+        Interval_change_pct: item.ss_interval_change_pct,
         Method: item.method,
         Administration: item.administration,
     }));

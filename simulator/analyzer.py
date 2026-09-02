@@ -17,7 +17,7 @@ analyzer.py  ──  앱과 NCA 계산기를 잇는 층
 외삽한다 — 이것이 NCA 다.
 """
 
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, NamedTuple, Optional, Sequence
 
 import math
 import re
@@ -25,7 +25,7 @@ import re
 import numpy as np
 import pandas as pd
 
-from .nca import AUCMethod, Administration, NCAResult, nca
+from .nca import AUCMethod, Administration, NCAResult, nca, nca_steady_state
 
 
 #: 표에 항상 실어 보내는 항목. 값이 없으면 None 으로 나간다.
@@ -38,7 +38,124 @@ SUMMARY_FIELDS = (
     "cl", "vz", "mrt", "vss",
     "c0_back_extrapolated", "direct_integration", "method", "administration",
     "dose", "warnings",
+    #: "single-dose" 또는 "steady-state". 표가 어느 열을 보여 줄지 정한다.
+    "regimen",
 )
+
+#: 반복 투여일 때 추가로 실어 보내는 항목.
+SS_FIELDS = (
+    "ss_tau", "ss_interval_start", "ss_interval_end", "ss_n_intervals",
+    "ss_c_max", "ss_t_max", "ss_c_min", "ss_t_min", "ss_c_trough",
+    "ss_auc_tau", "ss_aumc_tau", "ss_c_avg",
+    "ss_fluctuation_pct", "ss_swing",
+    "ss_accumulation_auc", "ss_accumulation_c_max",
+    "ss_cl", "ss_vz",
+    "ss_at_steady_state", "ss_interval_change_pct",
+)
+
+#: 반복 투여에서는 뜻을 잃는 단회 항목. 비워서 내보낸다.
+_SINGLE_DOSE_ONLY = (
+    "c_max", "t_max", "c_last", "t_last",
+    "auc_last", "auc_inf_obs", "auc_inf_pred", "auc_extrap_pct",
+    "aumc_last", "aumc_inf",
+    "cl", "vz", "mrt", "vss",
+)
+
+
+class Regimen(NamedTuple):
+    """하나의 반복 투여 일정."""
+
+    tau: float
+    first_dose_time: float
+    last_dose_time: float
+    n_doses: int
+    dose: Dict
+
+
+def dosing_regimen(doses: Sequence[Dict]) -> Optional[Regimen]:
+    """반복 투여 일정 하나를 읽어 낸다. 아니면 None.
+
+    "투여 간격" 이라는 말이 성립하려면 반복이 하나여야 한다. 서로 다른 주기가
+    섞여 있으면 어느 것이 τ 인지 정할 수 없고, 그때는 정상상태 요약을 내지
+    않는 편이 맞다.
+    """
+    repeating = [d for d in doses or [] if d.get("repeat_every")]
+    if len(repeating) != 1:
+        return None
+
+    d = repeating[0]
+    try:
+        tau = float(d.get("repeat_every") or 0)
+        first = float(d.get("start_time") or 0)
+        until = d.get("repeat_until")
+        until = float(until) if until not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+    if tau <= 0 or until is None or until <= first:
+        return None
+
+    # 솔버와 같은 규칙으로 마지막 투여 시각을 센다.
+    n = int(math.floor((until - first) / tau + 1e-9))
+    return Regimen(tau=tau, first_dose_time=first,
+                   last_dose_time=first + n * tau, n_doses=n + 1, dose=d)
+
+
+def _steady_state(
+    time: np.ndarray,
+    conc: np.ndarray,
+    regimen: Regimen,
+    variable: str,
+    dose: Optional[float],
+    lambda_z: Optional[float],
+    method: AUCMethod,
+) -> Dict[str, object]:
+    """정상상태 결과를 표에 실을 모양으로 바꾼다."""
+    ss = nca_steady_state(
+        time, conc,
+        tau=regimen.tau,
+        dose=dose,
+        first_dose_time=regimen.first_dose_time,
+        last_dose_time=regimen.last_dose_time,
+        lambda_z=lambda_z,
+        method=method,
+    )
+    data = ss.as_dict()
+
+    # Tmax 는 투여 후 경과시간으로 바꿔서 내보낸다. "120.0" 이 아니라
+    # "2.1" 이라야 읽을 수 있고, 절대 시각은 interval_start 가 들고 있다.
+    origin = data.get("interval_start")
+
+    def since_dose(key):
+        value = data.get(key)
+        if value is None or origin is None:
+            return None
+        return value - origin
+
+    row: Dict[str, object] = {
+        "ss_tau": _round(data.get("tau")),
+        "ss_interval_start": _round(data.get("interval_start")),
+        "ss_interval_end": _round(data.get("interval_end")),
+        "ss_n_intervals": data.get("n_intervals"),
+        "ss_c_max": _round(data.get("c_max")),
+        "ss_t_max": _round(since_dose("t_max")),
+        "ss_c_min": _round(data.get("c_min")),
+        "ss_t_min": _round(since_dose("t_min")),
+        "ss_c_trough": _round(data.get("c_trough")),
+        "ss_auc_tau": _round(data.get("auc_tau")),
+        "ss_aumc_tau": _round(data.get("aumc_tau")),
+        "ss_c_avg": _round(data.get("c_avg")),
+        "ss_fluctuation_pct": _round(data.get("fluctuation_pct")),
+        "ss_swing": _round(data.get("swing")),
+        "ss_accumulation_auc": _round(data.get("accumulation_auc")),
+        "ss_accumulation_c_max": _round(data.get("accumulation_c_max")),
+        "ss_cl": _round(data.get("cl_ss")),
+        "ss_vz": _round(data.get("vz_ss")),
+        "ss_at_steady_state": data.get("at_steady_state"),
+        "ss_interval_change_pct": _round(data.get("interval_change_pct")),
+    }
+    row["_warnings"] = list(ss.warnings)
+    return row
+
 
 _TOKEN = re.compile(r"[A-Za-z_][\w]*")
 
@@ -138,6 +255,7 @@ def analyze_simulated(
     concentration_vars = set(concentration_vars or [])
     derived_expressions = derived_expressions or {}
     time = df["Time"].to_numpy()
+    regimen = dosing_regimen(doses)
 
     results: Dict[str, Dict[str, object]] = {}
     for var in variables:
@@ -158,7 +276,42 @@ def analyze_simulated(
             result.warnings.append(
                 "Amount, not concentration — clearance and volumes are left blank."
             )
-        results[var] = _to_row(result)
+        row = _to_row(result)
+        row["regimen"] = "single-dose"
+
+        if regimen is not None:
+            # 반복 투여에서는 단회 지표가 뜻을 잃는다. 전체를 적분한 AUC 는
+            # 노출량이 아니라 시뮬레이션을 얼마나 오래 돌렸는지이고, Tmax 는
+            # 그저 마지막 투여의 봉우리다. 비우고 정상상태 값으로 갈아 끼운다.
+            per_dose = (
+                dose_for(var, [dict(regimen.dose, repeat_every=None)], derived_expressions)
+                if is_conc else None
+            )
+            ss = _steady_state(
+                time, conc, regimen, var,
+                dose=per_dose,
+                lambda_z=result.lambda_z,
+                method=AUCMethod.LINEAR,
+            )
+            warnings = list(row.get("warnings") or []) + ss.pop("_warnings", [])
+            for key in _SINGLE_DOSE_ONLY:
+                row[key] = None
+            row.update(ss)
+            row["regimen"] = "steady-state"
+            row["dose"] = _round(per_dose)
+            row["warnings"] = warnings
+
+        elif any(d.get("repeat_every") for d in doses or []):
+            # 반복은 하는데 주기가 하나로 정해지지 않는 경우. 단회 값을
+            # 그대로 두되, 그것이 여러 번 투여된 곡선 위에서 계산된
+            # 것이라고 말해 준다.
+            row["warnings"] = list(row.get("warnings") or []) + [
+                "Dosing repeats on more than one schedule, so there is no single "
+                "dosing interval — these are single-dose formulas applied to a "
+                "multiple-dose curve and do not mean what they usually mean."
+            ]
+
+        results[var] = row
 
     return results
 
@@ -214,7 +367,22 @@ def analyze_observed(
                 result.warnings.append(
                     "No dose given for this dataset — clearance and volumes need one."
                 )
-            results[f"{variable} · {name}"] = _to_row(result)
+            row = _to_row(result)
+            row["regimen"] = "single-dose"
+
+            # 실측값에는 정상상태 요약을 붙이지 않는다. τ 는 알 수 있지만
+            # 이 표본이 어느 간격의 것인지, 시간축이 최초 투여 기준인지
+            # 마지막 투여 기준인지를 알 수 없기 때문이다. 그 정보를 받는
+            # 화면이 생기기 전까지는 단회 값으로 두고 그렇다고 말한다.
+            if dosing_regimen(doses) is not None:
+                result.warnings.append(
+                    "Dosing repeats, but these are single-dose quantities — "
+                    "tell the app which interval this data covers before "
+                    "reading AUC or clearance from it."
+                )
+                row["warnings"] = list(result.warnings)
+
+            results[f"{variable} · {name}"] = row
 
     return results
 

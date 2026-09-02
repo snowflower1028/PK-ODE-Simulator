@@ -1987,3 +1987,23 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     line-height: 1.5;
 }
 
+/* 어느 투여 구간을 보고 있는지 표 위에서 밝힌다. */
+.pk-regimen {
+    margin: 0 0 0.65rem;
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    color: var(--apple-text-secondary);
+}
+
+.pk-regimen + .table-responsive + .pk-regimen {
+    margin-top: 1.4rem;
+}
+
+.pk-regimen.is-warn {
+    padding: 0.6rem 0.8rem;
+    border-radius: 7px;
+    border: 1px solid rgba(178, 80, 0, 0.25);
+    background-color: rgba(255, 149, 0, 0.08);
+    color: #8A4000;
+}
+
