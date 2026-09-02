@@ -475,8 +475,11 @@ const UI = {
 
     container.innerHTML = State.doseList.map((d, i) => {
       // 한 줄로 읽히도록 "무엇을 / 어디에 / 언제" 순서로 적는다.
-      //   Bolus       250 into Ag at 0 h
-      //   Zero-order  300 into A1 over 1 h, starting at 0 h
+      //   Bolus       250 into Ag at 0
+      //   Zero-order  300 into A1 over 1, starting at 0
+      //
+      // 시간 단위는 적지 않는다. 시간의 단위는 사용자가 세운 ODE 의
+      // 파라미터가 정하는 것이라 앱이 시간이라고 단정할 수 없다.
       //
       // 태그는 투여 경로가 아니라 입력 방식이다. 어느 구획에 넣느냐는
       // Compartment 가 정하므로, 여기서 IV 를 단정하면 안 된다.
@@ -484,12 +487,12 @@ const UI = {
       const typeLabel = isInfusion ? 'Zero-order' : 'Bolus';
 
       let summaryText = isInfusion
-        ? `<strong>${d.amount}</strong> into <strong>${d.compartment}</strong> over ${d.duration} h, starting at ${d.start_time} h`
-        : `<strong>${d.amount}</strong> into <strong>${d.compartment}</strong> at ${d.start_time} h`;
+        ? `<strong>${d.amount}</strong> into <strong>${d.compartment}</strong> over ${d.duration}, starting at ${d.start_time}`
+        : `<strong>${d.amount}</strong> into <strong>${d.compartment}</strong> at ${d.start_time}`;
 
       // 반복 일정은 둘째 줄로 내린다 (CSS 에서 block 처리)
       if (d.repeat_every && d.repeat_until) {
-        summaryText += `<span class="dose-repeat">Repeats every ${d.repeat_every} h until ${d.repeat_until} h</span>`;
+        summaryText += `<span class="dose-repeat">Repeats every ${d.repeat_every} until ${d.repeat_until}</span>`;
       }
 
       return `
@@ -641,9 +644,12 @@ const UI = {
     });
 
     const layout = {
-      xaxis: { title: "Time (h)", zeroline: false, gridcolor: 'rgba(0,0,0,0.05)' },
+      xaxis: { title: "Time", zeroline: false, gridcolor: 'rgba(0,0,0,0.05)' },
       yaxis: {
-          title: "Concentration",
+          // 한 축에 구획 내 양(A1)과 농도(C1)가 함께 올라올 수 있으므로
+          // 어느 한쪽으로 단정하지 않는다. 시간 축에 단위를 적지 않는 것과
+          // 같은 이유다 — 무엇을 그리는지는 사용자의 ODE 가 정한다.
+          title: "Value",
           type: logYaxis ? "log" : "linear",
           zeroline: false,
           gridcolor: 'rgba(0,0,0,0.05)',
