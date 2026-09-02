@@ -254,29 +254,24 @@
   </aside>
 
 <main class="main-content">
-  <div class="main-toolbar">
-    <div class="simulation-settings-compact">
-        <span class="toolbar-label" id="sim-time-label">Time</span>
-        <input id="sim-start-time" type="number" class="form-control" value="0" step="0.1" aria-labelledby="sim-time-label" aria-label="Simulation start time (h)">
-        <span class="toolbar-range-arrow" aria-hidden="true">&rarr;</span>
-        <input id="sim-end-time" type="number" class="form-control" value="48" step="0.1" aria-label="Simulation end time (h)">
-        <span class="toolbar-unit">h</span>
-    </div>
-    <div class="action-buttons">
-      <button class="btn btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#obsPanel" title="Observed Data">
-        <i class="bi bi-file-earmark-arrow-down"></i> Data
-      </button>
-      <button id="fit-btn" class="btn btn-warning"><i class="bi bi-tools"></i> Fit Parameters</button>
-      <button id="simulate-btn" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</button>
-    </div>
-  </div>
-
   <div class="main-scrollable-area">
     <div class="card">
-      <div class="card-header plot-card-header">
+      <div class="card-header sim-card-header">
         <h5 class="card-title mb-0"><i class="bi bi-graph-up"></i> Simulation Result</h5>
+        <button id="simulate-btn" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</button>
+      </div>
 
-        <div class="plot-card-controls">
+      <div class="sim-settings">
+        <div class="sim-field">
+          <span class="sim-label" id="sim-time-label">Time</span>
+          <input id="sim-start-time" type="number" class="form-control form-control-sm" value="0" step="0.1" aria-labelledby="sim-time-label" aria-label="Simulation start time (h)">
+          <span class="sim-arrow" aria-hidden="true">&rarr;</span>
+          <input id="sim-end-time" type="number" class="form-control form-control-sm" value="48" step="0.1" aria-label="Simulation end time (h)">
+          <span class="sim-unit">h</span>
+        </div>
+
+        <div class="sim-field sim-field-grow">
+          <span class="sim-label">Plot</span>
           <div class="dropdown">
             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
               Compartments
@@ -286,12 +281,14 @@
           </div>
           <div id="selected-comp-badges" class="selected-badges-container">
             </div>
-          <div class="form-check form-switch mb-0 ms-auto" title="Use log scale for Y-axis">
-            <input class="form-check-input" type="checkbox" id="log-scale">
-            <label class="form-check-label small" for="log-scale">Log Y</label>
-          </div>
+        </div>
+
+        <div class="form-check form-switch sim-logy mb-0" title="Use log scale for Y-axis">
+          <input class="form-check-input" type="checkbox" id="log-scale">
+          <label class="form-check-label small" for="log-scale">Log Y</label>
         </div>
       </div>
+
       <div class="card-body">
         <div id="plot-placeholder" class="text-center py-5 text-muted">
           <i class="bi bi-graph-up" style="font-size:2rem;"></i><br> Run simulation to see results.
@@ -301,9 +298,17 @@
     </div>
 
     <div class="results-grid"> 
-      <div class="card"> 
+      <div class="card">
+        <div class="card-header summary-card-header">
+          <h5 class="card-title mb-0"><i class="bi bi-card-list"></i> PK Profile Summary</h5>
+          <div class="summary-actions">
+            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#obsPanel" title="Upload and map observed data">
+              <i class="bi bi-file-earmark-arrow-down"></i> Observed Data
+            </button>
+            <button id="fit-btn" class="btn btn-sm btn-warning"><i class="bi bi-tools"></i> Fit Parameters</button>
+          </div>
+        </div>
         <div class="card-body">
-          <h5 class="card-title"><i class="bi bi-card-list"></i> PK Profile Summary</h5>
           <div id="pk-summary-placeholder" class="text-center py-5 text-muted">
             <i class="bi bi-bar-chart-line" style="font-size:2rem;"></i><br> Summary will appear here.
           </div>
