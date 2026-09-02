@@ -41,6 +41,9 @@ __all__ = [
     "back_extrapolate_c0",
     "best_fit_lambda_z",
     "nca",
+    "clip_interval",
+    "SteadyStateResult",
+    "nca_steady_state",
 ]
 
 
@@ -439,5 +442,256 @@ def nca(
             # Vss 는 정맥 투여에서만 뜻이 있다. 혈관외는 F 를 모르기 때문.
             if administration is not Administration.EXTRAVASCULAR and res.cl and res.mrt:
                 res.vss = _f(res.cl * res.mrt)
+
+    return res
+
+
+# ---------------------------------------------------------------------------
+# 정상상태 (반복 투여)
+# ---------------------------------------------------------------------------
+def _limit_from_inside(
+    t_in: np.ndarray, c_in: np.ndarray, at: float, from_start: bool
+) -> float:
+    """구간 안쪽 두 점만으로 경계 농도를 세운다.
+
+    투여 간격의 경계는 투여 시각이라 농도가 불연속일 수 있다. 그런데 격자에
+    그 시각의 점이 있어도 그것이 투여 직전 값인지 직후 값인지는 배열만 봐서는
+    알 수 없다 — 이 앱의 솔버는 직전 값을 넣고, 손으로 만든 배열은 직후 값을
+    넣기도 한다. 어느 쪽을 집어도 절반은 틀린다.
+
+    그래서 경계값을 바깥에서 가져오지 않고 안쪽에서 뻗어 만든다. 시작 경계는
+    투여 직후 값이, 끝 경계는 다음 투여 직전 값이 나오는데 둘 다 이 구간에
+    속한 값이므로 정의상 맞다. 내려가는 구간에서는 로그선형으로 뻗는다 —
+    소실이 지수적이므로 선형보다 정확하고, IV 볼루스 직후의 C0 역외삽과
+    같은 계산이다.
+    """
+    if t_in.size == 0:
+        return float("nan")
+    if t_in.size == 1:
+        return float(c_in[0])
+
+    if from_start:
+        ta, ca, tb, cb = t_in[0], c_in[0], t_in[1], c_in[1]
+    else:
+        ta, ca, tb, cb = t_in[-1], c_in[-1], t_in[-2], c_in[-2]
+    if tb == ta:
+        return float(ca)
+
+    declining = (ca - cb) / (ta - tb) < 0 if from_start else (cb - ca) / (tb - ta) < 0
+    if declining and ca > 0 and cb > 0:
+        k = (np.log(cb) - np.log(ca)) / (tb - ta)
+        return float(np.exp(np.log(ca) + k * (at - ta)))
+    slope = (cb - ca) / (tb - ta)
+    return float(ca + slope * (at - ta))
+
+
+def clip_interval(
+    time: Sequence[float], conc: Sequence[float], t0: float, t1: float
+) -> Tuple[np.ndarray, np.ndarray]:
+    """[t0, t1] 만 잘라 낸다. 양 끝은 구간 안쪽에서 세워 붙인다.
+
+    격자가 경계에 딱 떨어지지 않으면 자투리 사다리꼴이 통째로 빠져 AUCτ 가
+    적게 나오므로 경계점은 반드시 있어야 한다. 그 값을 어떻게 정하는지는
+    _limit_from_inside 참고 — 경계에 걸친 점은 쓰지 않는다.
+    """
+    t, c = _clean(time, conc)
+    if t.size < 2 or not (t1 > t0):
+        return np.empty(0), np.empty(0)
+    if t0 < t[0] - 1e-12 or t1 > t[-1] + 1e-12:
+        return np.empty(0), np.empty(0)
+
+    eps = 1e-9 * max(abs(t0), abs(t1), 1.0)
+    inside = (t > t0 + eps) & (t < t1 - eps)
+    t_in, c_in = t[inside], c[inside]
+    if t_in.size == 0:
+        return np.empty(0), np.empty(0)
+
+    out_t = np.concatenate(([t0], t_in, [t1]))
+    out_c = np.concatenate((
+        [_limit_from_inside(t_in, c_in, t0, from_start=True)],
+        c_in,
+        [_limit_from_inside(t_in, c_in, t1, from_start=False)],
+    ))
+    keep = np.isfinite(out_t) & np.isfinite(out_c)
+    return out_t[keep], out_c[keep]
+
+
+@dataclass
+class SteadyStateResult:
+    """한 투여 간격에 대한 정상상태 요약. 값이 정의되지 않으면 None 이다."""
+
+    #: 투여 간격
+    tau: Optional[float] = None
+    #: 실제로 분석한 구간
+    interval_start: Optional[float] = None
+    interval_end: Optional[float] = None
+    #: 자료 안에 들어 있는 완전한 투여 간격의 수
+    n_intervals: int = 0
+
+    # 구간 안에서 직접
+    c_max: Optional[float] = None
+    t_max: Optional[float] = None
+    c_min: Optional[float] = None
+    t_min: Optional[float] = None
+    #: 다음 투여 직전 농도. 단순한 곡선에서는 c_min 과 같지만 항상은 아니다.
+    c_trough: Optional[float] = None
+
+    # 노출량
+    auc_tau: Optional[float] = None
+    aumc_tau: Optional[float] = None
+    c_avg: Optional[float] = None
+
+    # 변동
+    fluctuation_pct: Optional[float] = None
+    swing: Optional[float] = None
+
+    # 축적
+    accumulation_auc: Optional[float] = None
+    accumulation_c_max: Optional[float] = None
+
+    # 용량이 필요한 항목
+    cl_ss: Optional[float] = None
+    vz_ss: Optional[float] = None
+
+    # 정상상태에 도달했는가
+    at_steady_state: Optional[bool] = None
+    #: 마지막 두 구간의 AUCτ 가 몇 % 차이 나는가
+    interval_change_pct: Optional[float] = None
+
+    method: str = AUCMethod.LINEAR_LOG.value
+    dose: Optional[float] = None
+    warnings: List[str] = field(default_factory=list)
+
+    def as_dict(self) -> Dict[str, object]:
+        return asdict(self)
+
+
+def nca_steady_state(
+    time: Sequence[float],
+    conc: Sequence[float],
+    tau: float,
+    dose: Optional[float] = None,
+    first_dose_time: float = 0.0,
+    last_dose_time: Optional[float] = None,
+    lambda_z: Optional[float] = None,
+    method: AUCMethod = AUCMethod.LINEAR_LOG,
+    tolerance_pct: float = 1.0,
+) -> SteadyStateResult:
+    """반복 투여 곡선에서 한 투여 간격을 정상상태로 요약한다.
+
+    단회 투여 지표(AUC0-∞, Vz, MRT)는 반복 투여에서 뜻을 잃는다. 곡선이
+    한 번 올라갔다 내려오는 것이 아니라 톱니처럼 이어지므로, 전체를 적분한
+    값은 노출량이 아니라 그저 "시뮬레이션을 얼마나 오래 돌렸는가" 이다.
+    정상상태에서는 대신 한 투여 간격을 보고, 그 간격이 반복된다고 본다.
+
+    분석하는 구간은 마지막 투여부터 τ 동안이다. 정상상태에서는 모든 간격이
+    같으므로 어느 것을 골라도 되지만, 마지막 투여 직후가 도달에 가장 가깝다.
+    자료가 거기까지 미치지 않으면 자료 안에 온전히 들어오는 마지막 간격으로
+    물러선다.
+
+    도달 여부는 마지막 두 간격의 AUCτ 를 비교해 판정한다. 아직 오르는
+    중이면 값은 그대로 돌려주되 정상상태가 아니라고 표시한다 — 계산을
+    거절하는 것보다 무엇을 보고 있는지 알려 주는 편이 쓸모 있다.
+    """
+    res = SteadyStateResult(tau=_f(tau), method=method.value, dose=_f(dose))
+
+    t, c = _clean(time, conc)
+    if t.size < 2 or not (tau > 0):
+        res.warnings.append("Not enough data, or a non-positive dosing interval.")
+        return res
+
+    # 자료 안에 온전히 들어오는 투여 간격들의 시작 시각
+    starts: List[float] = []
+    k = 0
+    while True:
+        t0 = first_dose_time + k * tau
+        if t0 + tau > t[-1] + 1e-9:
+            break
+        if t0 >= t[0] - 1e-9:
+            starts.append(t0)
+        k += 1
+        if k > 10000:  # 방어
+            break
+
+    if not starts:
+        res.warnings.append(
+            "The profile does not cover a whole dosing interval — "
+            "simulate for at least one interval past the last dose."
+        )
+        return res
+
+    res.n_intervals = len(starts)
+
+    # 마지막 투여부터 τ 를 우선하되, 자료가 미치지 않으면 마지막 온전한 간격.
+    chosen = starts[-1]
+    if last_dose_time is not None:
+        for t0 in starts:
+            if abs(t0 - last_dose_time) < 1e-9:
+                chosen = t0
+                break
+
+    def interval_auc(t0: float) -> float:
+        it, ic = clip_interval(t, c, t0, t0 + tau)
+        return auc(it, ic, method=method) if it.size >= 2 else float("nan")
+
+    it, ic = clip_interval(t, c, chosen, chosen + tau)
+    if it.size < 2:
+        res.warnings.append("Could not isolate the dosing interval.")
+        return res
+
+    res.interval_start = _f(chosen)
+    res.interval_end = _f(chosen + tau)
+
+    res.auc_tau = _f(auc(it, ic, method=method))
+    res.aumc_tau = _f(aumc(it, ic, method=method))
+
+    imax = int(np.argmax(ic))
+    imin = int(np.argmin(ic))
+    res.c_max = _f(ic[imax])
+    res.t_max = _f(it[imax])
+    res.c_min = _f(ic[imin])
+    res.t_min = _f(it[imin])
+    res.c_trough = _f(ic[-1])
+
+    if res.auc_tau:
+        res.c_avg = _f(res.auc_tau / tau)
+    if res.c_avg and res.c_max is not None and res.c_min is not None:
+        res.fluctuation_pct = _f((res.c_max - res.c_min) / res.c_avg * 100.0)
+    if res.c_min and res.c_max is not None:
+        res.swing = _f((res.c_max - res.c_min) / res.c_min)
+
+    # 축적비 — 첫 간격 대비. 첫 간격이 자료 안에 있어야 낼 수 있다.
+    if starts and abs(starts[0] - first_dose_time) < 1e-9 and chosen != starts[0]:
+        first_auc = interval_auc(starts[0])
+        if np.isfinite(first_auc) and first_auc > 0 and res.auc_tau:
+            res.accumulation_auc = _f(res.auc_tau / first_auc)
+        ft, fc = clip_interval(t, c, starts[0], starts[0] + tau)
+        if fc.size and fc.max() > 0 and res.c_max is not None:
+            res.accumulation_c_max = _f(res.c_max / float(fc.max()))
+
+    # 도달 판정 — 분석한 간격과 그 앞 간격의 AUCτ 를 비교한다.
+    prev = chosen - tau
+    if prev >= first_dose_time - 1e-9 and prev >= t[0] - 1e-9:
+        prev_auc = interval_auc(prev)
+        if np.isfinite(prev_auc) and prev_auc > 0 and res.auc_tau:
+            change = abs(res.auc_tau - prev_auc) / prev_auc * 100.0
+            res.interval_change_pct = _f(change)
+            res.at_steady_state = bool(change <= tolerance_pct)
+            if not res.at_steady_state:
+                res.warnings.append(
+                    "Not at steady state yet — AUCtau is still changing by "
+                    f"{change:.1f}% between consecutive intervals. "
+                    "Dose for longer before reading these numbers."
+                )
+    else:
+        res.warnings.append(
+            "Only one dosing interval is available, so steady state "
+            "could not be confirmed."
+        )
+
+    if dose and res.auc_tau:
+        res.cl_ss = _f(dose / res.auc_tau)
+        if lambda_z:
+            res.vz_ss = _f(dose / (lambda_z * res.auc_tau))
 
     return res
