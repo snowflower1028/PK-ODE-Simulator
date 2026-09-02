@@ -255,10 +255,25 @@
 
 <main class="main-content">
   <div class="main-scrollable-area">
+    <header class="workspace-header">
+      <h2 class="workspace-title">Simulation Result</h2>
+      <div class="workspace-actions">
+        <button class="btn btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#obsPanel"
+                title="Upload and map observed data">
+          <i class="bi bi-file-earmark-arrow-down"></i> Observed Data
+        </button>
+        <button id="fit-btn" class="btn btn-warning"><i class="bi bi-tools"></i> Fit Parameters</button>
+        <button id="sensitivity-btn" class="btn btn-outline-secondary" disabled
+                title="Not built yet — sweep a parameter and see how the profile moves">
+          <i class="bi bi-sliders2"></i> Sensitivity Analysis <span class="btn-soon">soon</span>
+        </button>
+        <button id="simulate-btn" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</button>
+      </div>
+    </header>
+
     <div class="card">
       <div class="card-header sim-card-header">
-        <h5 class="card-title mb-0"><i class="bi bi-graph-up"></i> Simulation Result</h5>
-        <button id="simulate-btn" class="btn btn-primary"><i class="bi bi-play-fill"></i> Run Simulation</button>
+        <h5 class="card-title mb-0"><i class="bi bi-graph-up"></i> Profile</h5>
       </div>
 
       <div class="sim-settings">
@@ -300,12 +315,6 @@
       <div class="card">
         <div class="card-header summary-card-header">
           <h5 class="card-title mb-0"><i class="bi bi-card-list"></i> PK Profile Summary</h5>
-          <div class="summary-actions">
-            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="offcanvas" data-bs-target="#obsPanel" title="Upload and map observed data">
-              <i class="bi bi-file-earmark-arrow-down"></i> Observed Data
-            </button>
-            <button id="fit-btn" class="btn btn-sm btn-warning"><i class="bi bi-tools"></i> Fit Parameters</button>
-          </div>
         </div>
         <div class="card-body">
           <div id="pk-summary-placeholder" class="text-center py-5 text-muted">

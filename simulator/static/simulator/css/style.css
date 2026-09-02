@@ -1670,14 +1670,6 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
    설정은 그것이 만들어 내는 것 옆에 있어야 읽힌다. 그래서 전부
    Simulation Result 카드 안으로 들어왔다. 고정 높이가 없으니 좁은
    화면에서는 그냥 아래로 접힌다. */
-.sim-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    background-color: var(--apple-background-primary);
-}
 
 .sim-settings {
     display: flex;
@@ -1765,33 +1757,81 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 /* ============================================================ */
 /* 관찰 데이터 업로드와 피팅은 둘 다 실측값을 다루는 일이고, 그 결과가
    나타나는 곳이 이 표다. 그래서 표 머리에 둔다. */
-.summary-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    background-color: var(--apple-background-primary);
-}
-.summary-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
 
 
 /* 좁은 화면: 설정과 실행 버튼이 각자 한 줄을 쓰게 둔다.
    바가 없어졌으므로 잘려 나갈 것도, 억지로 밀어 넣을 것도 없다. */
 @media (max-width: 560px) {
-    .sim-card-header > .btn,
-    .summary-actions {
-        width: 100%;
-    }
-    .summary-actions .btn {
-        flex: 1 1 auto;
-    }
     .sim-logy {
         margin-left: 0;
+    }
+}
+/* 26. Simulation workspace header                              */
+/* ============================================================ */
+/* 카드 바깥의 이 영역 전체가 "Simulation Result" 다. 제목이 그 사실을
+   말하고, 그 아래 카드들(Profile, PK Profile Summary)은 그 결과를
+   보여 주는 조각이다.
+   버튼은 어느 한 카드가 아니라 이 영역 전체에 작용하므로 여기에 둔다 —
+   Run 은 두 카드를 모두 다시 그리고, 관찰 데이터와 피팅은 양쪽에 걸친다.
+
+   예전 툴바와 다른 점: 고정 높이도, 아래를 가르는 실선도 없고,
+   스크롤 영역 안에 있어 내용과 함께 움직인다. 좁아지면 그냥 접힌다. */
+.workspace-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+}
+
+.workspace-title {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--apple-text-primary);
+}
+
+.workspace-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+/* 아직 만들지 않은 기능임을 버튼 안에서 밝힌다. disabled 만으로는
+   왜 눌리지 않는지 알 수 없다. */
+.btn-soon {
+    margin-left: 0.1rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+    background-color: rgba(0, 0, 0, 0.07);
+    color: var(--apple-text-tertiary);
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.btn:disabled .btn-soon,
+.btn.disabled .btn-soon {
+    background-color: rgba(0, 0, 0, 0.06);
+}
+
+/* 액션이 빠져나간 카드 머리는 제목만 남는다 */
+.sim-card-header,
+.summary-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background-color: var(--apple-background-primary);
+}
+
+/* 좁은 화면: 제목이 한 줄, 버튼이 그 아래 한 줄씩 폭을 나눠 갖는다 */
+@media (max-width: 700px) {
+    .workspace-actions {
+        width: 100%;
+    }
+    .workspace-actions .btn {
+        flex: 1 1 10rem;
     }
 }
