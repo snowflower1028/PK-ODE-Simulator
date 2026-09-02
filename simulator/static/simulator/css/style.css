@@ -1678,3 +1678,121 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 .value-paste-status.is-warn {
     color: #B25000;
 }
+
+
+/* ============================================================ */
+/* 23. PK summary table                                         */
+/* ============================================================ */
+/* 표에 모델 곡선과 실측 NCA 결과가 함께 오므로, 어느 쪽인지와
+   어떻게 계산했는지가 값 옆에서 바로 읽혀야 한다. */
+.pk-var {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+}
+.pk-source {
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    cursor: help;
+}
+.pk-source.is-model {
+    background-color: rgba(0, 122, 255, 0.12);
+    color: var(--apple-system-blue);
+}
+.pk-source.is-obs {
+    background-color: rgba(0, 0, 0, 0.06);
+    color: var(--apple-text-secondary);
+}
+.pk-warn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background-color: rgba(255, 149, 0, 0.18);
+    color: #B25000;
+    font-size: 0.625rem;
+    font-weight: 700;
+    cursor: help;
+}
+
+/* 파라미터 이름 옆 정보 표시. 이름만으로는 무엇을 어떻게 계산했는지
+   알 수 없으므로, 정의와 식을 호버·포커스로 꺼내 준다. */
+#pk-summary th {
+    white-space: nowrap;
+}
+.pk-info {
+    margin-left: 0.3rem;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border: 1px solid var(--apple-card-border);
+    border-radius: 50%;
+    background: none;
+    color: var(--apple-text-tertiary);
+    font-family: Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-size: 9.5px;
+    line-height: 1;
+    cursor: help;
+    vertical-align: 1px;
+}
+.pk-info:hover,
+.pk-info:focus-visible {
+    background-color: var(--apple-system-blue);
+    border-color: var(--apple-system-blue);
+    color: #fff;
+    outline: none;
+}
+
+/* 툴팁 본체. title 속성은 지연이 길고 줄바꿈을 못 넣어 직접 그린다. */
+.pk-info::after {
+    content: attr(data-tip);
+    position: absolute;
+    z-index: 20;
+    left: 0;
+    top: calc(100% + 6px);
+    width: max-content;
+    max-width: 320px;
+    padding: 0.55rem 0.7rem;
+    border-radius: 8px;
+    background-color: var(--apple-text-primary);
+    color: #fff;
+    font-family: var(--bs-body-font-family, inherit);
+    font-style: normal;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.55;
+    letter-spacing: 0;
+    text-align: left;
+    text-transform: none;
+    white-space: normal;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.12s ease-in-out;
+}
+.pk-info:hover::after,
+.pk-info:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
+}
+/* 툴팁이 헤더 셀을 기준으로 자리잡도록 */
+#pk-summary th {
+    position: relative;
+}
+/* 오른쪽 끝 열은 툴팁이 표 밖으로 나가지 않게 왼쪽으로 편다 */
+#pk-summary th:nth-last-child(-n + 3) .pk-info::after {
+    left: auto;
+    right: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pk-info::after { transition: none; }
+}

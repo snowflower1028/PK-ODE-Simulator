@@ -17,7 +17,7 @@ from sympy import symbols, lambdify
 
 from .parser import parse_ode_input
 from .solver import solve_ode_system
-from .analyzer import analyze_pk
+from .analyzer import analyze_observed, analyze_simulated
 
 
 @require_POST
@@ -110,11 +110,32 @@ def simulate(request):
         if not valid_selected_vars: # 만약 선택된 유효한 변수가 없다면 기본 Compartment만 사용
             valid_selected_vars = all_compartments
 
-        # 6. analyzer.py로 PK 파라미터 계산 (선택된 변수에 대해서만)
-        total_dose = sum(dose.get('amount', 0) for dose in data.get('doses', []))
-        # PK 분석은 주요 Compartment에 대해서만 수행하는 것이 일반적이므로, all_compartments를 기준으로 필터링
-        # pk_analysis_targets = [comp for comp in valid_selected_vars if comp in all_compartments]
-        pk_summary = analyze_pk(df_full, valid_selected_vars, total_dose)
+        # 6. PK 파라미터 계산
+        #
+        # 시뮬레이션 곡선과 관찰 데이터를 다른 방식으로 다룬다. 앞은 촘촘한
+        # 격자라 곡선을 그대로 적분하면 되고, 뒤는 채혈 시점이 드문드문해
+        # 보간과 외삽 규칙(NCA)이 필요하다. 자세한 이유는 analyzer.py 참고.
+        #
+        # CL·Vz·Vss 는 농도에만 뜻이 있다. 파생 변수(C = A/V 처럼 사용자가
+        # 식으로 정의한 것)를 농도로 보고, 상태 변수(구획 내 양)에는 계산하지
+        # 않는다. 양을 AUC 로 나눈 값은 청소율이 아니기 때문이다.
+        concentration_vars = set(derived_expressions.keys())
+
+        pk_summary = analyze_simulated(
+            df_full,
+            valid_selected_vars,
+            doses,
+            concentration_vars=concentration_vars,
+            derived_expressions=derived_expressions,
+        )
+
+        # 업로드된 관찰 데이터가 함께 오면 같은 표에 나란히 놓는다.
+        observed_summary = analyze_observed(
+            data.get("observed", []),
+            doses,
+            derived_expressions=derived_expressions,
+        )
+        pk_summary.update(observed_summary)
 
         # 7. 응답 데이터 필터링
         # 이제 'C1'과 같은 파생 변수도 결과에 포함될 수 있습니다.

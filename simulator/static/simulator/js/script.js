@@ -232,30 +232,58 @@ const API = {
  * 이 배열의 순서대로 테이블이 그려집니다.
  * 새로운 파라미터를 추가하려면 이 배열에 객체 하나만 추가하면 됩니다.
  */
+/** 속성값 안에 넣어도 안전하도록 따옴표와 꺾쇠를 이스케이프한다. */
+function escapeAttr(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 const PK_TABLE_CONFIG = [
   {
-    key: 'Cmax',                  // State 데이터의 키 이름
-    displayName: 'C<sub>max</sub>', // 화면에 표시될 이름 (HTML 태그 사용 가능)
+    key: 'c_max', displayName: 'C<sub>max</sub>',
+    definition: 'Highest observed concentration.',
+    formula: 'max(C) — taken as observed, not interpolated',
   },
   {
-    key: 'Tmax',
-    displayName: 'T<sub>max</sub> (h)',
+    key: 't_max', displayName: 'T<sub>max</sub>',
+    definition: 'Time at which Cmax occurs. Ties resolve to the earlier time.',
+    formula: 't where C = Cmax',
   },
   {
-    key: 'AUC',
-    displayName: 'AUC',
+    key: 'half_life', displayName: 't<sub>½</sub>',
+    definition: 'Terminal half-life, from the slope of the terminal log-linear phase. The points used are chosen automatically by best adjusted R² after Tmax.',
+    formula: 'ln 2 / λz',
   },
   {
-    key: 'Clearance',
-    displayName: 'Clearance',
+    key: 'auc_last', displayName: 'AUC<sub>0–last</sub>',
+    definition: 'Area under the curve up to the last measurable concentration. Simulated curves are integrated directly; observed data uses linear-up / log-down trapezoids.',
+    formula: '∫ C dt from 0 to Tlast',
   },
   {
-    key: 'HL_half_life',
-    displayName: 'Half-life (h)',
+    key: 'auc_inf_obs', displayName: 'AUC<sub>0–∞</sub>',
+    definition: 'AUC extrapolated to infinity using the terminal slope and the last observed concentration.',
+    formula: 'AUC(0–last) + Clast / λz',
   },
-  // 예시: 나중에 Vd를 추가하고 싶다면 아래 한 줄만 추가하면 끝입니다.
-  // { key: 'Vd', displayName: 'Vd' }
+  {
+    key: 'auc_extrap_pct', displayName: '%Extrap',
+    definition: 'Share of AUC(0–∞) that comes from extrapolation. Above 20% the estimate leans heavily on the terminal slope.',
+    formula: '(AUC∞ − AUClast) / AUC∞ × 100',
+  },
+  {
+    key: 'cl', displayName: 'CL',
+    definition: 'Clearance. Reported as CL/F when the dose does not enter the observed compartment directly. Left blank for amounts, since dividing a dose by the AUC of an amount is not a clearance.',
+    formula: 'Dose / AUC(0–∞)',
+  },
+  {
+    key: 'vz', displayName: 'V<sub>z</sub>',
+    definition: 'Volume of distribution during the terminal phase. Reported as Vz/F for extravascular dosing.',
+    formula: 'Dose / (λz · AUC(0–∞))',
+  },
 ];
+
 
 const UI = {
   // --- 공용 및 일반 UI ---
@@ -558,6 +586,11 @@ const UI = {
     detailContainer.innerHTML = `
       ${previewHTML}
       <hr>
+      <h6><i class="bi bi-capsule"></i> Dose</h6>
+      <p class="text-muted small">The dose this profile received. Clearance and volume need it; leave it blank and those are left out of the summary.</p>
+      <input type="number" step="any" class="form-control form-control-sm obs-dose-input"
+             data-obs-index="${index}" value="${obsData.dose ?? ''}" placeholder="e.g. 500">
+      <hr>
       <h6><i class="bi bi-link-45deg"></i> Map Data to Model</h6>
       <p class="text-muted small">Connect columns from your data file to the variables defined in your ODE model.</p>
       ${mappingHTML || '<div class="placeholder-text small">No data columns to map.</div>'}
@@ -645,16 +678,30 @@ const UI = {
       // --- [핵심 변경 로직 시작] ---
 
       // 1. 설정을 기반으로 동적으로 테이블 헤더 생성
-      const headers = ['<th>Compartment</th>'] // 첫 번째 컬럼은 고정
-        .concat(PK_TABLE_CONFIG.map(col => `<th>${col.displayName}</th>`))
+      // 헤더마다 정의와 식을 담은 정보 표시를 붙인다. 파라미터 이름만으로는
+      // 무엇을 어떻게 계산했는지 알 수 없기 때문이다.
+      const headers = ['<th>Variable</th>']
+        .concat(PK_TABLE_CONFIG.map(col => {
+          if (!col.definition) return `<th>${col.displayName}</th>`;
+          const tip = col.formula ? col.definition + '  —  ' + col.formula : col.definition;
+          return `<th>${col.displayName}<button type="button" class="pk-info" tabindex="0"
+                    aria-label="About ${col.key}" data-tip="${escapeAttr(tip)}">i</button></th>`;
+        }))
         .join('');
 
       // 2. 각 데이터 행에 대해, 설정을 기반으로 동적으로 데이터 셀(<td>) 생성
       const rows = dataArray.map((entry) => {
-        const compartmentCell = `<td>${entry.compartment || 'N/A'}</td>`;
+        // 같은 표에 모델 곡선과 실측이 함께 오므로, 어느 쪽인지 한눈에 보이게 한다.
+        const how = entry.direct_integration
+          ? '<span class="pk-source is-model" title="Simulated curve — integrated directly, no NCA interpolation or extrapolation assumptions">model</span>'
+          : '<span class="pk-source is-obs" title="Observed data — noncompartmental analysis (linear-up / log-down, terminal extrapolation)">NCA</span>';
+        const warn = (entry.warnings && entry.warnings.length)
+          ? `<span class="pk-warn" title="${escapeAttr(entry.warnings.join('; '))}">!</span>`
+          : '';
+        const compartmentCell = `<td class="pk-var">${entry.compartment || 'N/A'}${how}${warn}</td>`;
         
         const valueCells = PK_TABLE_CONFIG.map(col => {
-          const value = entry[col.key]; // 설정의 key를 사용해 데이터 값 조회
+          const value = entry[col.key];
           const formattedValue = typeof value === 'number' ? value.toPrecision(4) : "-";
           return `<td>${formattedValue}</td>`;
         }).join('');
@@ -1392,6 +1439,16 @@ const Handlers = {
         t_start: +DOM.toolbar.simStartTime.value,
         t_end: +DOM.toolbar.simEndTime.value,
         t_steps: stepsInput ? +stepsInput.value : 200, // 기본값 200
+        // 선택된 관찰 데이터도 함께 보내 같은 표에서 NCA 결과를 나란히 본다.
+        // 매핑된 열만 의미가 있으므로 매핑과 용량을 함께 싣는다.
+        observed: State.observations
+          .filter(o => o.selected)
+          .map(o => ({
+            name: o.name,
+            data: o.data,
+            mappings: o.mappings || {},
+            dose: (o.dose === undefined || o.dose === null || o.dose === '') ? null : +o.dose,
+          })),
       };
 
       // 파라미터 및 초기값 수집
@@ -1438,13 +1495,29 @@ const Handlers = {
       : Object.entries(State.latestPKSummary).map(([comp, metrics]) => ({ compartment: comp, ...metrics }));
 
     // 2. 변환된 배열을 바탕으로 CSV용 데이터를 재구성합니다.
+    // analyzer.py 가 돌려주는 키를 그대로 쓴다. 표에 없는 항목까지 함께 내보내
+    // 스프레드시트에서 더 파고들 수 있게 한다.
     const summaryArray = summaryData.map(item => ({
-        compartment: item.compartment,
-        Cmax: item.Cmax,
-        Tmax: item.Tmax,
-        AUC: item.AUC,
-        Clearance: item.Clearance,
-        'Half-life': item['HL_half_life']
+        variable: item.compartment,
+        Cmax: item.c_max,
+        Tmax: item.t_max,
+        Clast: item.c_last,
+        Tlast: item.t_last,
+        lambda_z: item.lambda_z,
+        'Half-life': item.half_life,
+        'lambda_z_points': item.lambda_z_n_points,
+        'lambda_z_adj_R2': item.lambda_z_adj_r_squared,
+        'AUC_0-last': item.auc_last,
+        'AUC_0-inf': item.auc_inf_obs,
+        'AUC_extrap_pct': item.auc_extrap_pct,
+        'AUMC_0-last': item.aumc_last,
+        'AUMC_0-inf': item.aumc_inf,
+        CL: item.cl,
+        Vz: item.vz,
+        MRT: item.mrt,
+        Vss: item.vss,
+        Method: item.method,
+        Administration: item.administration,
     }));
     exportSummaryToCsv(summaryArray, "pk_summary.csv");
   },
@@ -1850,6 +1923,7 @@ async handleStartFittingClick() {
           color: pickColor(),
           data: data,
           selected: true,
+          dose: null,  // 사용자가 패널에서 입력한다. 없으면 CL/Vz 는 계산하지 않는다.
           mappings: {} // { dataColumn: modelVariable, ... }
         });
       } catch (error) {
@@ -1892,6 +1966,17 @@ async handleStartFittingClick() {
    */
   handleObsPanelChange(event) {
     const target = event.target;
+
+    // 데이터셋별 투여량 — NCA 의 CL, Vz 에 쓰인다
+    if (target.classList.contains('obs-dose-input')) {
+      const index = parseInt(target.dataset.obsIndex, 10);
+      if (State.observations[index]) {
+        const raw = target.value.trim();
+        State.observations[index].dose = raw === '' ? null : +raw;
+      }
+      return;
+    }
+
     // 매핑 드롭다운 메뉴 변경 시
     if (target.classList.contains('mapping-select')) {
         const obsIndex = parseInt(target.dataset.obsIndex, 10);
