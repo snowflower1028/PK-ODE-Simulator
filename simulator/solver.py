@@ -142,6 +142,14 @@ def solve_ode_system(
                 y0=y_current,
                 method='LSODA',       # Stiff 시스템에 강건한 솔버
                 dense_output=True,    # 보간을 위해 dense_output 활성화
+                # solve_ivp 의 기본값은 rtol=1e-3 이다. 그래프로 보기에는
+                # 멀쩡하지만 NCA 지표를 뽑거나 파라미터를 적합할 때는 너무
+                # 성기다 — 반복 투여는 구간마다 새로 적분하므로 오차가 쌓여
+                # 11회 투여 뒤 잔여량이 0.14% 어긋나고, AUCtau 도 격자를
+                # 아무리 촘촘히 해도 0.1% 아래로 내려가지 않는다.
+                # 값은 요청당 1-comp +3ms, 2-comp 는 차이 없음.
+                rtol=1e-8,
+                atol=1e-11,
             )
         
         all_solutions.append(sol_segment.sol) # 보간 함수(dense output) 저장
