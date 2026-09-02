@@ -199,10 +199,11 @@
             <select id="compartment" name="compartment" class="form-select form-select-sm" required></select>
           </div>
           <div class="col-6 mb-2">
-            <label class="form-label">Type</label>
-            <select id="type" name="type" class="form-select form-select-sm">
-              <option value="bolus">IV Bolus</option>
-              <option value="infusion">IV Infusion</option>
+            <label class="form-label">Input</label>
+            <select id="type" name="type" class="form-select form-select-sm"
+                    title="How the amount enters the selected compartment. This is not a route of administration.">
+              <option value="bolus">Bolus</option>
+              <option value="infusion">Zero-order (Infusion)</option>
             </select>
           </div>
         </div>
@@ -217,7 +218,7 @@
           </div>
         </div>
         <div class="row" id="duration-label" style="display:none;"> <div class="col-6 mb-2">
-            <label class="form-label">Infusion Duration</label>
+            <label class="form-label">Duration (h)</label>
             <input type="number" id="duration" name="duration" class="form-control form-control-sm" step="any">
           </div>
         </div>
@@ -545,9 +546,12 @@
                   each parameter. Derived variables are computed for you and shown read-only.
                 </li>
                 <li>
-                  <strong>Dosing</strong> — Choose a compartment, pick IV bolus or infusion, enter the
-                  amount and start time, then <em>Add Dose</em>. Turn on <em>repeat dosing</em> for a
-                  multiple-dose schedule.
+                  <strong>Dosing</strong> — Choose the compartment the dose enters, then how it
+                  enters: <em>Bolus</em> puts the whole amount in at once, <em>Zero-order</em>
+                  (an infusion) spreads it evenly over a duration. Enter the amount and start time, then
+                  <em>Add Dose</em>. Turn on <em>repeat dosing</em> for a multiple-dose schedule.
+                  Neither input type implies a route — dosing into an absorption compartment
+                  models an oral dose just as well as dosing into the central one models an IV.
                 </li>
                 <li>
                   <strong>Run</strong> — Set the time range in the toolbar and press

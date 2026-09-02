@@ -447,10 +447,13 @@ const UI = {
 
     container.innerHTML = State.doseList.map((d, i) => {
       // 한 줄로 읽히도록 "무엇을 / 어디에 / 언제" 순서로 적는다.
-      //   Bolus     250 into Ag at 0 h
-      //   Infusion  300 into A1 over 1 h, starting at 0 h
+      //   Bolus       250 into Ag at 0 h
+      //   Zero-order  300 into A1 over 1 h, starting at 0 h
+      //
+      // 태그는 투여 경로가 아니라 입력 방식이다. 어느 구획에 넣느냐는
+      // Compartment 가 정하므로, 여기서 IV 를 단정하면 안 된다.
       const isInfusion = d.type === 'infusion' && d.duration > 0;
-      const typeLabel = isInfusion ? 'Infusion' : 'Bolus';
+      const typeLabel = isInfusion ? 'Zero-order' : 'Bolus';
 
       let summaryText = isInfusion
         ? `<strong>${d.amount}</strong> into <strong>${d.compartment}</strong> over ${d.duration} h, starting at ${d.start_time} h`
