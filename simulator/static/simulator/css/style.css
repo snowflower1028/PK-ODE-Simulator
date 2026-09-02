@@ -1853,7 +1853,8 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     flex: 0 0 auto;
 }
 #sens-param,
-#sens-variable {
+#sens-variable,
+#sens-metric {
     min-width: 9rem;
 }
 
@@ -1942,7 +1943,8 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 
 /* UA 의 [hidden] 은 origin 이 낮아 .sens-row 의 display:flex 에 진다.
    숨김이 실제로 먹으려면 작성자 스타일시트에서 한 번 더 못을 박아야 한다. */
-[data-sens-mode][hidden] {
+[data-sens-mode][hidden],
+[data-sens-view][hidden] {
     display: none !important;
 }
 
@@ -1968,3 +1970,7 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     color: var(--apple-text-primary);
 }
 
+/* Scan / Tornado 전환은 모달 전체의 성격을 바꾸므로 맨 위에 둔다. */
+.sens-view-toggle {
+    margin-bottom: 1rem;
+}

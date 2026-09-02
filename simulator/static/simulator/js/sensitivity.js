@@ -1,8 +1,10 @@
 /**
- * sensitivity.js  ──  값 하나를 훑어 보는 화면
+ * sensitivity.js  ──  무엇이 곡선을 움직이는지 보는 화면
  * ────────────────────────────────────────────────────────────
- * 모달에서 훑을 대상과 값 목록을 받아 /sweep/ 에 한 번 보내고,
- * 돌아온 곡선들을 Sensitivity 카드에 겹쳐 그린다.
+ * 모달에서 두 가지를 묻는다.
+ *   scan      한 가지 값을 훑으며 곡선이 어떻게 움직이는지 → 겹친 곡선들
+ *   tornado   파라미터를 조금씩 흔들어 어느 것이 가장 크게 움직이는지 → 가로 막대
+ * 어느 쪽이든 /sweep/ 에 한 번 보내고 결과를 Sensitivity 카드에 그린다.
  *
  * 솔버 한 번이 수십 밀리초라 스무 번을 돌아도 0.2초 남짓이다. 그래서
  * 진행률 표시도, 백그라운드 작업도 없이 요청 한 번으로 끝낸다.
@@ -27,6 +29,8 @@
     points: document.getElementById("sens-points"),
     list: document.getElementById("sens-list"),
     preview: document.getElementById("sens-preview"),
+    delta: document.getElementById("sens-delta"),
+    metric: document.getElementById("sens-metric"),
     variable: document.getElementById("sens-variable"),
     status: document.getElementById("sens-status"),
     run: document.getElementById("sens-run"),
@@ -48,6 +52,14 @@
     list:
       "The exact values you want, separated by spaces, commas or new lines. " +
       "Paste a column straight from a spreadsheet.",
+  };
+
+  const METRIC_LABEL = {
+    c_max: "Cmax",
+    t_max: "Tmax",
+    auc_last: "AUC 0–last",
+    auc_inf_obs: "AUC 0–∞",
+    half_life: "Half-life",
   };
 
   /* ---------------------------------------------------------- */
@@ -237,6 +249,25 @@
     return (+value).toPrecision(digits || 4);
   }
 
+  /* ---------------------------------------------------------- */
+  /* 무엇을 묻는가 — 하나를 훑을 것인가, 전부를 흔들 것인가        */
+  /* ---------------------------------------------------------- */
+  function currentView() {
+    const checked = modalEl.querySelector('input[name="sensView"]:checked');
+    return checked ? checked.value : "scan";
+  }
+
+  function applyView() {
+    const view = currentView();
+    modalEl.querySelectorAll("[data-sens-view]").forEach((el) => {
+      el.hidden = el.dataset.sensView !== view;
+    });
+    els.run.innerHTML = view === "tornado"
+      ? '<i class="bi bi-play-circle"></i> Run tornado'
+      : '<i class="bi bi-play-circle"></i> Run sweep';
+    setStatus("", null);
+  }
+
   function applyMode() {
     const mode = currentMode();
 
@@ -293,6 +324,11 @@
     lastMode = currentMode();
     if (lastMode !== "list") loadRange(lastMode, selectedTarget());
     applyMode();
+    applyView();
+  });
+
+  modalEl.querySelectorAll('input[name="sensView"]').forEach((el) => {
+    el.addEventListener("change", applyView);
   });
 
   els.param.addEventListener("change", () => {
@@ -330,17 +366,9 @@
   /* ---------------------------------------------------------- */
   /* 실행                                                         */
   /* ---------------------------------------------------------- */
-  els.run.addEventListener("click", async () => {
-    const sel = selectedTarget();
-    const values = plannedValues(sel);
-
-    if (values.length < 2) {
-      setStatus("Give at least two values to sweep over.", "warn");
-      return;
-    }
-
+  function basePayload(sweep) {
     const stepsInput = document.getElementById("dropdown-sim-steps");
-    const payload = {
+    return {
       equations: document.getElementById("ode-input").value.trim(),
       initials: currentInitials(),
       parameters: currentParameters(),
@@ -348,17 +376,42 @@
       t_start: +document.getElementById("sim-start-time").value,
       t_end: +document.getElementById("sim-end-time").value,
       t_steps: stepsInput ? +stepsInput.value : 200,
-      sweep: {
+      sweep: sweep,
+    };
+  }
+
+  els.run.addEventListener("click", async () => {
+    let payload;
+    let waiting;
+
+    if (currentView() === "tornado") {
+      const delta = +els.delta.value / 100;
+      if (!(delta > 0 && delta < 1)) {
+        setStatus("Nudge by something between 0 and 100%.", "warn");
+        return;
+      }
+      const count = Object.values(currentParameters()).filter((v) => v).length;
+      payload = basePayload({ mode: "tornado", delta: delta, variable: els.variable.value });
+      waiting = "Nudging " + count + " parameters…";
+    } else {
+      const sel = selectedTarget();
+      const values = plannedValues(sel);
+      if (values.length < 2) {
+        setStatus("Give at least two values to sweep over.", "warn");
+        return;
+      }
+      payload = basePayload({
         mode: "scan",
         kind: sel.kind,
         target: sel.target,
         values: values,
         variable: els.variable.value,
-      },
-    };
+      });
+      waiting = "Running " + values.length + " simulations…";
+    }
 
     els.run.disabled = true;
-    setStatus("Running " + values.length + " simulations…", null);
+    setStatus(waiting, null);
 
     try {
       const response = await fetch("/sweep/", {
@@ -395,11 +448,28 @@
   }
 
   function render(data) {
+    if (data.mode === "tornado") {
+      lastTornado = data;
+      renderTornado(data);
+      els.card.style.display = "block";
+      els.card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    lastTornado = null;
+    renderScan(data);
+    els.card.style.display = "block";
+    els.card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function renderScan(data) {
     const runs = data.runs || [];
     if (!runs.length) return;
 
     const variable = data.variable;
     const logY = document.getElementById("log-scale").checked;
+
+    // 토네이도가 항목 수에 맞춰 늘려 둔 높이를 CSS 기본값으로 되돌린다.
+    els.plot.style.height = "";
 
     const traces = runs.map((run, i) => {
       const isBase = i === data.baseline_index;
@@ -468,7 +538,115 @@
 
     els.caption.textContent =
       `${data.target} · ${fmt(runs[0].value, 3)} – ${fmt(runs[runs.length - 1].value, 3)} · ${runs.length} runs · showing ${variable}`;
-    els.card.style.display = "block";
-    els.card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  /* ---------------------------------------------------------- */
+  /* 토네이도                                                     */
+  /* ---------------------------------------------------------- */
+  /** 서버가 지표를 전부 돌려주므로 순위 기준을 바꿔도 다시 풀 필요가 없다.
+   *  마지막 결과를 들고 있다가 그 자리에서 다시 그린다. */
+  let lastTornado = null;
+
+  els.metric.addEventListener("change", () => {
+    if (lastTornado) renderTornado(lastTornado);
+  });
+
+  function renderTornado(data) {
+    const metric = els.metric.value;
+    const label = METRIC_LABEL[metric] || metric;
+
+    // 흔들린 폭이 큰 것부터 위에 오게 한다. Plotly 는 가로 막대의 첫 항목을
+    // 맨 아래에 놓으므로, 오름차순으로 넣어야 위에서부터 큰 것이 보인다.
+    const items = (data.items || [])
+      .map((it) => {
+        const swing = (it.swing || {})[metric];
+        return { it: it, swing: swing, span: swing ? Math.abs(swing[1] - swing[0]) : 0 };
+      })
+      .filter((row) => row.swing)
+      .sort((a, b) => a.span - b.span);
+
+    if (!items.length) {
+      els.caption.textContent = `Tornado · ${label} could not be computed for ${data.variable}`;
+      Plotly.purge(els.plot);
+      els.table.innerHTML = "";
+      return;
+    }
+
+    const names = items.map((r) => r.it.label);
+    const pct = Math.round(data.delta * 1000) / 10;
+
+    const bar = (side, color, name) => ({
+      type: "bar",
+      orientation: "h",
+      y: names,
+      x: items.map((r) => r.swing[side]),
+      name: name,
+      marker: { color: color },
+      hovertemplate: "%{y}  %{x:+.2f}%<extra>" + name + "</extra>",
+    });
+
+    // 가로 막대는 개수만큼 자리가 필요하다. 고정 높이면 파라미터가 많을 때 뭉갠다.
+    els.plot.style.height = Math.max(240, items.length * 44 + 130) + "px";
+
+    Plotly.react(
+      els.plot,
+      [bar(0, "hsl(212, 78%, 72%)", "−" + pct + "%"),
+       bar(1, "hsl(212, 78%, 40%)", "+" + pct + "%")],
+      {
+        barmode: "overlay",
+        bargap: 0.35,
+        xaxis: {
+          title: "% change in " + label,
+          zeroline: true,
+          zerolinecolor: "#1d1d1f",
+          zerolinewidth: 1.5,
+          gridcolor: "rgba(0,0,0,0.05)",
+          ticksuffix: "%",
+        },
+        yaxis: { type: "category", automargin: true },
+        legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "right", x: 1 },
+        margin: { t: 30, r: 20, b: 55, l: 20 },
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+      },
+      { responsive: true }
+    );
+
+    // 표는 영향이 큰 것부터, 즉 그림의 위에서부터 읽히는 순서로.
+    const rows = items.slice().reverse().map((row) => {
+      const it = row.it;
+      const s = (it.sensitivity || {})[metric];
+      return `<tr>
+          <td>${it.label}</td>
+          <td>${fmt(it.low_value)}</td>
+          <td>${fmt(it.high_value)}</td>
+          <td>${fmt((it.low || {})[metric])}</td>
+          <td>${fmt((it.high || {})[metric])}</td>
+          <td><strong>${s === null || s === undefined ? "-" : (+s).toFixed(3)}</strong></td>
+        </tr>`;
+    }).join("");
+
+    els.table.innerHTML = `
+      <div class="table-responsive">
+        <table class="table table-sm table-hover">
+          <thead class="table-light">
+            <tr>
+              <th>Parameter</th>
+              <th>at −${pct}%</th>
+              <th>at +${pct}%</th>
+              <th>${label} low</th>
+              <th>${label} high</th>
+              <th title="Normalised sensitivity: a 1% change in the parameter gives S% change in the metric">S</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+
+    const base = (data.baseline || {})[metric];
+    els.caption.textContent =
+      `Tornado · ±${pct}% · ranked by ${label}` +
+      (base === null || base === undefined ? "" : ` (baseline ${fmt(base)})`) +
+      ` · on ${data.variable}`;
   }
 })();

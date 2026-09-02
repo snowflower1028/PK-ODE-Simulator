@@ -401,7 +401,14 @@
         </div>
 
         <div class="modal-body fit-settings-body">
-          <section class="fit-section">
+          <div class="btn-group btn-group-sm seg-toggle sens-view-toggle" role="group" aria-label="What to ask">
+            <input type="radio" class="btn-check" name="sensView" id="sens-view-scan" value="scan" checked>
+            <label class="btn" for="sens-view-scan">Scan one value</label>
+            <input type="radio" class="btn-check" name="sensView" id="sens-view-tornado" value="tornado">
+            <label class="btn" for="sens-view-tornado">Tornado</label>
+          </div>
+
+          <section class="fit-section" data-sens-view="scan">
             <h6 class="fit-section-title"><i class="bi bi-ui-radios"></i> Sweep</h6>
             <p class="fit-section-desc">
               A parameter, a compartment's starting amount, or a registered dose.
@@ -414,7 +421,7 @@
             </div>
           </section>
 
-          <section class="fit-section">
+          <section class="fit-section" data-sens-view="scan">
             <h6 class="fit-section-title"><i class="bi bi-arrows-expand"></i> Values</h6>
             <div class="btn-group btn-group-sm seg-toggle" role="group" aria-label="How to specify the values">
               <input type="radio" class="btn-check" name="sensMode" id="sens-mode-multiple" value="multiple" checked>
@@ -445,9 +452,41 @@
             <p class="sens-preview" id="sens-preview"></p>
           </section>
 
+          <section class="fit-section" data-sens-view="tornado">
+            <h6 class="fit-section-title"><i class="bi bi-bar-chart-steps"></i> Nudge every parameter</h6>
+            <p class="fit-section-desc">
+              Each parameter is moved up and down by the same fraction, one at a
+              time, and the parameters are ranked by how far the metric moved.
+              Alongside each bar is the normalised sensitivity
+              <em>S</em> = (&Delta;Y/Y) &divide; (&Delta;&theta;/&theta;): <em>S</em> = 1
+              means a 1&nbsp;% change in the parameter gives a 1&nbsp;% change in the
+              metric. It carries no units, so parameters of wildly different size
+              can be compared directly.
+            </p>
+            <div class="sens-row">
+              <label for="sens-delta" class="sens-label">Nudge by</label>
+              <span class="sens-times">&plusmn;</span>
+              <input id="sens-delta" type="number" class="form-control form-control-sm"
+                     value="10" min="0.1" max="99" step="any">
+              <span class="sens-times">%</span>
+              <label for="sens-metric" class="sens-label">Rank by</label>
+              <select id="sens-metric" class="form-select form-select-sm">
+                <option value="auc_inf_obs" selected>AUC 0–∞</option>
+                <option value="auc_last">AUC 0–last</option>
+                <option value="c_max">Cmax</option>
+                <option value="t_max">Tmax</option>
+                <option value="half_life">Half-life</option>
+              </select>
+            </div>
+            <p class="fit-section-desc mb-0">
+              Parameters currently set to zero are left out &mdash; a fraction of
+              zero is still zero, and there is nothing to base an absolute nudge on.
+            </p>
+          </section>
+
           <section class="fit-section">
             <h6 class="fit-section-title"><i class="bi bi-graph-up"></i> Show</h6>
-            <p class="fit-section-desc">Which variable to draw. Its Cmax, Tmax, AUC and half-life are tabulated for every value.</p>
+            <p class="fit-section-desc">Which variable the metrics are computed on. Cmax, Tmax, AUC and half-life all come from this one.</p>
             <div class="sens-row">
               <select id="sens-variable" class="form-select form-select-sm"></select>
             </div>

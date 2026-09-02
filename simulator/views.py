@@ -86,32 +86,18 @@ def _solve_profile(parsed, rhs, init_values, param_values,
 
 @require_POST
 def sweep(request):
-    """한 가지 값을 목록에 걸쳐 훑으며 매번 다시 푼다.
+    """모델을 여러 번 다시 풀어 무엇이 곡선을 움직이는지 본다.
 
-    솔버 한 번이 수십 밀리초라 (2-compartment / 500점 기준 42ms) 스무 번을
-    돌아도 1초를 넘지 않는다. 그래서 한 요청에서 전부 계산해 한 번에 돌려준다.
+    솔버 한 번이 수십 밀리초라 (2-compartment / 500점 기준 42ms) 마흔 번을
+    돌아도 2초를 넘지 않는다. 그래서 한 요청에서 전부 계산해 한 번에 돌려준다.
 
-    훑을 수 있는 대상은 세 가지다.
-      parameter   모델 파라미터 (CL, ka, ...)
-      initial     구획의 초기값
-      dose        등록된 투여 중 하나의 용량
-
-    용량을 훑을 때는 그 값이 NCA 의 dose 로도 그대로 들어간다. 선형 모델이면
-    CL 이 용량과 무관하게 일정하게 나오고 포화가 있는 모델이면 용량을 따라
-    움직이는데, 그 차이를 보는 것이 용량 스윕의 목적이다.
+    두 가지를 묻는다.
+      scan      한 가지 값을 훑으며 곡선이 어떻게 움직이는지
+      tornado   파라미터를 조금씩 흔들어 어느 것이 가장 크게 움직이는지
     """
     try:
         data = json.loads(request.body)
         spec = data.get("sweep") or {}
-
-        target = spec.get("target")
-        values = spec.get("values") or []
-        if target is None or target == "":
-            return JsonResponse({"status": "error", "message": "Nothing chosen to sweep."}, status=400)
-        if not values:
-            return JsonResponse({"status": "error", "message": "No values to sweep over."}, status=400)
-        if len(values) > 40:
-            return JsonResponse({"status": "error", "message": "Too many sweep points (max 40)."}, status=400)
 
         ode_text = data.get("equations", "")
         if not ode_text.strip():
@@ -121,124 +107,248 @@ def sweep(request):
         if not parsed.get("compartments") or not parsed.get("equations"):
             return JsonResponse({"status": "error", "message": "Failed to parse the ODE system."}, status=400)
 
-        base_params = dict(data.get("parameters", {}))
-        base_initials = dict(data.get("initials", {}))
-        base_doses = list(data.get("doses", []))
-        t_start = float(data.get("t_start", 0))
-        t_end = float(data.get("t_end", 48))
-        t_steps = int(data.get("t_steps", 200))
+        ctx = {
+            "parsed": parsed,
+            "rhs": _rhs_callable(parsed),
+            "derived": parsed.get("derived_expressions", {}),
+            "params": dict(data.get("parameters", {})),
+            "initials": dict(data.get("initials", {})),
+            "doses": list(data.get("doses", [])),
+            "t_start": float(data.get("t_start", 0)),
+            "t_end": float(data.get("t_end", 48)),
+            "t_steps": int(data.get("t_steps", 200)),
+        }
 
-        # 대상마다 다른 것은 두 가지뿐이다 — 기준값이 무엇인가, 값 하나를
-        # 어디에 꽂아 넣는가. 그 둘만 정하고 나면 아래 루프는 똑같다.
-        kind = spec.get("kind") or "parameter"
-
-        if kind == "parameter":
-            if target not in parsed.get("parameters", []):
-                return JsonResponse(
-                    {"status": "error", "message": f"'{target}' is not a parameter of this model."}, status=400)
-            label = str(target)
-            baseline = base_params.get(target)
-
-            def apply(value):
-                params = dict(base_params)
-                params[target] = value
-                return base_initials, params, base_doses
-
-        elif kind == "initial":
-            if target not in parsed.get("compartments", []):
-                return JsonResponse(
-                    {"status": "error", "message": f"'{target}' is not a compartment of this model."}, status=400)
-            label = f"{target}(0)"
-            baseline = base_initials.get(target)
-
-            def apply(value):
-                initials = dict(base_initials)
-                initials[target] = value
-                return initials, base_params, base_doses
-
-        elif kind == "dose":
-            try:
-                index = int(target)
-            except (TypeError, ValueError):
-                index = -1
-            if not 0 <= index < len(base_doses):
-                return JsonResponse(
-                    {"status": "error", "message": "That dose is no longer registered."}, status=400)
-            label = f"{base_doses[index].get('compartment', 'dose')} dose"
-            baseline = base_doses[index].get("amount")
-
-            def apply(value):
-                doses = [dict(d) for d in base_doses]
-                doses[index]["amount"] = value
-                return base_initials, base_params, doses
-
-        else:
-            return JsonResponse({"status": "error", "message": f"Cannot sweep '{kind}'."}, status=400)
-
-        rhs = _rhs_callable(parsed)
-        derived = parsed.get("derived_expressions", {})
-
-        # 그릴 변수 하나만 돌려준다. 스윕은 값마다 곡선이 하나씩 늘어나므로
+        # 그릴 변수 하나만 다룬다. 스윕은 값마다 곡선이 하나씩 늘어나므로
         # 변수까지 여러 개면 화면에서도 응답 크기에서도 감당이 안 된다.
+        plottable = list(parsed["compartments"]) + list(ctx["derived"].keys())
         variable = spec.get("variable")
-        plottable = list(parsed["compartments"]) + list(derived.keys())
         if variable not in plottable:
             variable = plottable[0] if plottable else None
+        ctx["variable"] = variable
 
-        runs = []
-        for raw in values:
-            value = float(raw)
-            initials, params, doses = apply(value)
-
-            df = _solve_profile(parsed, rhs, initials, params,
-                                t_start, t_end, t_steps, doses)
-            if variable not in df.columns:
-                continue
-
-            pk = analyze_simulated(
-                df, [variable], doses,
-                concentration_vars=set(derived.keys()),
-                derived_expressions=derived,
-            )
-            runs.append({
-                "value": value,
-                "label": f"{label} = {value:g}",
-                "profile": {
-                    "Time": df["Time"].tolist(),
-                    variable: df[variable].tolist(),
-                },
-                "pk": pk.get(variable, {}),
-            })
-
-        # 기준값에 해당하는 지점을 굵게 그리기 위해 알려 준다. 가장 가까운
-        # 점이 아니라 실제로 같은 점이어야 한다 — 5~40 을 훑는데 현재값이
-        # 0 이면 50 짜리 곡선을 "여기서 출발했다"고 표시해서는 안 된다.
-        baseline_index = None
-        if baseline is not None and runs:
-            try:
-                base = float(baseline)
-            except (TypeError, ValueError):
-                base = None
-            if base is not None:
-                near = min(range(len(runs)), key=lambda i: abs(runs[i]["value"] - base))
-                if abs(runs[near]["value"] - base) <= 1e-4 * max(abs(base), 1e-12):
-                    baseline_index = near
-
-        return JsonResponse({
-            "status": "ok",
-            "data": {
-                "kind": kind,
-                "target": label,
-                "variable": variable,
-                "baseline": baseline,
-                "baseline_index": baseline_index,
-                "runs": runs,
-            },
-        })
+        mode = spec.get("mode") or "scan"
+        if mode == "tornado":
+            return _tornado(ctx, spec)
+        if mode == "scan":
+            return _scan(ctx, spec)
+        return JsonResponse({"status": "error", "message": f"Unknown sweep mode '{mode}'."}, status=400)
 
     except Exception as e:
         traceback.print_exc()
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+def _run_once(ctx, initials, params, doses):
+    """한 번 풀고 그릴 변수의 프로파일과 PK 지표를 함께 돌려준다."""
+    df = _solve_profile(ctx["parsed"], ctx["rhs"], initials, params,
+                        ctx["t_start"], ctx["t_end"], ctx["t_steps"], doses)
+    variable = ctx["variable"]
+    if variable not in df.columns:
+        return None, {}
+    pk = analyze_simulated(
+        df, [variable], doses,
+        concentration_vars=set(ctx["derived"].keys()),
+        derived_expressions=ctx["derived"],
+    )
+    return df, pk.get(variable, {})
+
+
+# ---------------------------------------------------------------------------
+# scan — 한 가지 값을 훑는다
+# ---------------------------------------------------------------------------
+def _scan(ctx, spec):
+    """훑을 수 있는 대상은 세 가지다.
+
+      parameter   모델 파라미터 (CL, ka, ...)
+      initial     구획의 초기값
+      dose        등록된 투여 중 하나의 용량
+
+    용량을 훑을 때는 그 값이 NCA 의 dose 로도 그대로 들어간다. 선형 모델이면
+    CL 이 용량과 무관하게 일정하게 나오고 포화가 있는 모델이면 용량을 따라
+    움직이는데, 그 차이를 보는 것이 용량 스윕의 목적이다.
+    """
+    parsed = ctx["parsed"]
+    target = spec.get("target")
+    values = spec.get("values") or []
+
+    if target is None or target == "":
+        return JsonResponse({"status": "error", "message": "Nothing chosen to sweep."}, status=400)
+    if not values:
+        return JsonResponse({"status": "error", "message": "No values to sweep over."}, status=400)
+    if len(values) > 40:
+        return JsonResponse({"status": "error", "message": "Too many sweep points (max 40)."}, status=400)
+
+    base_params, base_initials, base_doses = ctx["params"], ctx["initials"], ctx["doses"]
+
+    # 대상마다 다른 것은 두 가지뿐이다 — 기준값이 무엇인가, 값 하나를
+    # 어디에 꽂아 넣는가. 그 둘만 정하고 나면 아래 루프는 똑같다.
+    kind = spec.get("kind") or "parameter"
+
+    if kind == "parameter":
+        if target not in parsed.get("parameters", []):
+            return JsonResponse(
+                {"status": "error", "message": f"'{target}' is not a parameter of this model."}, status=400)
+        label = str(target)
+        baseline = base_params.get(target)
+
+        def apply(value):
+            params = dict(base_params)
+            params[target] = value
+            return base_initials, params, base_doses
+
+    elif kind == "initial":
+        if target not in parsed.get("compartments", []):
+            return JsonResponse(
+                {"status": "error", "message": f"'{target}' is not a compartment of this model."}, status=400)
+        label = f"{target}(0)"
+        baseline = base_initials.get(target)
+
+        def apply(value):
+            initials = dict(base_initials)
+            initials[target] = value
+            return initials, base_params, base_doses
+
+    elif kind == "dose":
+        try:
+            index = int(target)
+        except (TypeError, ValueError):
+            index = -1
+        if not 0 <= index < len(base_doses):
+            return JsonResponse(
+                {"status": "error", "message": "That dose is no longer registered."}, status=400)
+        label = f"{base_doses[index].get('compartment', 'dose')} dose"
+        baseline = base_doses[index].get("amount")
+
+        def apply(value):
+            doses = [dict(d) for d in base_doses]
+            doses[index]["amount"] = value
+            return base_initials, base_params, doses
+
+    else:
+        return JsonResponse({"status": "error", "message": f"Cannot sweep '{kind}'."}, status=400)
+
+    variable = ctx["variable"]
+    runs = []
+    for raw in values:
+        value = float(raw)
+        df, pk = _run_once(ctx, *apply(value))
+        if df is None:
+            continue
+        runs.append({
+            "value": value,
+            "label": f"{label} = {value:g}",
+            "profile": {
+                "Time": df["Time"].tolist(),
+                variable: df[variable].tolist(),
+            },
+            "pk": pk,
+        })
+
+    # 기준값에 해당하는 지점을 굵게 그리기 위해 알려 준다. 가장 가까운
+    # 점이 아니라 실제로 같은 점이어야 한다 — 5~40 을 훑는데 현재값이
+    # 0 이면 50 짜리 곡선을 "여기서 출발했다"고 표시해서는 안 된다.
+    baseline_index = None
+    if baseline is not None and runs:
+        try:
+            base = float(baseline)
+        except (TypeError, ValueError):
+            base = None
+        if base is not None:
+            near = min(range(len(runs)), key=lambda i: abs(runs[i]["value"] - base))
+            if abs(runs[near]["value"] - base) <= 1e-4 * max(abs(base), 1e-12):
+                baseline_index = near
+
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            "mode": "scan",
+            "kind": kind,
+            "target": label,
+            "variable": variable,
+            "baseline": baseline,
+            "baseline_index": baseline_index,
+            "runs": runs,
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
+# tornado — 무엇이 가장 크게 움직이는가
+# ---------------------------------------------------------------------------
+TORNADO_METRICS = ("c_max", "t_max", "auc_last", "auc_inf_obs", "half_life")
+
+
+def _tornado(ctx, spec):
+    """파라미터를 하나씩 ±delta 만큼 흔들어 지표가 얼마나 움직이는지 잰다.
+
+    지표별로 정규화 민감도 S = (ΔY/Y) / (Δθ/θ) 를 함께 낸다. 중심차분이라
+    Δθ/θ 는 2·delta 이고, S 는 무차원이라 단위도 크기도 다른 파라미터끼리
+    바로 비교된다. S = 1 이면 파라미터를 1% 올릴 때 지표도 1% 오른다는 뜻이다.
+
+    값이 0 인 파라미터는 제외한다. 배수로 흔드는 방식이라 0 은 흔들리지 않고,
+    절대량으로 흔들면 그 크기를 정할 근거가 없다.
+    """
+    # `or` 로 기본값을 주면 0 을 보냈을 때 말없이 10% 가 되어 버린다.
+    raw_delta = spec.get("delta")
+    delta = 0.1 if raw_delta is None else float(raw_delta)
+    if not 0 < delta < 1:
+        return JsonResponse(
+            {"status": "error", "message": "The perturbation must be between 0 and 100%."}, status=400)
+
+    names = [n for n in ctx["parsed"].get("parameters", [])
+             if isinstance(ctx["params"].get(n), (int, float)) and ctx["params"][n] != 0]
+    if not names:
+        return JsonResponse(
+            {"status": "error", "message": "No non-zero parameters to perturb."}, status=400)
+    if len(names) > 20:
+        return JsonResponse(
+            {"status": "error", "message": "Too many parameters for a tornado (max 20)."}, status=400)
+
+    _, base_pk = _run_once(ctx, ctx["initials"], ctx["params"], ctx["doses"])
+    baseline = {k: base_pk.get(k) for k in TORNADO_METRICS}
+
+    def solved(name, factor):
+        params = dict(ctx["params"])
+        params[name] = ctx["params"][name] * factor
+        _, pk = _run_once(ctx, ctx["initials"], params, ctx["doses"])
+        return {k: pk.get(k) for k in TORNADO_METRICS}
+
+    items = []
+    for name in names:
+        low = solved(name, 1.0 - delta)
+        high = solved(name, 1.0 + delta)
+
+        sensitivity, swing = {}, {}
+        for k in TORNADO_METRICS:
+            lo, hi, b = low.get(k), high.get(k), baseline.get(k)
+            usable = all(isinstance(v, (int, float)) for v in (lo, hi, b)) and b
+            sensitivity[k] = (hi - lo) / (2.0 * delta * b) if usable else None
+            # 그림에 쓸 값은 기준 대비 % 변화. 양끝을 따로 두어야 비대칭이 보인다.
+            swing[k] = [(lo - b) / b * 100.0, (hi - b) / b * 100.0] if usable else None
+
+        items.append({
+            "label": name,
+            "base": ctx["params"][name],
+            "low_value": ctx["params"][name] * (1.0 - delta),
+            "high_value": ctx["params"][name] * (1.0 + delta),
+            "low": low,
+            "high": high,
+            "sensitivity": sensitivity,
+            "swing": swing,
+        })
+
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            "mode": "tornado",
+            "variable": ctx["variable"],
+            "delta": delta,
+            "metrics": list(TORNADO_METRICS),
+            "baseline": baseline,
+            "items": items,
+        },
+    })
 
 
 @require_POST
