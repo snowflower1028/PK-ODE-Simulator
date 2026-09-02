@@ -712,7 +712,7 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 /* ------------------------------ */
 /* (.value-settings-header 는 .sidebar-section-header 로 통합되어 제거함) */
 
-.symbol-order-toggle .btn {
+.symbol-order-toggle .btn, .seg-toggle .btn {
     font-size: 11px !important;
     font-weight: 500;
     padding: 0.1rem 0.45rem;
@@ -722,24 +722,24 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     white-space: nowrap;
 }
 
-.symbol-order-toggle .btn:hover {
+.symbol-order-toggle .btn:hover, .seg-toggle .btn:hover {
     background-color: rgba(0, 0, 0, 0.04);
     color: var(--apple-text-primary);
 }
 
-.symbol-order-toggle .btn-check:checked + .btn {
+.symbol-order-toggle .btn-check:checked + .btn, .seg-toggle .btn-check:checked + .btn {
     color: var(--apple-system-blue);
     background-color: rgba(0, 122, 255, 0.1);
     border-color: var(--apple-system-blue);
     z-index: 1;
 }
 
-.symbol-order-toggle .btn-check:checked + .btn:hover {
+.symbol-order-toggle .btn-check:checked + .btn:hover, .seg-toggle .btn-check:checked + .btn:hover {
     background-color: rgba(0, 122, 255, 0.16);
     color: var(--apple-system-blue);
 }
 
-.symbol-order-toggle .btn-check:focus-visible + .btn {
+.symbol-order-toggle .btn-check:focus-visible + .btn, .seg-toggle .btn-check:focus-visible + .btn {
     box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
 }
 
@@ -1910,8 +1910,10 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     color: var(--apple-text-secondary);
     font-variant-numeric: tabular-nums;
 }
+/* min-height 로는 컨테이너 높이가 auto(0) 라 Plotly 가 기본값 450px 로
+   그리고, 그만큼 아래 표 위로 넘쳐 나온다. 높이를 확정해 줘야 한다. */
 #sensitivity-plot {
-    min-height: 380px;
+    height: 400px;
 }
 #sensitivity-table {
     margin-top: 1rem;
@@ -1931,3 +1933,38 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     letter-spacing: 0.05em;
     text-transform: uppercase;
 }
+
+/* 값 지정 방식 전환 — 사이드바용 11px 는 모달 안에서 너무 작다. */
+#sensitivityModal .seg-toggle .btn {
+    font-size: 12px !important;
+    padding: 0.22rem 0.7rem;
+}
+
+/* UA 의 [hidden] 은 origin 이 낮아 .sens-row 의 display:flex 에 진다.
+   숨김이 실제로 먹으려면 작성자 스타일시트에서 한 번 더 못을 박아야 한다. */
+[data-sens-mode][hidden] {
+    display: none !important;
+}
+
+.sens-list {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 0.8125rem;
+    min-height: 3.6rem;
+    resize: vertical;
+}
+
+/* 훑을 대상은 파라미터 / 초기값 / 용량으로 묶어 보여 준다. */
+#sens-param optgroup {
+    font-style: normal;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+}
+
+#sens-param option {
+    font-size: 0.8125rem;
+    color: var(--apple-text-primary);
+}
+

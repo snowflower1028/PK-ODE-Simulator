@@ -86,10 +86,19 @@ def _solve_profile(parsed, rhs, init_values, param_values,
 
 @require_POST
 def sweep(request):
-    """파라미터 하나를 값 목록에 걸쳐 훑으며 매번 다시 푼다.
+    """한 가지 값을 목록에 걸쳐 훑으며 매번 다시 푼다.
 
     솔버 한 번이 수십 밀리초라 (2-compartment / 500점 기준 42ms) 스무 번을
     돌아도 1초를 넘지 않는다. 그래서 한 요청에서 전부 계산해 한 번에 돌려준다.
+
+    훑을 수 있는 대상은 세 가지다.
+      parameter   모델 파라미터 (CL, ka, ...)
+      initial     구획의 초기값
+      dose        등록된 투여 중 하나의 용량
+
+    용량을 훑을 때는 그 값이 NCA 의 dose 로도 그대로 들어간다. 선형 모델이면
+    CL 이 용량과 무관하게 일정하게 나오고 포화가 있는 모델이면 용량을 따라
+    움직이는데, 그 차이를 보는 것이 용량 스윕의 목적이다.
     """
     try:
         data = json.loads(request.body)
@@ -97,8 +106,8 @@ def sweep(request):
 
         target = spec.get("target")
         values = spec.get("values") or []
-        if not target:
-            return JsonResponse({"status": "error", "message": "No parameter chosen to sweep."}, status=400)
+        if target is None or target == "":
+            return JsonResponse({"status": "error", "message": "Nothing chosen to sweep."}, status=400)
         if not values:
             return JsonResponse({"status": "error", "message": "No values to sweep over."}, status=400)
         if len(values) > 40:
@@ -112,19 +121,62 @@ def sweep(request):
         if not parsed.get("compartments") or not parsed.get("equations"):
             return JsonResponse({"status": "error", "message": "Failed to parse the ODE system."}, status=400)
 
-        if target not in parsed.get("parameters", []):
-            return JsonResponse(
-                {"status": "error", "message": f"'{target}' is not a parameter of this model."}, status=400)
-
-        rhs = _rhs_callable(parsed)
-        derived = parsed.get("derived_expressions", {})
-
         base_params = dict(data.get("parameters", {}))
-        init_values = data.get("initials", {})
-        doses = data.get("doses", [])
+        base_initials = dict(data.get("initials", {}))
+        base_doses = list(data.get("doses", []))
         t_start = float(data.get("t_start", 0))
         t_end = float(data.get("t_end", 48))
         t_steps = int(data.get("t_steps", 200))
+
+        # 대상마다 다른 것은 두 가지뿐이다 — 기준값이 무엇인가, 값 하나를
+        # 어디에 꽂아 넣는가. 그 둘만 정하고 나면 아래 루프는 똑같다.
+        kind = spec.get("kind") or "parameter"
+
+        if kind == "parameter":
+            if target not in parsed.get("parameters", []):
+                return JsonResponse(
+                    {"status": "error", "message": f"'{target}' is not a parameter of this model."}, status=400)
+            label = str(target)
+            baseline = base_params.get(target)
+
+            def apply(value):
+                params = dict(base_params)
+                params[target] = value
+                return base_initials, params, base_doses
+
+        elif kind == "initial":
+            if target not in parsed.get("compartments", []):
+                return JsonResponse(
+                    {"status": "error", "message": f"'{target}' is not a compartment of this model."}, status=400)
+            label = f"{target}(0)"
+            baseline = base_initials.get(target)
+
+            def apply(value):
+                initials = dict(base_initials)
+                initials[target] = value
+                return initials, base_params, base_doses
+
+        elif kind == "dose":
+            try:
+                index = int(target)
+            except (TypeError, ValueError):
+                index = -1
+            if not 0 <= index < len(base_doses):
+                return JsonResponse(
+                    {"status": "error", "message": "That dose is no longer registered."}, status=400)
+            label = f"{base_doses[index].get('compartment', 'dose')} dose"
+            baseline = base_doses[index].get("amount")
+
+            def apply(value):
+                doses = [dict(d) for d in base_doses]
+                doses[index]["amount"] = value
+                return base_initials, base_params, doses
+
+        else:
+            return JsonResponse({"status": "error", "message": f"Cannot sweep '{kind}'."}, status=400)
+
+        rhs = _rhs_callable(parsed)
+        derived = parsed.get("derived_expressions", {})
 
         # 그릴 변수 하나만 돌려준다. 스윕은 값마다 곡선이 하나씩 늘어나므로
         # 변수까지 여러 개면 화면에서도 응답 크기에서도 감당이 안 된다.
@@ -133,13 +185,12 @@ def sweep(request):
         if variable not in plottable:
             variable = plottable[0] if plottable else None
 
-        baseline = base_params.get(target)
         runs = []
-        for value in values:
-            params = dict(base_params)
-            params[target] = float(value)
+        for raw in values:
+            value = float(raw)
+            initials, params, doses = apply(value)
 
-            df = _solve_profile(parsed, rhs, init_values, params,
+            df = _solve_profile(parsed, rhs, initials, params,
                                 t_start, t_end, t_steps, doses)
             if variable not in df.columns:
                 continue
@@ -150,8 +201,8 @@ def sweep(request):
                 derived_expressions=derived,
             )
             runs.append({
-                "value": float(value),
-                "label": f"{target} = {float(value):g}",
+                "value": value,
+                "label": f"{label} = {value:g}",
                 "profile": {
                     "Time": df["Time"].tolist(),
                     variable: df[variable].tolist(),
@@ -159,16 +210,25 @@ def sweep(request):
                 "pk": pk.get(variable, {}),
             })
 
-        # 기준값과 가장 가까운 지점을 굵게 그리기 위해 알려 준다.
+        # 기준값에 해당하는 지점을 굵게 그리기 위해 알려 준다. 가장 가까운
+        # 점이 아니라 실제로 같은 점이어야 한다 — 5~40 을 훑는데 현재값이
+        # 0 이면 50 짜리 곡선을 "여기서 출발했다"고 표시해서는 안 된다.
         baseline_index = None
         if baseline is not None and runs:
-            baseline_index = min(range(len(runs)),
-                                 key=lambda i: abs(runs[i]["value"] - float(baseline)))
+            try:
+                base = float(baseline)
+            except (TypeError, ValueError):
+                base = None
+            if base is not None:
+                near = min(range(len(runs)), key=lambda i: abs(runs[i]["value"] - base))
+                if abs(runs[near]["value"] - base) <= 1e-4 * max(abs(base), 1e-12):
+                    baseline_index = near
 
         return JsonResponse({
             "status": "ok",
             "data": {
-                "target": target,
+                "kind": kind,
+                "target": label,
                 "variable": variable,
                 "baseline": baseline,
                 "baseline_index": baseline_index,

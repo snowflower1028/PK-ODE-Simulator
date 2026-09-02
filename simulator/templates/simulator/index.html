@@ -402,10 +402,11 @@
 
         <div class="modal-body fit-settings-body">
           <section class="fit-section">
-            <h6 class="fit-section-title"><i class="bi bi-ui-radios"></i> Parameter</h6>
+            <h6 class="fit-section-title"><i class="bi bi-ui-radios"></i> Sweep</h6>
             <p class="fit-section-desc">
-              One parameter at a time. Sweeping two at once multiplies the runs and
-              buries the curves &mdash; to compare several, use the summary metrics instead.
+              A parameter, a compartment's starting amount, or a registered dose.
+              One at a time &mdash; sweeping two at once multiplies the runs and
+              buries the curves.
             </p>
             <div class="sens-row">
               <select id="sens-param" class="form-select form-select-sm"></select>
@@ -414,22 +415,33 @@
           </section>
 
           <section class="fit-section">
-            <h6 class="fit-section-title"><i class="bi bi-arrows-expand"></i> Range</h6>
-            <p class="fit-section-desc">
-              Multiples of the current value, spaced evenly on a log scale so the
-              baseline sits in the middle. PK parameters span very different
-              magnitudes, and a multiple means the same thing for all of them.
-            </p>
-            <div class="sens-row">
+            <h6 class="fit-section-title"><i class="bi bi-arrows-expand"></i> Values</h6>
+            <div class="btn-group btn-group-sm seg-toggle" role="group" aria-label="How to specify the values">
+              <input type="radio" class="btn-check" name="sensMode" id="sens-mode-multiple" value="multiple" checked>
+              <label class="btn" for="sens-mode-multiple">&times; Multiples</label>
+              <input type="radio" class="btn-check" name="sensMode" id="sens-mode-range" value="range">
+              <label class="btn" for="sens-mode-range">Range</label>
+              <input type="radio" class="btn-check" name="sensMode" id="sens-mode-list" value="list">
+              <label class="btn" for="sens-mode-list">List</label>
+            </div>
+            <p class="fit-section-desc" id="sens-mode-desc"></p>
+
+            <div class="sens-row" data-sens-mode="multiple range">
               <label for="sens-from" class="sens-label">From</label>
-              <span class="sens-times">&times;</span>
-              <input id="sens-from" type="number" class="form-control form-control-sm" value="0.5" step="any" min="0.01">
+              <span class="sens-times" data-sens-mode="multiple">&times;</span>
+              <input id="sens-from" type="number" class="form-control form-control-sm" value="0.5" step="any">
               <label for="sens-to" class="sens-label">To</label>
-              <span class="sens-times">&times;</span>
-              <input id="sens-to" type="number" class="form-control form-control-sm" value="2" step="any" min="0.01">
+              <span class="sens-times" data-sens-mode="multiple">&times;</span>
+              <input id="sens-to" type="number" class="form-control form-control-sm" value="2" step="any">
               <label for="sens-points" class="sens-label">Points</label>
               <input id="sens-points" type="number" class="form-control form-control-sm" value="7" min="2" max="40" step="1">
             </div>
+            <div data-sens-mode="list">
+              <label for="sens-list" class="sens-label d-block mb-1">Values</label>
+              <textarea id="sens-list" class="form-control form-control-sm sens-list" rows="2"
+                        placeholder="5  10  20  40"></textarea>
+            </div>
+
             <p class="sens-preview" id="sens-preview"></p>
           </section>
 
