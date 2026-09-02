@@ -344,6 +344,9 @@ def _tornado(ctx, spec):
             "mode": "tornado",
             "variable": ctx["variable"],
             "delta": delta,
+            # Tmax 는 출력 격자 위에서 읽히므로 분해능이 격자 간격을 넘지
+            # 못한다. 흔들린 폭이 이보다 작으면 순위가 아니라 반올림이다.
+            "time_step": (ctx["t_end"] - ctx["t_start"]) / max(ctx["t_steps"] - 1, 1),
             "metrics": list(TORNADO_METRICS),
             "baseline": baseline,
             "items": items,

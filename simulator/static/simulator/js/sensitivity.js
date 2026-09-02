@@ -38,7 +38,13 @@
     caption: document.getElementById("sensitivity-caption"),
     plot: document.getElementById("sensitivity-plot"),
     table: document.getElementById("sensitivity-table"),
+    note: document.getElementById("sensitivity-note"),
   };
+
+  function setNote(text) {
+    els.note.textContent = text || "";
+    els.note.hidden = !text;
+  }
 
   const MODE_TEXT = {
     multiple:
@@ -447,16 +453,13 @@
     return `hsl(212, 78%, ${lightness}%)`;
   }
 
+  let lastResult = null;
+
   function render(data) {
-    if (data.mode === "tornado") {
-      lastTornado = data;
-      renderTornado(data);
-      els.card.style.display = "block";
-      els.card.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      return;
-    }
-    lastTornado = null;
-    renderScan(data);
+    lastResult = data;
+    lastTornado = data.mode === "tornado" ? data : null;
+    if (data.mode === "tornado") renderTornado(data);
+    else renderScan(data);
     els.card.style.display = "block";
     els.card.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
@@ -470,6 +473,7 @@
 
     // 토네이도가 항목 수에 맞춰 늘려 둔 높이를 CSS 기본값으로 되돌린다.
     els.plot.style.height = "";
+    setNote("");
 
     const traces = runs.map((run, i) => {
       const isBase = i === data.baseline_index;
@@ -567,6 +571,7 @@
 
     if (!items.length) {
       els.caption.textContent = `Tornado · ${label} could not be computed for ${data.variable}`;
+      setNote("");
       Plotly.purge(els.plot);
       els.table.innerHTML = "";
       return;
@@ -648,5 +653,152 @@
       `Tornado · ±${pct}% · ranked by ${label}` +
       (base === null || base === undefined ? "" : ` (baseline ${fmt(base)})`) +
       ` · on ${data.variable}`;
+
+    setNote(gridWarning(data, metric, items));
   }
+
+  /** Tmax 는 곡선의 최고점을 출력 격자 위에서 읽은 값이라 격자 간격보다
+   *  가늘게는 움직이지 못한다. 흔들린 폭이 그 정도면 순위가 아니라 반올림을
+   *  보고 있는 것이므로 그렇다고 말해 준다. */
+  function gridWarning(data, metric, items) {
+    if (metric !== "t_max" || !data.time_step) return "";
+    const widest = items.reduce((best, r) => {
+      const lo = (r.it.low || {}).t_max;
+      const hi = (r.it.high || {}).t_max;
+      return Number.isFinite(lo) && Number.isFinite(hi)
+        ? Math.max(best, Math.abs(hi - lo)) : best;
+    }, 0);
+    if (widest >= 3 * data.time_step) return "";
+    const steps = widest / data.time_step;
+    return "Tmax can only land on the output grid, which here is spaced " +
+      fmt(data.time_step, 3) + " apart, and the widest nudge moved it " +
+      fmt(widest, 3) + " — about " + steps.toFixed(1) + " grid " +
+      (steps < 1.5 ? "step" : "steps") + ". These bars are mostly rounding. " +
+      "Raise the number of simulation points, or nudge harder, before " +
+      "reading anything into the Tmax ranking.";
+  }
+
+  /* ---------------------------------------------------------- */
+  /* 내보내기 — File > Export > Sensitivity Results               */
+  /* ---------------------------------------------------------- */
+  /* 화면의 표에는 대표 지표만 싣지만 CSV 에는 계산된 것을 전부 넣는다.
+     스프레드시트로 가져가는 이유가 대개 더 파고들기 위해서다. */
+  function scanCsvRows(data) {
+    return (data.runs || []).map((run, i) => {
+      const pk = run.pk || {};
+      return {
+        swept: data.target,
+        value: run.value,
+        baseline: i === data.baseline_index ? "yes" : "",
+        variable: data.variable,
+        Cmax: pk.c_max,
+        Tmax: pk.t_max,
+        Clast: pk.c_last,
+        Tlast: pk.t_last,
+        lambda_z: pk.lambda_z,
+        "Half-life": pk.half_life,
+        "AUC_0-last": pk.auc_last,
+        "AUC_0-inf": pk.auc_inf_obs,
+        AUC_extrap_pct: pk.auc_extrap_pct,
+        "AUMC_0-last": pk.aumc_last,
+        "AUMC_0-inf": pk.aumc_inf,
+        CL: pk.cl,
+        Vz: pk.vz,
+        MRT: pk.mrt,
+        Vss: pk.vss,
+      };
+    });
+  }
+
+  /* 토네이도는 지표마다 순위가 달라진다. 화면에서 고른 하나만 내보내면
+     나머지를 보려고 다시 돌려야 하므로, 파라미터 × 지표를 전부 편다. */
+  function tornadoCsvRows(data) {
+    const rows = [];
+    (data.items || []).forEach((it) => {
+      (data.metrics || []).forEach((m) => {
+        const swing = (it.swing || {})[m];
+        rows.push({
+          parameter: it.label,
+          metric: METRIC_LABEL[m] || m,
+          variable: data.variable,
+          delta_pct: Math.round(data.delta * 1000) / 10,
+          parameter_baseline: it.base,
+          parameter_low: it.low_value,
+          parameter_high: it.high_value,
+          metric_baseline: (data.baseline || {})[m],
+          metric_low: (it.low || {})[m],
+          metric_high: (it.high || {})[m],
+          pct_change_low: swing ? swing[0] : null,
+          pct_change_high: swing ? swing[1] : null,
+          S: (it.sensitivity || {})[m],
+        });
+      });
+    });
+    return rows;
+  }
+
+  const exportBtn = document.getElementById("export-sensitivity-btn");
+  if (exportBtn) {
+    exportBtn.addEventListener("click", () => {
+      if (!lastResult) {
+        window.alert("Run a sensitivity analysis first — there is nothing to export yet.");
+        return;
+      }
+      if (typeof exportSummaryToCsv !== "function") return;
+      const tornado = lastResult.mode === "tornado";
+      exportSummaryToCsv(
+        tornado ? tornadoCsvRows(lastResult) : scanCsvRows(lastResult),
+        tornado ? "sensitivity_tornado.csv" : "sensitivity_scan.csv"
+      );
+    });
+  }
+
+  /* ---------------------------------------------------------- */
+  /* 설정 기억하기                                                */
+  /* ---------------------------------------------------------- */
+  /* 세션 파일에는 넣지 않는다. 세션은 모델을 담는 것이고, 여기 있는 것은
+     "지난번에 어떻게 보고 있었나" 에 가깝다. 사이드바 접힘 상태와 같은
+     자리(localStorage)에 둔다. 대상과 절대 범위는 모델에 매인 값이라
+     빼고, 어디서든 뜻이 통하는 것만 기억한다. */
+  const STORE_KEY = "pkSimulator.sensitivity";
+
+  function saveSettings() {
+    try {
+      window.localStorage.setItem(STORE_KEY, JSON.stringify({
+        view: currentView(),
+        mode: currentMode(),
+        multiple: { from: +els.from.value, to: +els.to.value },
+        points: +els.points.value,
+        delta: +els.delta.value,
+        metric: els.metric.value,
+      }));
+    } catch (e) { /* 사생활 보호 모드 등에서 막힐 수 있다 */ }
+  }
+
+  function loadSettings() {
+    let saved;
+    try {
+      saved = JSON.parse(window.localStorage.getItem(STORE_KEY) || "null");
+    } catch (e) {
+      saved = null;
+    }
+    if (!saved) return;
+
+    if (saved.multiple && saved.multiple.from > 0 && saved.multiple.to > 0) {
+      remembered.multiple = { from: saved.multiple.from, to: saved.multiple.to };
+    }
+    if (saved.points >= 2 && saved.points <= 40) els.points.value = saved.points;
+    if (saved.delta > 0 && saved.delta < 100) els.delta.value = saved.delta;
+    if (saved.metric && els.metric.querySelector(`[value="${saved.metric}"]`)) {
+      els.metric.value = saved.metric;
+    }
+    const view = modalEl.querySelector(`input[name="sensView"][value="${saved.view}"]`);
+    if (view) view.checked = true;
+    const mode = modalEl.querySelector(`input[name="sensMode"][value="${saved.mode}"]`);
+    if (mode) mode.checked = true;
+  }
+
+  loadSettings();
+  modalEl.addEventListener("hide.bs.modal", saveSettings);
+  els.run.addEventListener("click", saveSettings);
 })();

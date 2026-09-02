@@ -42,6 +42,7 @@
           <li><button type="button" id="export-summary-btn" class="dropdown-item"><i class="bi bi-table"></i> PK Summary Table <span class="app-menu-hint">.csv</span></button></li>
           <li><button type="button" id="export-plot-btn" class="dropdown-item"><i class="bi bi-image"></i> Plot Image <span class="app-menu-hint">.png</span></button></li>
           <li><button type="button" id="export-values-btn" class="dropdown-item"><i class="bi bi-123"></i> Values <span class="app-menu-hint">.csv</span></button></li>
+          <li><button type="button" id="export-sensitivity-btn" class="dropdown-item"><i class="bi bi-sliders2"></i> Sensitivity Results <span class="app-menu-hint">.csv</span></button></li>
         </ul>
       </div>
 
@@ -94,6 +95,7 @@
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#helpModal" data-help-tab="#help-quickstart"><i class="bi bi-compass"></i> Quick Start <kbd class="app-menu-kbd">Ctrl /</kbd></button></li>
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#helpModal" data-help-tab="#help-syntax"><i class="bi bi-braces"></i> ODE Syntax Reference</button></li>
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#helpModal" data-help-tab="#help-csv"><i class="bi bi-filetype-csv"></i> Observed CSV Format</button></li>
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#helpModal" data-help-tab="#help-sensitivity"><i class="bi bi-sliders2"></i> Sensitivity Analysis</button></li>
           <li><hr class="dropdown-divider"></li>
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#aboutModal"><i class="bi bi-info-circle"></i> About PK ODE Simulator</button></li>
         </ul>
@@ -339,6 +341,7 @@
         <span class="sens-caption" id="sensitivity-caption"></span>
       </div>
       <div class="card-body">
+        <p class="sens-note" id="sensitivity-note" hidden></p>
         <div id="sensitivity-plot"></div>
         <div id="sensitivity-table"></div>
       </div>
@@ -669,6 +672,9 @@
             <li class="nav-item" role="presentation">
               <button class="nav-link" data-bs-toggle="pill" data-bs-target="#help-csv" type="button" role="tab">Observed CSV</button>
             </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" data-bs-toggle="pill" data-bs-target="#help-sensitivity" type="button" role="tab">Sensitivity</button>
+            </li>
           </ul>
 
           <div class="tab-content help-content">
@@ -790,6 +796,66 @@ C     = A1/V</pre>
                 <li>A row with a non-numeric <code>Time</code> is skipped.</li>
                 <li>Any other non-numeric or empty cell is treated as a missing point, not as zero.</li>
               </ul>
+            </div>
+
+            <div class="tab-pane fade" id="help-sensitivity" role="tabpanel">
+              <p>
+                <em>Sensitivity Analysis</em>, above the Simulation Result area, re-solves the model many
+                times and shows what changed. It never touches the values in the sidebar &mdash; your model
+                is exactly as you left it when the sweep finishes.
+              </p>
+
+              <h6 class="help-h">Scan one value</h6>
+              <p>
+                Answers <em>what does this one thing do to the curve</em>. Pick a parameter, a compartment's
+                starting amount, or a registered dose, and the profile is drawn once per value with the
+                current setting in black.
+              </p>
+              <ul class="help-list">
+                <li>
+                  <strong>&times; Multiples</strong> &mdash; multiples of the current value, spaced on a log
+                  scale so the current value lands in the middle. The natural default: it means the same
+                  thing whether the parameter is 0.4 or 400.
+                </li>
+                <li>
+                  <strong>Range</strong> &mdash; absolute values, evenly spaced. Use it when the ends mean
+                  something in themselves, such as doses you can actually give.
+                </li>
+                <li>
+                  <strong>List</strong> &mdash; exactly the values you type or paste, separated by spaces,
+                  commas or new lines.
+                </li>
+              </ul>
+              <p>
+                In every mode the values that will run are printed before you commit to them. If the current
+                setting falls inside the range it is added as its own run, so you can always see where you
+                started.
+              </p>
+
+              <h6 class="help-h">Tornado</h6>
+              <p>
+                Answers the other question &mdash; <em>which parameter matters</em>. Every non-zero parameter
+                is nudged up and down by the same fraction, one at a time, and the bars show how far the
+                chosen metric moved. Beside each bar is the normalised sensitivity
+              </p>
+              <pre class="help-code">S = (ΔY / Y) ÷ (Δθ / θ)</pre>
+              <p>
+                which is dimensionless, so parameters measured in different units and on different scales can
+                be compared directly. <code>S = 1</code> means a 1&nbsp;% change in the parameter produces a
+                1&nbsp;% change in the metric; a negative <em>S</em> means they move in opposite directions.
+                Changing <em>Rank by</em> after a run re-sorts the result without re-solving anything.
+              </p>
+              <p>
+                Parameters currently set to zero are skipped &mdash; a fraction of zero is still zero.
+              </p>
+
+              <h6 class="help-h">What the metrics are</h6>
+              <p>
+                The same ones as the PK Profile Summary, computed on whichever variable you chose under
+                <em>Show</em>: C<sub>max</sub>, T<sub>max</sub>, AUC and half-life. Hover the info marks in
+                the summary table for each definition. Both kinds of result can be saved from
+                <em>File &rarr; Export &rarr; Sensitivity Results</em>.
+              </p>
             </div>
 
           </div>

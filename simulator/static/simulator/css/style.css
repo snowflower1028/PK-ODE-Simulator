@@ -1974,3 +1974,16 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 .sens-view-toggle {
     margin-bottom: 1rem;
 }
+
+/* 결과를 그대로 믿으면 안 되는 경우를 결과 바로 위에서 말해 준다. */
+.sens-note {
+    margin: 0 0 0.9rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: 7px;
+    border: 1px solid rgba(178, 80, 0, 0.25);
+    background-color: rgba(255, 149, 0, 0.08);
+    color: #8A4000;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+}
+
