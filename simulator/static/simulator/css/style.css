@@ -216,7 +216,7 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 .btn {
     border-radius: 7px; /* Apple 스타일 둥근 모서리 통일 */
     font-weight: 500;
-    padding: var(--control-padding-y-sm-strict) var(--control-padding-x-sm-strict); /* 기본 버튼 패딩도 sm 기준으로 */
+    padding: var(--control-padding-y-sm-strict) 0.7rem; /* 세로는 높이 계산과 엮여 있어 유지, 가로만 넓힘 */
     font-size: var(--control-font-size-sm); /* 기본 버튼 폰트도 sm 기준 */
     line-height: var(--control-line-height);
     letter-spacing: 0;
@@ -226,15 +226,19 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, color 0.15s ease-in-out;
     min-height: var(--control-height-strict); /* 모든 버튼 높이 통일 */
     height: auto;
-    white-space: normal;
+    /* 라벨이 두 줄로 접히면 고정 높이 툴바 밖으로 삐져나온다. */
+    white-space: nowrap;
     display: inline-flex; /* 아이콘 정렬 위해 */
     align-items: center;    /* 아이콘 정렬 위해 */
     justify-content: center;/* 아이콘 정렬 위해 */
+    /* flex 컨테이너에서는 <i> 와 라벨 사이의 공백 문자가 잘려 나가므로
+       (라벨이 별도 flex 항목이 되고 그 앞 공백은 줄 시작에서 제거된다)
+       간격을 gap 으로 직접 준다. */
+    gap: 0.4em;
 }
 /* 사이드바의 Parse, Show Processed ODEs 버튼은 기존 btn-sm 유지 또는 .btn 스타일 따르도록 */
-.sidebar .d-flex.gap-2 .btn { 
-    /* height: auto; /* 필요시 사이드바 버튼 높이만 다르게 */
-    padding: 0.25rem 0.5rem; /* Bootstrap btn-sm 기본 패딩 */
+.sidebar .d-flex.gap-2 .btn {
+    padding: var(--control-padding-y-sm-strict) 0.6rem;
 }
     /* Add Dose 버튼은 w-100 이므로 높이만 통일 */
 #dose-form .btn.w-100 {
@@ -996,6 +1000,10 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    /* overflow:hidden 이 걸린 상자의 높이는 line-height 로 정해진다.
+       기본 1.2 로는 18px 글자의 디센더(g, y)가 1px 잘렸다. */
+    line-height: 1.45;
+    padding-block: 1px;
 }
 
 /* 작업 순서 배지. 번호는 CSS 카운터로 매기므로 마크업이 순서를 알 필요가 없다.
@@ -1102,9 +1110,12 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     gap: 0.5rem;
 }
 .main-toolbar .simulation-settings-compact .form-control {
-    max-width: 76px;
+    max-width: 84px;
     text-align: right;
     font-variant-numeric: tabular-nums;
+    /* 오른쪽 정렬이라 숫자가 테두리에 바짝 붙는다. 가로 여백을 넓힌다. */
+    padding-left: 0.6rem;
+    padding-right: 0.6rem;
 }
 .toolbar-range-arrow {
     color: var(--apple-text-tertiary);
@@ -1552,4 +1563,71 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     overflow-x: auto;
     white-space: pre;
     color: var(--apple-text-primary);
+}
+
+
+/* ============================================================ */
+/* 19. Toolbar on narrow screens                                */
+/* ============================================================ */
+/* .main-toolbar 는 높이가 48px 로 고정이고 wrap 이 없어서, 폭이 좁아지면
+   Fit Parameters / Run Simulation 라벨이 두 줄이 되면서 버튼(46px)이 바
+   밖으로 삐져나왔다. 버튼은 이제 nowrap 이므로 대신 바를 접히게 한다. */
+@media (max-width: 860px) {
+    .main-toolbar {
+        height: auto;
+        min-height: var(--apple-toolbar-height);
+        flex-wrap: wrap;
+        gap: 0.5rem 0.75rem;
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+    }
+    .main-toolbar .simulation-settings-compact,
+    .main-toolbar .action-buttons {
+        flex-wrap: wrap;
+    }
+    /* 두 줄로 접히면 좌우 정렬이 어색하므로 각 줄을 채우게 둔다 */
+    .main-toolbar .action-buttons {
+        margin-left: auto;
+    }
+}
+
+/* 아주 좁은 화면에서는 실행 버튼이 한 줄을 통째로 쓰는 편이 누르기 쉽다 */
+@media (max-width: 560px) {
+    .main-toolbar .action-buttons {
+        width: 100%;
+        margin-left: 0;
+    }
+    .main-toolbar .action-buttons .btn {
+        flex: 1 1 auto;
+    }
+    .main-toolbar .simulation-settings-compact {
+        width: 100%;
+    }
+}
+
+
+/* ============================================================ */
+/* 20. Readability touch-ups                                    */
+/* ============================================================ */
+/* 플롯 카드 머리의 안내 문구가 컨트롤과 붙어 보이던 것 */
+.plot-card-controls .placeholder-badge-area {
+    padding-left: 0.15rem;
+}
+
+/* 관측 데이터 업로드 버튼: 아이콘과 글씨 사이 간격은 .btn 의 gap 이 맡고,
+   여기서는 버튼 자체에 세로 여백을 조금 더 준다. */
+.obs-upload .btn {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+}
+
+/* 메뉴 항목도 아이콘과 라벨이 붙지 않도록 (.app-menu 는 이미 gap 사용) */
+.app-menu .dropdown-item .bi {
+    margin-right: 0;
+}
+
+/* 카드 제목의 아이콘이 배지와 글씨 사이에서 눌리지 않게.
+   셰브론은 .sidebar-section-chevron 안에 따로 있으므로 제외할 필요가 없다. */
+.sidebar-section-toggle .bi {
+    font-size: 1.05em;
 }
