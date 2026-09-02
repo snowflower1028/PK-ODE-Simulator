@@ -986,18 +986,43 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     flex: 0 0 auto;
 }
 
-.sidebar-chevron {
+/* 셰브론은 제목 버튼 안이 아니라 헤더의 마지막 자식인 별도 트리거다.
+   버튼 안에 두면 헤더에 다른 컨트롤이 있는 카드(Value Settings)에서만
+   셰브론이 그 컨트롤 왼쪽에 끼어, 카드마다 위치가 달라진다.
+   밖으로 빼면 헤더가 무엇을 담고 있든 항상 오른쪽 끝에 붙는다.
+
+   키보드와 스크린리더에는 제목 버튼 하나만 노출한다(tabindex="-1" +
+   aria-hidden). 마우스 사용자를 위한 보조 트리거일 뿐이고, 두 트리거의
+   aria-expanded 는 Bootstrap collapse 가 함께 갱신한다. */
+.sidebar-section-chevron {
     flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: 6px;
+    color: var(--apple-text-tertiary);
+    cursor: pointer;
+}
+.sidebar-section-chevron:hover {
+    background-color: var(--apple-background-secondary);
+    color: var(--apple-text-secondary);
+}
+.sidebar-section-chevron .bi {
     /* <i> 는 기본이 inline 이라 transform 이 먹지 않는다. */
     display: inline-block;
+    margin-right: 0;
     font-size: 0.75rem;
     line-height: 1;
-    color: var(--apple-text-tertiary);
     transition: transform 0.18s ease-in-out;
 }
 /* aria-expanded 를 그대로 읽는다. Bootstrap collapse 가 토글해 주므로
    따로 상태를 들고 있을 필요가 없다. */
-.sidebar-section-toggle[aria-expanded="false"] .sidebar-chevron {
+.sidebar-section-chevron[aria-expanded="false"] .bi {
     transform: rotate(-90deg);
 }
 

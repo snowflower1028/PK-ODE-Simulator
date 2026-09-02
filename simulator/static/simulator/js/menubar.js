@@ -218,8 +218,12 @@
     sectionBodies.forEach((body) => {
       if (!collapsed.includes(body.id)) return;
       body.classList.remove("show");
-      const toggle = document.querySelector('[data-bs-target="#' + body.id + '"]');
-      if (toggle) toggle.setAttribute("aria-expanded", "false");
+      // 한 구역에 트리거가 둘이다(제목 버튼 + 셰브론). querySelector 로 하나만
+      // 잡으면 복원 시 나머지 하나의 aria-expanded 가 true 로 남아 셰브론이
+      // 펼침 방향 그대로 그려진다. 전부 갱신한다.
+      document
+        .querySelectorAll('[data-bs-target="#' + body.id + '"]')
+        .forEach((toggle) => toggle.setAttribute("aria-expanded", "false"));
     });
 
     function persist() {

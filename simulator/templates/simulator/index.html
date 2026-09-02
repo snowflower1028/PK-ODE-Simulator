@@ -109,9 +109,13 @@
                   data-bs-target="#section-model" aria-expanded="true" aria-controls="section-model">
             <i class="bi bi-file-text"></i>
             <span>ODE Systems</span>
-            <i class="bi bi-chevron-down sidebar-chevron" aria-hidden="true"></i>
           </button>
         </h2>
+        <button class="sidebar-section-chevron" type="button" data-bs-toggle="collapse"
+                data-bs-target="#section-model" aria-expanded="true" aria-controls="section-model"
+                tabindex="-1" aria-hidden="true">
+          <i class="bi bi-chevron-down"></i>
+        </button>
       </header>
       <div class="collapse show sidebar-section-body" id="section-model">
         <textarea id="ode-input" class="form-control mb-2" rows="6" placeholder="e.g. dCdt = -kel*C"></textarea>
@@ -132,7 +136,6 @@
                   data-bs-target="#section-values" aria-expanded="true" aria-controls="section-values">
             <i class="bi bi-sliders"></i>
             <span>Value Settings</span>
-            <i class="bi bi-chevron-down sidebar-chevron" aria-hidden="true"></i>
           </button>
         </h2>
         <div class="btn-group btn-group-sm symbol-order-toggle" role="group" aria-label="Symbol display order">
@@ -141,6 +144,11 @@
           <input type="radio" class="btn-check" name="symbolOrder" id="symbol-order-alpha" value="alpha">
           <label class="btn" for="symbol-order-alpha" title="Show symbols in alphabetical order">A–Z</label>
         </div>
+        <button class="sidebar-section-chevron" type="button" data-bs-toggle="collapse"
+                data-bs-target="#section-values" aria-expanded="true" aria-controls="section-values"
+                tabindex="-1" aria-hidden="true">
+          <i class="bi bi-chevron-down"></i>
+        </button>
       </header>
       <div class="collapse show sidebar-section-body" id="section-values">
       <div class="value-settings-columns">
@@ -173,10 +181,14 @@
                   data-bs-target="#section-dosing" aria-expanded="true" aria-controls="section-dosing">
             <i class="bi bi-eyedropper"></i>
             <span>Dosing</span>
-            <i class="bi bi-chevron-down sidebar-chevron" aria-hidden="true"></i>
           </button>
         </h2>
         <span class="sidebar-section-badge" id="dose-count-badge" hidden></span>
+        <button class="sidebar-section-chevron" type="button" data-bs-toggle="collapse"
+                data-bs-target="#section-dosing" aria-expanded="true" aria-controls="section-dosing"
+                tabindex="-1" aria-hidden="true">
+          <i class="bi bi-chevron-down"></i>
+        </button>
       </header>
       <div class="collapse show sidebar-section-body" id="section-dosing">
       <form id="dose-form">
