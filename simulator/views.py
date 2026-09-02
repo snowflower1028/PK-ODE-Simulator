@@ -3,10 +3,13 @@ from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render
 from django.core.cache import cache
+from django.conf import settings
+from django.contrib.staticfiles import finders
 import numpy as np
 import pandas as pd
 import json
 import hashlib
+import os
 import traceback
 
 # Sympy lambdify를 view에서 직접 사용하기 위해 임포트
@@ -173,6 +176,38 @@ def fit(request):
         traceback.print_exc()
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
+# 개발 중에만 쓰는 정적 파일 버전 문자열.
+_ASSET_FILES = (
+    "simulator/css/style.css",
+    "simulator/js/script.js",
+    "simulator/js/menubar.js",
+)
+
+
+def _asset_version() -> str:
+    """CSS/JS 링크 뒤에 붙일 ?v=... 쿼리를 만든다.
+
+    개발 서버는 정적 파일을 원본 그대로 내보내므로 브라우저가 이전 버전을
+    계속 재사용해, 고쳐도 화면에 반영되지 않는 일이 잦다. 파일의 최종 수정
+    시각을 쿼리로 붙여 그 문제를 없앤다.
+
+    운영에서는 whitenoise 의 ManifestStaticFilesStorage 가 파일명 자체에
+    해시를 넣으므로 필요 없다. 그래서 DEBUG 일 때만 붙인다.
+    """
+    if not settings.DEBUG:
+        return ""
+
+    newest = 0.0
+    for rel_path in _ASSET_FILES:
+        found = finders.find(rel_path)
+        if found:
+            try:
+                newest = max(newest, os.path.getmtime(found))
+            except OSError:
+                pass
+    return f"?v={int(newest)}" if newest else ""
+
+
 def index(request):
-    return render(request, "simulator/index.html")
+    return render(request, "simulator/index.html", {"asset_v": _asset_version()})
 
