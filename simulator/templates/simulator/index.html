@@ -40,6 +40,7 @@
           <li><button type="button" id="export-profile-btn" class="dropdown-item"><i class="bi bi-file-earmark-spreadsheet"></i> Simulated Profile <span class="app-menu-hint">.csv</span></button></li>
           <li><button type="button" id="export-summary-btn" class="dropdown-item"><i class="bi bi-table"></i> PK Summary Table <span class="app-menu-hint">.csv</span></button></li>
           <li><button type="button" id="export-plot-btn" class="dropdown-item"><i class="bi bi-image"></i> Plot Image <span class="app-menu-hint">.png</span></button></li>
+          <li><button type="button" id="export-values-btn" class="dropdown-item"><i class="bi bi-123"></i> Values <span class="app-menu-hint">.csv</span></button></li>
         </ul>
       </div>
 
@@ -165,6 +166,7 @@
           </div>
         </div>
       </div>
+      <p id="value-paste-status" class="value-paste-status" role="status" aria-live="polite" hidden></p>
       <div class="derived-variables-section mt-3">
           <h3 class="subsection-title">Derived Variables</h3>
           <div id="derived-values">
@@ -544,6 +546,10 @@
                 <li>
                   <strong>Values</strong> — Fill in the initial value of each compartment and a value for
                   each parameter. Derived variables are computed for you and shown read-only.
+                  For a model with many parameters, copy a two-column block of names and values
+                  from a spreadsheet and paste it into any of these fields &mdash; each row goes to
+                  the field with that name. <em>File &rarr; Export &rarr; Values</em> writes the same
+                  two columns back out as CSV.
                 </li>
                 <li>
                   <strong>Dosing</strong> — Choose the compartment the dose enters, then how it

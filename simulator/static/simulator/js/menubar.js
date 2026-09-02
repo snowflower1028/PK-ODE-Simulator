@@ -251,7 +251,113 @@
   }
 
   /* ---------------------------------------------------------- */
-  /* 7. Help 모달 탭 선택                                         */
+  /* 7. 값 붙여넣기 / 내보내기                                     */
+  /* ---------------------------------------------------------- */
+  /* 파라미터가 열 개를 넘어가면 칸마다 타이핑하는 게 일이다. 그렇다고
+     별도 편집 화면을 두면 화면에 이미 보이는 값을 보려고 창을 하나 더
+     여는 꼴이라, 새 UI 없이 붙여넣기 자체를 알아듣게 한다.
+
+     심볼은 컴파트먼트이거나 파라미터이지 둘 다일 수 없으므로 이름만으로
+     어느 칸에 넣을지 정해진다. 종류 열이 따로 필요 없다. */
+
+  /** 화면의 값 입력칸을 {name, input} 목록으로 모은다. */
+  function valueInputs() {
+    const pick = (sel, prefix) =>
+      Array.prototype.slice.call(document.querySelectorAll(sel)).map((input) => ({
+        name: input.id.slice(prefix.length),
+        input: input,
+      }));
+    return pick('#init-values input[id^="init_"]', "init_").concat(
+      pick('#param-values input[id^="param_"]', "param_")
+    );
+  }
+
+  /** 붙여넣은 텍스트를 [name, value] 행으로 쪼갠다.
+   *  탭·쉼표·연속 공백을 모두 받아 엑셀, CSV, 손으로 적은 표를 함께 지원한다. */
+  function parseValueRows(text) {
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.split(/\t|,|\s{2,}/).map((c) => c.trim()).filter(Boolean))
+      .filter((cells) => cells.length >= 2)
+      .map((cells) => ({ name: cells[0], raw: cells[1] }));
+  }
+
+  const pasteStatus = document.getElementById("value-paste-status");
+  let pasteStatusTimer = null;
+
+  function showPasteStatus(text, kind) {
+    if (!pasteStatus) return;
+    pasteStatus.textContent = text;
+    pasteStatus.className = "value-paste-status" + (kind ? " is-" + kind : "");
+    pasteStatus.hidden = false;
+    clearTimeout(pasteStatusTimer);
+    pasteStatusTimer = setTimeout(() => { pasteStatus.hidden = true; }, 6000);
+  }
+
+  const valuesSection = document.getElementById("section-values");
+
+  if (valuesSection) {
+    valuesSection.addEventListener("paste", (event) => {
+      const text = (event.clipboardData || window.clipboardData).getData("text/plain") || "";
+      // 숫자 하나를 한 칸에 붙여넣는 평범한 경우는 건드리지 않는다.
+      if (!/[\t\n]/.test(text)) return;
+
+      const byName = {};
+      valueInputs().forEach((r) => { byName[r.name] = r.input; });
+
+      const rows = parseValueRows(text);
+      // 표처럼 보여도 아는 이름이 하나도 없으면 기본 동작에 맡긴다.
+      if (!rows.some((r) => byName[r.name] && Number.isFinite(Number(r.raw)))) return;
+
+      event.preventDefault();
+
+      const unknown = [];
+      let applied = 0;
+      rows.forEach((r) => {
+        const value = Number(r.raw);
+        // 헤더 줄("Name  Value")은 값이 숫자가 아니라 조용히 지나간다.
+        if (!Number.isFinite(value)) return;
+        if (!byName[r.name]) { unknown.push(r.name); return; }
+        byName[r.name].value = r.raw;
+        byName[r.name].dispatchEvent(new Event("input", { bubbles: true }));
+        byName[r.name].dispatchEvent(new Event("change", { bubbles: true }));
+        applied += 1;
+      });
+
+      showPasteStatus(
+        "Pasted " + applied + " value" + (applied === 1 ? "" : "s") +
+          (unknown.length ? " — not in model: " + unknown.join(", ") : "."),
+        unknown.length ? "warn" : "ok"
+      );
+    });
+  }
+
+  /* File > Export > Values (.csv) — 이미 있는 내보내기 묶음에 한 줄 얹는다. */
+  const exportValuesBtn = document.getElementById("export-values-btn");
+  if (exportValuesBtn) {
+    exportValuesBtn.addEventListener("click", () => {
+      const rows = valueInputs();
+      if (!rows.length) {
+        window.alert("Parse ODEs first — there are no values to export yet.");
+        return;
+      }
+      const csv = ["Name,Value"]
+        .concat(rows.map((r) => r.name + "," + r.input.value))
+        .join("\n");
+
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "pk_values.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  /* ---------------------------------------------------------- */
+  /* 8. Help 모달 탭 선택                                         */
   /* ---------------------------------------------------------- */
   const helpModal = document.getElementById("helpModal");
   if (helpModal) {

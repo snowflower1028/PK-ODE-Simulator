@@ -1631,3 +1631,50 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 .sidebar-section-toggle .bi {
     font-size: 1.05em;
 }
+
+
+/* ============================================================ */
+/* 21. Value inputs — no steppers                               */
+/* ============================================================ */
+/* 스피너는 예전에 파라미터를 한 칸씩 밀어 보며 민감도를 체감하게 하려고
+   둔 것이다. 지금은 값을 직접 넣는 화면이므로 화살표가 폭만 잡아먹고
+   숫자를 테두리 쪽으로 밀어낸다. type=number 는 유지해 숫자 키패드와
+   검증은 남기고, 화살표만 감춘다. */
+#init-values input[type="number"],
+#param-values input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+#init-values input[type="number"]::-webkit-outer-spin-button,
+#init-values input[type="number"]::-webkit-inner-spin-button,
+#param-values input[type="number"]::-webkit-outer-spin-button,
+#param-values input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+/* 화살표가 차지하던 자리를 값 쪽으로 돌려준다 */
+#init-values input[type="number"],
+#param-values input[type="number"] {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    padding-right: 0.6rem;
+}
+
+
+/* ============================================================ */
+/* 22. Value paste feedback                                     */
+/* ============================================================ */
+/* 붙여넣기는 새 컨트롤 없이 동작하므로, 값이 조용히 바뀌지 않도록
+   결과만 한 줄로 알려 주고 잠시 뒤 사라진다. */
+.value-paste-status {
+    margin: 0.75rem 0 0;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--apple-text-secondary);
+}
+.value-paste-status.is-ok {
+    color: var(--apple-system-blue);
+}
+.value-paste-status.is-warn {
+    color: #B25000;
+}
