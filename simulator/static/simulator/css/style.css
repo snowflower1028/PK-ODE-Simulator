@@ -2089,3 +2089,14 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     color: var(--apple-text-secondary);
 }
 
+/* 피팅 결과 카드. 민감도 카드와 같은 구조 — 설명 · 그림 · 표. */
+#fit-plot {
+    height: 360px;
+    margin-bottom: 0.5rem;
+}
+
+#fit-summary-card .sim-card-header .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+

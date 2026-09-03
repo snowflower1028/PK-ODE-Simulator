@@ -1,4 +1,5 @@
 const State = {
+  lastFitResult: null,   // 'Apply to model' 이 참조한다
   // 1. 투여 관련 상태
   doseList: [],
 
@@ -877,7 +878,11 @@ const UI = {
               <label class="form-check-label mb-0 fw-bold" for="cb_${p_name}" style="cursor: pointer;">
                 ${p_name}
               </label>
-              <div class="text-muted small" style="font-size: 0.75rem;">Current: ${currentValue}</div>
+            </td>
+            <td class="align-middle" style="width: 130px;">
+              <input type="number" step="any" class="form-control form-control-sm modal-param-guess"
+                     data-param-name="${p_name}" value="${currentValue}"
+                     title="Starting point for the optimiser. Changing it here does not touch the model in the sidebar.">
             </td>
             <td class="align-middle">
               <div class="btn-group btn-group-sm" role="group" aria-label="Parameter Scope">
@@ -1103,7 +1108,14 @@ const UI = {
    * 메인 페이지의 파라미터 입력 필드 값을 업데이트합니다.
    * @param {list} params - { 파라미터이름: 값 } 형태의 객체
    */
-  updateInputFields(params) {
+  /**
+   * 적합값을 사이드바 모델로 옮깁니다.
+   *
+   * 예전에는 피팅이 끝나면 이 일이 저절로 일어났습니다. 이제는 카드의
+   * 'Apply to model' 을 눌러야 합니다 — 피팅은 모델을 바꾸지 않고,
+   * 바꾸는 것은 사용자의 선택입니다.
+   */
+  applyFittedParams(params) {
     params.forEach(p => {
       // 백엔드는 "ka (Global)" / "V (Group 2)" 형태의 표시용 이름을 보낸다.
       // 사이드바 입력칸(#param_ka)에 반영할 수 있는 것은 Global 파라미터뿐이므로
@@ -1123,6 +1135,94 @@ const UI = {
    * @param {object} params - 피팅된 파라미터 객체
    * @param {number} cost - 최종 SSR(잔차 제곱합) 값
    */
+  /**
+   * 피팅 결과를 자기 카드에 그립니다 — 설명, 관측점 위에 겹친 적합 곡선, 표.
+   *
+   * 사이드바를 건드리지 않으므로 메인 Profile 플롯은 계속 사이드바의 모델을
+   * 그립니다. 어느 곡선이 무엇인지 헷갈릴 일이 없습니다.
+   */
+  renderFitResult(data) {
+    State.lastFitResult = data;
+    this.renderFitCaption(data);
+    this.renderFitPlot(data.curves || []);
+    this.renderFitSummary(data.params, data.ssr_total);
+  },
+
+  /** 무엇으로 어떻게 적합했고 그 결과를 믿을 만한지 표 위에 밝힙니다. */
+  renderFitCaption(data) {
+    const caption = document.getElementById('fit-caption');
+    const note = document.getElementById('fit-note');
+    const num = (v, d) => (typeof v === 'number' && Number.isFinite(v)) ? v.toPrecision(d || 4) : null;
+
+    const how = data.objective === 'wls'
+      ? `weighted least squares · ${data.weighting === 'none' ? 'no weighting' : data.weighting}`
+      : `maximum likelihood · ${data.error_model} error`;
+
+    const bits = [how, `${data.n_obs} points`, `${data.dof} dof`];
+    const rmse = num(data.rmse);
+    if (rmse) bits.push(`RMSE ${rmse}`);
+    // 가중최소제곱에는 가능도가 없어 AIC/BIC 가 비어 온다. 없는 것을 지어내지 않는다.
+    const aic = num(data.aic, 5);
+    const bic = num(data.bic, 5);
+    if (aic) bits.push(`AIC ${aic}`);
+    if (bic) bits.push(`BIC ${bic}`);
+    if (caption) caption.textContent = bits.join(' · ');
+
+    if (note) {
+      if (data.converged === false) {
+        note.textContent = 'The optimiser stopped without converging' +
+          (data.message ? ` — ${data.message}.` : '.') +
+          ' Treat these values as a starting point, not an answer: widen the bounds, ' +
+          'or start from a guess closer to the data.';
+        note.hidden = false;
+      } else {
+        note.hidden = true;
+      }
+    }
+  },
+
+  /** 관측점과 적합 곡선을 겹쳐 그립니다. 그룹마다 한 색. */
+  renderFitPlot(curves) {
+    const el = document.getElementById('fit-plot');
+    if (!el) return;
+    if (!curves.length) {
+      Plotly.purge(el);
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = '';
+
+    const palette = ['#007AFF', '#FF9500', '#34C759', '#AF52DE', '#FF3B30', '#5AC8FA'];
+    const traces = [];
+    curves.forEach((c, i) => {
+      const color = palette[i % palette.length];
+      const label = curves.length > 1 ? `Group ${c.group} · ${c.variable}` : c.variable;
+      traces.push({
+        x: c.observed_time, y: c.observed, mode: 'markers', type: 'scatter',
+        name: `${label} observed`,
+        marker: { color: color, size: 7, symbol: 'circle-open', line: { width: 2 } },
+      });
+      traces.push({
+        x: c.time, y: c.fitted, mode: 'lines', type: 'scatter',
+        name: `${label} fitted`,
+        line: { color: color, width: 2 },
+      });
+    });
+
+    Plotly.react(el, traces, {
+      xaxis: { title: 'Time', zeroline: false, gridcolor: 'rgba(0,0,0,0.05)' },
+      yaxis: {
+        title: curves.length === 1 ? curves[0].variable : 'Value',
+        type: document.getElementById('log-scale').checked ? 'log' : 'linear',
+        zeroline: false, gridcolor: 'rgba(0,0,0,0.05)', exponentformat: 'power',
+      },
+      legend: { orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'right', x: 1 },
+      margin: { t: 30, r: 20, b: 50, l: 60 },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+    }, { responsive: true });
+  },
+
   renderFitSummary(params, cost) {
     const { fitSummaryCard, fitSummaryContainer } = DOM.results;
     if (!fitSummaryCard || !fitSummaryContainer) return;
@@ -1838,9 +1938,8 @@ const Handlers = {
   },
 
   /**
-   * 'Fetch Guesses & Set Bounds' 버튼 클릭을 처리합니다.
-   * 메인 화면의 파라미터 값을 읽어와 선택된 피팅 파라미터의
-   * 초기값으로 사용하고, 1/10배와 10배를 경계값으로 자동 설정합니다.
+   * 'Suggest Bounds from Initial Guesses' 버튼 클릭을 처리합니다.
+   * 모달의 Initial guess 값을 읽어 1/10배와 10배를 경계값으로 채웁니다.
    */
   handleFetchInitialParamsClick() {
     const { paramSelectionScope, paramBoundsList } = DOM.modals.fittingSettings;
@@ -1853,12 +1952,13 @@ const Handlers = {
 
     checkedParams.forEach(checkbox => {
       const paramName = checkbox.value;
-      
-      // 1. 메인 화면에서 현재 파라미터 값을 가져옵니다.
-      const mainInput = DOM.sidebar.paramValuesContainer.querySelector(`#param_${paramName}`);
-      if (!mainInput) return;
-      
-      const initialValue = parseFloat(mainInput.value);
+
+      // 1. 경계는 이 모달의 Initial guess 를 기준으로 잡는다. 사이드바가
+      //    아니라 실제로 최적화가 출발할 값 주위여야 뜻이 있다.
+      const guessInput = document.querySelector(`.modal-param-guess[data-param-name="${paramName}"]`);
+      if (!guessInput) return;
+
+      const initialValue = parseFloat(guessInput.value);
       if (isNaN(initialValue)) return;
 
       // 2. 모달의 경계값(Bounds) 입력 필드를 찾습니다.
@@ -1951,7 +2051,10 @@ async handleStartFittingClick() {
     const weightingRadio = document.querySelector('input[name="fitWeighting"]:checked');
     const weighting = weightingRadio ? weightingRadio.value : 'none';
 
-    // --- 3. 데이터 수집: 초기값 및 현재 파라미터 값 ---
+    // --- 3. 데이터 수집: 초기값 및 시작 파라미터 값 ---
+    // 적합할 파라미터의 출발점은 모달의 Initial guess 칸에서 읽는다. 그 값은
+    // 모달 안에만 살고 사이드바를 건드리지 않는다 — 피팅은 모델을 바꾸지
+    // 않는다는 원칙. 적합하지 않는 파라미터와 구획 초기값은 모델 그대로다.
     const initials = {};
     const currentParams = {};
     State.compartments.forEach(c => {
@@ -1959,7 +2062,10 @@ async handleStartFittingClick() {
       initials[c] = isNaN(val) ? 0 : val;
     });
     State.parameters.forEach(p => {
-      const val = parseFloat(DOM.sidebar.paramValuesContainer.querySelector(`#param_${p}`).value);
+      const guessInput = document.querySelector(`.modal-param-guess[data-param-name="${p}"]`);
+      const sidebarInput = DOM.sidebar.paramValuesContainer.querySelector(`#param_${p}`);
+      const raw = guessInput && guessInput.value !== '' ? guessInput.value : (sidebarInput ? sidebarInput.value : '');
+      const val = parseFloat(raw);
       currentParams[p] = isNaN(val) ? 0.1 : val;
     });
 
@@ -2063,27 +2169,12 @@ async handleStartFittingClick() {
     if (response.status === "ok") {
       UI.displayFitSuccess(response.data);
       
-      // 결과 요약 테이블 렌더링 (Global/Local 파라미터 모두 포함됨)
-      // response.data.params는 [{name: "V (Group 1)", value: ...}, ...] 형태일 수 있음
-      UI.renderFitSummary(response.data.params, response.data.ssr_total);
+      // 결과는 자기 카드에 그린다. 사이드바를 덮어쓰고 다시 시뮬레이션을
+      // 돌려 적합 곡선을 보여 주던 예전 방식은 없앴다 — 피팅이 모델을
+      // 말없이 바꾸는 셈이었기 때문이다. 적합값을 모델로 옮기고 싶으면
+      // 카드의 'Apply to model' 을 누른다.
+      UI.renderFitResult(response.data);
 
-      // 메인 입력창 업데이트 (Global 파라미터 이름이 정확히 일치하는 경우에만 업데이트)
-      // Local 파라미터는 메인 입력창에 1:1로 매핑되지 않으므로 건너뜀
-      if (response.data.params && Array.isArray(response.data.params)) {
-          // 배열 형태의 params를 {name: value} 객체로 변환 (Global param 업데이트용)
-          const simpleParams = {};
-          response.data.params.forEach(p => {
-              // 이름에 "(Group ...)" 등이 없는 순수 파라미터명인 경우만 추출 시도
-              // 하지만 백엔드에서 이름을 변경해서 보낸다면 이 로직은 수정 필요
-              // 여기서는 단순성을 위해 그대로 둠.
-              simpleParams[p.name] = p.value;
-          });
-          UI.updateInputFields(response.data.params); 
-      }
-
-      // 피팅된 값으로 자동 시뮬레이션 실행 (결과 시각화)
-      this.handleSimulateClick(); 
-      
     } else {
       throw new Error(response.message || "Fitting failed on the server.");
     }
@@ -2214,6 +2305,22 @@ async handleStartFittingClick() {
   /**
    * 피팅 그룹 카드 내의 클릭 이벤트를 처리합니다 (이벤트 위임).
    */
+  /**
+   * 'Apply to model' 버튼. 적합값을 사이드바로 옮기고 그 값으로 다시
+   * 시뮬레이션을 돌려 메인 Profile 이 새 모델을 그리게 합니다.
+   */
+  handleApplyFitClick() {
+    const data = State.lastFitResult;
+    if (!data || !Array.isArray(data.params)) return;
+
+    const globals = data.params.filter(p => p.scope === 'global');
+    if (!globals.length) {
+      return alert("Only global parameters can be applied — a local value belongs to one group, and the sidebar holds one model.");
+    }
+    UI.applyFittedParams(globals);
+    Handlers.handleSimulateClick();
+  },
+
   handleFittingGroupEvents(event) {
     if (event.target.classList.contains('remove-fitting-group-btn')) {
       event.target.closest('.fitting-group-card')?.remove();
@@ -2317,6 +2424,7 @@ const App = {
     DOM.modals.fittingSettings.groupsContainer.addEventListener('change', Handlers.handleFittingGroupChange);
     document.querySelectorAll('input[name="fitObjective"]').forEach(el =>
       el.addEventListener('change', () => UI.applyFitObjective()));
+    document.getElementById('fit-apply-btn')?.addEventListener('click', Handlers.handleApplyFitClick);
     DOM.modals.fittingSettings.startBtn.addEventListener('click', () => Handlers.handleStartFittingClick());
     DOM.modals.fittingSettings.fetchInitialParamsBtn.addEventListener('click', Handlers.handleFetchInitialParamsClick);
 

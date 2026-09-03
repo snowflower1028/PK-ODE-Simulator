@@ -117,6 +117,84 @@ def _predict_pairs(x, fit_keys, fixed_param, equations_callable, all_parameters,
     return pairs
 
 
+def _fitted_curves(x, fit_keys, fixed_param, equations_callable, all_parameters,
+                   comps, initials, fitting_groups, param_scopes, error_model,
+                   derived_expressions, n_points=240):
+    """최적해에서 그룹별 곡선을 촘촘히 뽑는다.
+
+    _predict_pairs 는 관측 시각에서만 풀기 때문에 그릴 곡선이 없다 — 점 열세
+    개를 이으면 곡선이 아니라 꺾은선이다. 최적화가 끝난 뒤 그룹당 한 번만
+    더 적분한다 (수십 밀리초).
+
+    적합값을 사이드바에 써 넣지 않기로 했으므로, 적합된 곡선을 볼 수 있는
+    길은 이것뿐이다.
+    """
+    n_groups = len(fitting_groups)
+    param_map, _, _ = _unpack_x(x, fit_keys, param_scopes, error_model, n_groups)
+
+    def clean(values):
+        return [None if v is None or not np.isfinite(v) else float(v) for v in values]
+
+    curves = []
+    for g_idx, group in enumerate(fitting_groups):
+        current_param_values = fixed_param.copy()
+        for key in fit_keys:
+            current_param_values[key] = param_map[key][g_idx]
+
+        obs_df = pd.DataFrame(group['observed'])
+        if "Time" not in obs_df.columns or obs_df["Time"].empty:
+            continue
+        obs_times = obs_df["Time"].to_numpy(dtype=float)
+
+        dose_times = []
+        for dose_item in (group.get('doses') or []):
+            try:
+                dose_times.append(float(dose_item.get("start_time", 0) or 0))
+            except (TypeError, ValueError):
+                continue
+        t_begin = min([float(obs_times.min())] + dose_times)
+        t_end = float(obs_times.max())
+        if not t_end > t_begin:
+            continue
+
+        t_eval = np.linspace(t_begin, t_end, n_points)
+        try:
+            sim_df = solve_ode_system(
+                equations_callable=equations_callable,
+                compartments=comps,
+                parameters=all_parameters,
+                init_values=initials,
+                param_values=current_param_values,
+                t_span=[t_begin, t_end],
+                t_eval=t_eval,
+                doses=group['doses'],
+            )
+        except Exception:
+            continue
+
+        available_vars = {**sim_df.to_dict(orient='series'), **current_param_values}
+        for new_col, expr_str in derived_expressions.items():
+            try:
+                sim_df[new_col] = pd.eval(expr_str, local_dict=available_vars, engine='python')
+            except Exception:
+                pass
+
+        for data_col, model_var in (group.get('mappings') or {}).items():
+            if data_col not in obs_df.columns or model_var not in sim_df.columns:
+                continue
+            curves.append({
+                "group": g_idx + 1,
+                "variable": model_var,
+                "column": data_col,
+                "time": clean(t_eval),
+                "fitted": clean(sim_df[model_var].to_numpy(dtype=float)),
+                "observed_time": clean(obs_times),
+                "observed": clean(obs_df[data_col].to_numpy(dtype=float)),
+            })
+
+    return curves
+
+
 def _neg_log_likelihood(x, fit_keys, fixed_param, equations_callable, all_parameters,
                         comps, initials, fitting_groups, param_scopes, error_model,
                         derived_expressions):
@@ -449,9 +527,15 @@ def fit(data: dict) -> dict:
             "ci_upper": ci_hi,
         })
 
+    try:
+        curves = _fitted_curves(x_hat, *nll_args)
+    except Exception:
+        curves = []
+
     return {
         "status": "ok",
         "params": params_summary,
+        "curves": curves,
         "ssr_total": ssr_total,
         "rmse": rmse,
         "nll": nll,

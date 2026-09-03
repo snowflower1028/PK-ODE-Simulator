@@ -327,11 +327,21 @@
         </div>
       </div>
 
-      <div class="card" id="fit-summary-card" style="display:none;"> 
-        <div class="card-body">
-          <h5 class="card-title"><i class="bi bi-sliders2-vertical"></i> Fitted Parameters</h5>
-          <div id="fit-summary"></div>
-        </div>
+    </div>
+
+    <div class="card" id="fit-summary-card" style="display:none;">
+      <div class="card-header sim-card-header">
+        <h5 class="card-title mb-0"><i class="bi bi-sliders2-vertical"></i> Fit</h5>
+        <span class="sens-caption" id="fit-caption"></span>
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="fit-apply-btn"
+                title="Copy the fitted values into the model in the sidebar">
+          <i class="bi bi-box-arrow-in-left"></i> Apply to model
+        </button>
+      </div>
+      <div class="card-body">
+        <p class="sens-note" id="fit-note" hidden></p>
+        <div id="fit-plot"></div>
+        <div id="fit-summary"></div>
       </div>
     </div>
 
@@ -515,13 +525,14 @@
         <div class="modal-body fit-settings-body">
           <section id="fit-param-selection-section" class="fit-section">
             <h6 class="fit-section-title"><i class="bi bi-ui-checks"></i> Select Parameters &amp; Scope</h6>
-            <p class="fit-section-desc">Check the parameters you want to estimate. Current values are used as initial guesses. <strong>Global</strong> = one value shared by all groups, <strong>Local</strong> = a separate value per group.</p>
+            <p class="fit-section-desc">Check the parameters you want to estimate. The initial guess starts at whatever the sidebar holds, but editing it here only affects this fit &mdash; fitting never changes your model. <strong>Global</strong> = one value shared by all groups, <strong>Local</strong> = a separate value per group.</p>
             <div class="table-responsive mb-0">
               <table class="table table-sm table-borderless align-middle mb-0">
                 <thead>
                   <tr>
                     <th style="width: 40px;">Fit?</th>
                     <th>Parameter</th>
+                    <th style="width: 130px;">Initial guess</th>
                     <th style="width: 170px;">Scope</th>
                   </tr>
                 </thead>
