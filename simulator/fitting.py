@@ -17,14 +17,18 @@ def _unpack_x(x, fit_keys, param_scopes, error_model, n_groups):
     """
     최적화 변수 벡터 x를 (그룹별 파라미터 맵, sigma_add, sigma_prop)으로 분해한다.
     x 구조: [Model Params..., Error Params...]
-      - global 파라미터는 1개
-      - local 파라미터는 그룹 수만큼
+      - shared 파라미터는 1개 (모든 그룹이 같은 값을 쓴다)
+      - per_group 파라미터는 그룹 수만큼
+
+    "shared / per_group" 이라고 부른다. 최적화에서 global/local 은 전역해를
+    찾느냐 근처 극값에 머무느냐를 뜻하므로, 값을 그룹끼리 공유하느냐와는
+    다른 이야기다.
     """
     param_map = {}
     cursor = 0
     for key in fit_keys:
-        scope = param_scopes.get(key, 'global')
-        if scope == 'global':
+        scope = param_scopes.get(key, 'shared')
+        if scope == 'shared':
             param_map[key] = [x[cursor]] * n_groups
             cursor += 1
         else:
@@ -394,6 +398,13 @@ def fit(data: dict) -> dict:
     if objective not in ("mle", "wls"):
         return {"status": "error", "message": f"Unknown objective '{objective}'."}
 
+    # 모르는 scope 를 그냥 두면 else 가지로 떨어져 말없이 그룹별 추정이 된다.
+    # 파라미터 개수가 통째로 달라지는 일이라 조용히 넘어가서는 안 된다.
+    unknown = sorted({v for v in param_scopes.values()} - {"shared", "per_group"})
+    if unknown:
+        return {"status": "error",
+                "message": f"Unknown parameter scope {unknown[0]!r} — expected 'shared' or 'per_group'."}
+
     error_model = data.get("error_model", "constant") if objective == "mle" else None
     weighting = data.get("weighting", "none") if objective == "wls" else None
     if objective == "mle" and error_model not in ("constant", "proportional", "combined"):
@@ -426,16 +437,16 @@ def fit(data: dict) -> dict:
         except (KeyError, TypeError, ValueError):
             return {"status": "error", "message": f"Missing or invalid initial value for parameter '{key}'."}
 
-        scope = param_scopes.get(key, 'global')
+        scope = param_scopes.get(key, 'shared')
         user_bounds = data.get("bounds", {}).get(key) or [None, None]
         lb = _to_float(user_bounds[0] if len(user_bounds) > 0 else None, -np.inf)
         ub = _to_float(user_bounds[1] if len(user_bounds) > 1 else None, np.inf)
 
-        if scope == 'global':
-            x0.append(val); bounds.append((lb, ub)); labels.append((key, 'global', None))
+        if scope == 'shared':
+            x0.append(val); bounds.append((lb, ub)); labels.append((key, 'shared', None))
         else:
             for g_i in range(n_groups):
-                x0.append(val); bounds.append((lb, ub)); labels.append((key, 'local', g_i))
+                x0.append(val); bounds.append((lb, ub)); labels.append((key, 'per_group', g_i))
 
     if error_model == 'constant':
         x0.append(0.1); bounds.append((1e-6, np.inf)); labels.append(("Sigma (Additive)", 'error', None))
@@ -504,9 +515,9 @@ def fit(data: dict) -> dict:
     # --- 7. 결과 정리 ---
     params_summary = []
     for i, (base_name, scope, g_idx) in enumerate(labels):
-        if scope == 'global':
-            display = f"{base_name} (Global)"
-        elif scope == 'local':
+        if scope == 'shared':
+            display = f"{base_name} (Shared)"
+        elif scope == 'per_group':
             display = f"{base_name} (Group {g_idx + 1})"
         else:
             display = base_name

@@ -886,11 +886,11 @@ const UI = {
             </td>
             <td class="align-middle">
               <div class="btn-group btn-group-sm" role="group" aria-label="Parameter Scope">
-                <input type="radio" class="btn-check param-scope-radio" name="scope_${p_name}" id="scope_${p_name}_g" value="global" checked disabled>
-                <label class="btn btn-outline-secondary" for="scope_${p_name}_g" title="One value shared across all groups">Global</label>
+                <input type="radio" class="btn-check param-scope-radio" name="scope_${p_name}" id="scope_${p_name}_g" value="shared" checked disabled>
+                <label class="btn btn-outline-secondary" for="scope_${p_name}_g" title="One value that every group shares">Shared</label>
 
-                <input type="radio" class="btn-check param-scope-radio" name="scope_${p_name}" id="scope_${p_name}_l" value="local" disabled>
-                <label class="btn btn-outline-secondary" for="scope_${p_name}_l" title="Individual value for each group">Local</label>
+                <input type="radio" class="btn-check param-scope-radio" name="scope_${p_name}" id="scope_${p_name}_l" value="per_group" disabled>
+                <label class="btn btn-outline-secondary" for="scope_${p_name}_l" title="A separate value estimated for each group">Per group</label>
               </div>
             </td>
           </tr>
@@ -1027,6 +1027,7 @@ const UI = {
             <div class="col-md-4">
               <label class="form-label small">Amount</label>
               <input type="number" step="any" class="form-control form-control-sm group-dose-amount" placeholder="e.g., 100" required>
+              <div class="group-dose-hint" hidden></div>
             </div>
             <div class="col-md-4">
               <label class="form-label small">Start Time</label>
@@ -1117,10 +1118,10 @@ const UI = {
    */
   applyFittedParams(params) {
     params.forEach(p => {
-      // 백엔드는 "ka (Global)" / "V (Group 2)" 형태의 표시용 이름을 보낸다.
-      // 사이드바 입력칸(#param_ka)에 반영할 수 있는 것은 Global 파라미터뿐이므로
-      // base_name 을 사용하고, scope 가 local 이거나 error 인 항목은 건너뛴다.
-      if (p.scope && p.scope !== 'global') return;
+      // 백엔드는 "ka (Shared)" / "V (Group 2)" 형태의 표시용 이름을 보낸다.
+      // 사이드바 입력칸(#param_ka)에 반영할 수 있는 것은 공유 파라미터뿐이므로
+      // base_name 을 쓰고, 그룹별 값이나 sigma 는 건너뛴다.
+      if (p.scope && p.scope !== 'shared') return;
       const key = p.base_name || String(p.name).replace(/\s*\(.*\)\s*$/, '');
       if (!key) return;
       const inputEl = DOM.sidebar.paramValuesContainer.querySelector(`#param_${key}`);
@@ -1983,7 +1984,7 @@ const Handlers = {
 
 /**
  * 'Start Fitting' 버튼 클릭을 처리합니다.
- * - 모달에서 설정된 파라미터 Scope(Global/Local), Bounds, Error Model, Fitting Groups 정보를 수집합니다.
+ * - 모달에서 설정된 파라미터 Scope(Shared/Per group), Bounds, Objective, Fitting Groups 정보를 수집합니다.
  * - 유효성을 검사하고 API 서버에 MLE Fitting을 요청합니다.
  * - 결과를 받아 UI에 표시하고 시뮬레이션을 자동 실행합니다.
  */
@@ -2016,14 +2017,14 @@ async handleStartFittingClick() {
       const pName = cb.value;
       selectedFitParams.push(pName);
 
-      // 1-1. Scope 수집 (Global vs Local)
+      // 1-1. Scope 수집 (모든 그룹이 공유하는가, 그룹마다 따로 두는가)
       // 모달에 해당 파라미터에 대한 라디오 버튼(name="scope_{pName}")이 있다고 가정
       const scopeRadio = document.querySelector(`input[name="scope_${pName}"]:checked`);
-      const scope = scopeRadio ? scopeRadio.value : 'global'; // 기본값 global
+      const scope = scopeRadio ? scopeRadio.value : 'shared'; // 기본값 shared
       paramScopes[pName] = scope;
 
       // 1-2. Bounds 수집
-      // Scope가 Local이더라도, 초기 Bounds는 사용자가 입력한 하나의 범위를 공통으로 적용한다고 가정
+      // 그룹마다 따로 추정하더라도, 경계는 사용자가 입력한 하나의 범위를 공통으로 적용한다
       const lowerEl = DOM.modals.fittingSettings.paramBoundsList.querySelector(`.modal-param-lower[data-param-name="${pName}"]`);
       const upperEl = DOM.modals.fittingSettings.paramBoundsList.querySelector(`.modal-param-upper[data-param-name="${pName}"]`);
       
@@ -2313,11 +2314,11 @@ async handleStartFittingClick() {
     const data = State.lastFitResult;
     if (!data || !Array.isArray(data.params)) return;
 
-    const globals = data.params.filter(p => p.scope === 'global');
-    if (!globals.length) {
-      return alert("Only global parameters can be applied — a local value belongs to one group, and the sidebar holds one model.");
+    const shared = data.params.filter(p => p.scope === 'shared');
+    if (!shared.length) {
+      return alert("Only shared parameters can be applied — a per-group value belongs to one group, and the sidebar holds one model.");
     }
-    UI.applyFittedParams(globals);
+    UI.applyFittedParams(shared);
     Handlers.handleSimulateClick();
   },
 
@@ -2335,6 +2336,30 @@ async handleStartFittingClick() {
   handleFittingGroupChange(event) {
     const card = event.target.closest('.fitting-group-card');
     if (!card) return;
+
+    // 관측 데이터에 용량이 적혀 있으면 그대로 가져온다. 같은 숫자를 두 번
+    // 입력하게 두면 두 곳이 어긋나고, 어느 쪽이 맞는지 알 수 없게 된다.
+    // 사용자가 직접 고친 값은 덮어쓰지 않는다.
+    if (event.target.classList.contains('group-obs-select')) {
+      const obs = State.observations[parseInt(event.target.value, 10)];
+      const amount = card.querySelector('.group-dose-amount');
+      const hint = card.querySelector('.group-dose-hint');
+      const untouched = amount.value === '' || amount.dataset.autofilled === '1';
+
+      if (obs && obs.dose != null && obs.dose !== '' && untouched) {
+        amount.value = obs.dose;
+        amount.dataset.autofilled = '1';
+        hint.textContent = `from ${obs.name}`;
+        hint.hidden = false;
+      } else if (amount.dataset.autofilled === '1' && (!obs || obs.dose == null)) {
+        // 용량이 적히지 않은 데이터로 바꾸면, 앞 데이터에서 끌어온 값도 치운다.
+        amount.value = '';
+        delete amount.dataset.autofilled;
+        hint.hidden = true;
+      } else if (amount.dataset.autofilled !== '1') {
+        hint.hidden = true;
+      }
+    }
 
     if (event.target.classList.contains('group-dose-type')) {
       const isInfusion = event.target.value === 'infusion';
@@ -2422,6 +2447,13 @@ const App = {
     DOM.modals.fittingSettings.addGroupBtn.addEventListener('click', Handlers.handleAddFittingGroupClick);
     DOM.modals.fittingSettings.groupsContainer.addEventListener('click', Handlers.handleFittingGroupEvents);
     DOM.modals.fittingSettings.groupsContainer.addEventListener('change', Handlers.handleFittingGroupChange);
+    // 사용자가 용량을 직접 고치면 "데이터에서 가져왔다"는 표시를 뗀다.
+    DOM.modals.fittingSettings.groupsContainer.addEventListener('input', (e) => {
+      if (!e.target.classList.contains('group-dose-amount')) return;
+      delete e.target.dataset.autofilled;
+      const hint = e.target.closest('.fitting-group-card')?.querySelector('.group-dose-hint');
+      if (hint) hint.hidden = true;
+    });
     document.querySelectorAll('input[name="fitObjective"]').forEach(el =>
       el.addEventListener('change', () => UI.applyFitObjective()));
     document.getElementById('fit-apply-btn')?.addEventListener('click', Handlers.handleApplyFitClick);

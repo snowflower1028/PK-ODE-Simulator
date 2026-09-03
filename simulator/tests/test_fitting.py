@@ -41,7 +41,7 @@ def fit_request(**overrides):
         # 참값에서 흔들어 놓고 시작한다. 그냥 두면 이미 정답에서 출발하는 셈이다.
         parameters={"CL": 6, "ka": 0.8, "V": 20},
         fit_params=["CL", "V", "ka"],
-        param_scopes={"CL": "global", "V": "global", "ka": "global"},
+        param_scopes={"CL": "shared", "V": "shared", "ka": "shared"},
         bounds={"CL": [0.6, 60], "V": [2, 200], "ka": [0.08, 8]},
         fitting_groups=[{
             "doses": [{"compartment": "Ag", "type": "bolus",
@@ -54,8 +54,8 @@ def fit_request(**overrides):
     return fit(payload)
 
 
-def globals_of(result):
-    return {p["base_name"]: p["value"] for p in result["params"] if p["scope"] == "global"}
+def shared_of(result):
+    return {p["base_name"]: p["value"] for p in result["params"] if p["scope"] == "shared"}
 
 
 class Weights(unittest.TestCase):
@@ -98,6 +98,16 @@ class ObjectiveValidation(unittest.TestCase):
         r = fit_request(objective="wls", weighting="1/Z")
         self.assertEqual(r["status"], "error")
 
+    def test_unknown_scope_is_refused(self):
+        """모르는 scope 가 else 가지로 떨어지면 말없이 그룹별 추정이 된다.
+
+        추정할 파라미터 개수가 통째로 달라지는 일이라, 예전 이름('global')을
+        보내는 오래된 클라이언트가 조용히 다른 모델을 적합해서는 안 된다.
+        """
+        r = fit_request(param_scopes={"CL": "global", "V": "shared", "ka": "shared"})
+        self.assertEqual(r["status"], "error")
+        self.assertIn("global", r["message"])
+
 
 class WeightedLeastSquares(unittest.TestCase):
     """자료가 비례오차로 만들어졌으므로, 그 구조를 반영하는 가중만 참값을 되찾는다."""
@@ -108,14 +118,14 @@ class WeightedLeastSquares(unittest.TestCase):
         cls.ols = fit_request(objective="wls", weighting="none")
 
     def test_it_recovers_the_true_parameters(self):
-        got = globals_of(self.wls_1y)
+        got = shared_of(self.wls_1y)
         for key, truth in TRUE.items():
             with self.subTest(parameter=key):
                 self.assertLess(abs(got[key] - truth) / truth, 0.10)
 
     def test_the_confidence_intervals_contain_the_truth(self):
         for p in self.wls_1y["params"]:
-            if p["scope"] != "global":
+            if p["scope"] != "shared":
                 continue
             with self.subTest(parameter=p["base_name"]):
                 self.assertIsNotNone(p["ci_lower"])
@@ -139,8 +149,8 @@ class WeightedLeastSquares(unittest.TestCase):
         가중이 실제로 뭔가를 하고 있다는 증거이기도 하다 — 아무 일도 하지
         않는다면 두 결과가 같아야 한다.
         """
-        ols = globals_of(self.ols)
-        weighted = globals_of(self.wls_1y)
+        ols = shared_of(self.ols)
+        weighted = shared_of(self.wls_1y)
         self.assertGreater(abs(ols["CL"] - TRUE["CL"]) / TRUE["CL"], 0.25)
         self.assertLess(abs(weighted["CL"] - TRUE["CL"]) / TRUE["CL"], 0.10)
 
@@ -156,7 +166,7 @@ class MaximumLikelihood(unittest.TestCase):
         cls.prop = fit_request(objective="mle", error_model="proportional")
 
     def test_it_recovers_the_true_parameters(self):
-        got = globals_of(self.prop)
+        got = shared_of(self.prop)
         for key, truth in TRUE.items():
             with self.subTest(parameter=key):
                 self.assertLess(abs(got[key] - truth) / truth, 0.10)
