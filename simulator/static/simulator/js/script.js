@@ -987,10 +987,18 @@ const UI = {
               </select>
             </div>
             
-            <div class="col-md-4">
+            <div class="col-md-6">
               <label class="form-label small">Dose Compartment</label>
               <select class="form-select form-select-sm group-dose-comp">
                 ${compartmentOptions || `<option value="" selected disabled>Parse ODEs first</option>`}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Input</label>
+              <select class="form-select form-select-sm group-dose-type"
+                      title="How the amount enters the selected compartment. This is not a route of administration.">
+                <option value="bolus">Bolus</option>
+                <option value="infusion">Zero-order (Infusion)</option>
               </select>
             </div>
             <div class="col-md-4">
@@ -998,8 +1006,27 @@ const UI = {
               <input type="number" step="any" class="form-control form-control-sm group-dose-amount" placeholder="e.g., 100" required>
             </div>
             <div class="col-md-4">
-              <label class="form-label small">Time</label>
+              <label class="form-label small">Start Time</label>
               <input type="number" step="any" class="form-control form-control-sm group-dose-time" value="0" required>
+            </div>
+            <div class="col-md-4 group-duration-field" style="display:none;">
+              <label class="form-label small">Duration</label>
+              <input type="number" step="any" class="form-control form-control-sm group-dose-duration" placeholder="e.g., 1">
+            </div>
+          </div>
+
+          <div class="form-check form-switch mt-3 mb-0">
+            <input class="form-check-input group-repeat-toggle" type="checkbox" id="group-repeat-${groupId}">
+            <label class="form-check-label small" for="group-repeat-${groupId}">Set up repeat dosing</label>
+          </div>
+          <div class="row g-3 mt-0 group-repeat-fields" style="display:none;">
+            <div class="col-md-6">
+              <label class="form-label small">Repeat every</label>
+              <input type="number" step="any" class="form-control form-control-sm group-dose-repeat-every">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Repeat until</label>
+              <input type="number" step="any" class="form-control form-control-sm group-dose-repeat-until">
             </div>
           </div>
 
@@ -1944,10 +1971,37 @@ async handleStartFittingClick() {
         throw new Error(`Group ${groupId}: Please enter a valid dose time.`);
       }
 
+      // 투여 방식은 사이드바 dose 폼과 같은 규칙으로 읽는다. zero-order 는
+      // duration 이 있어야 속도가 정해지고, 반복은 간격과 종료 시각이
+      // 둘 다 있어야 일정이 성립한다.
+      const type = card.querySelector('.group-dose-type').value;
+      const dose = { compartment: comp, type: type, amount: amount, start_time: time };
+
+      if (type === 'infusion') {
+        const duration = parseFloat(card.querySelector('.group-dose-duration').value);
+        if (isNaN(duration) || duration <= 0) {
+          throw new Error(`Group ${groupId}: A zero-order input needs a duration greater than zero.`);
+        }
+        dose.duration = duration;
+      }
+
+      if (card.querySelector('.group-repeat-toggle').checked) {
+        const every = parseFloat(card.querySelector('.group-dose-repeat-every').value);
+        const until = parseFloat(card.querySelector('.group-dose-repeat-until').value);
+        if (isNaN(every) || every <= 0) {
+          throw new Error(`Group ${groupId}: Repeat dosing needs an interval greater than zero.`);
+        }
+        if (isNaN(until) || until <= time) {
+          throw new Error(`Group ${groupId}: Repeat dosing must end after the first dose at ${time}.`);
+        }
+        dose.repeat_every = every;
+        dose.repeat_until = until;
+      }
+
       const selectedObs = State.observations[parseInt(obsIndexStr, 10)];
 
       fittingGroups.push({
-        doses: [{ compartment: comp, type: 'bolus', amount: amount, start_time: time }],
+        doses: [dose],
         observed: selectedObs.data,
         mappings: selectedObs.mappings // 컬럼 매핑 정보 포함
       });
@@ -2143,6 +2197,33 @@ async handleStartFittingClick() {
       event.target.closest('.fitting-group-card')?.remove();
     }
   },
+
+  /**
+   * 그룹 카드의 입력 변화를 처리합니다 (이벤트 위임).
+   * 사이드바 dose 폼과 같은 규칙 — Duration 은 zero-order 일 때만, 반복
+   * 설정은 토글을 켰을 때만 보인다.
+   */
+  handleFittingGroupChange(event) {
+    const card = event.target.closest('.fitting-group-card');
+    if (!card) return;
+
+    if (event.target.classList.contains('group-dose-type')) {
+      const isInfusion = event.target.value === 'infusion';
+      const field = card.querySelector('.group-duration-field');
+      if (field) field.style.display = isInfusion ? '' : 'none';
+      if (!isInfusion) card.querySelector('.group-dose-duration').value = '';
+    }
+
+    if (event.target.classList.contains('group-repeat-toggle')) {
+      const on = event.target.checked;
+      const fields = card.querySelector('.group-repeat-fields');
+      if (fields) fields.style.display = on ? '' : 'none';
+      if (!on) {
+        card.querySelector('.group-dose-repeat-every').value = '';
+        card.querySelector('.group-dose-repeat-until').value = '';
+      }
+    }
+  },
 };
 
 const App = {
@@ -2211,6 +2292,7 @@ const App = {
     DOM.modals.fittingSettings.paramList.addEventListener('change', Handlers.handleFitParamCheckboxChange);
     DOM.modals.fittingSettings.addGroupBtn.addEventListener('click', Handlers.handleAddFittingGroupClick);
     DOM.modals.fittingSettings.groupsContainer.addEventListener('click', Handlers.handleFittingGroupEvents);
+    DOM.modals.fittingSettings.groupsContainer.addEventListener('change', Handlers.handleFittingGroupChange);
     DOM.modals.fittingSettings.startBtn.addEventListener('click', () => Handlers.handleStartFittingClick());
     DOM.modals.fittingSettings.fetchInitialParamsBtn.addEventListener('click', Handlers.handleFetchInitialParamsClick);
 
