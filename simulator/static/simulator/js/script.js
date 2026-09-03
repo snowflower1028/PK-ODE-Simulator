@@ -238,6 +238,15 @@ const API = {
  * 새로운 파라미터를 추가하려면 이 배열에 객체 하나만 추가하면 됩니다.
  */
 /** 속성값 안에 넣어도 안전하도록 따옴표와 꺾쇠를 이스케이프한다. */
+/** 표 머리글의 ⓘ. 정의·수식·주의를 각각 실어 보낸다 — 하나로 이어 붙이면
+ *  팝업에서 다시 나눌 수 없다. */
+function infoButton(col) {
+  return `<button type="button" class="pk-info" tabindex="0" aria-label="About ${escapeAttr(col.key)}"
+    data-tip-def="${escapeAttr(col.definition || '')}"
+    data-tip-formula="${escapeAttr(col.formula || '')}"
+    data-tip-note="${escapeAttr(col.caveat || '')}">i</button>`;
+}
+
 function escapeAttr(text) {
   return String(text)
     .replace(/&/g, "&amp;")
@@ -246,47 +255,59 @@ function escapeAttr(text) {
     .replace(/>/g, "&gt;");
 }
 
-/* 단회 투여일 때 보여 주는 열. */
+/* 단회 투여일 때 보여 주는 열.
+ *
+ * 설명은 늘 세 부분이다 — 정의, 수식, 주의. 셋째가 가장 값어치 있다:
+ * 정의와 수식은 교과서에도 있지만 "이 앱에서 이 숫자가 언제 거짓말을
+ * 하는가"는 여기서만 말할 수 있다. */
 const PK_TABLE_SINGLE = [
   {
     key: 'c_max', displayName: 'C<sub>max</sub>',
-    definition: 'Highest observed concentration.',
-    formula: 'max(C) — taken as observed, not interpolated',
+    definition: 'The highest concentration in the profile.',
+    formula: 'max(C)',
+    caveat: 'Read as observed, never interpolated, so it is only as good as the sampling. A schedule that misses the true peak reports a lower Cmax, and nothing in this number says that it did.',
   },
   {
     key: 't_max', displayName: 'T<sub>max</sub>',
-    definition: 'Time at which Cmax occurs. Ties resolve to the earlier time.',
+    definition: 'The time at which Cmax occurs. Ties resolve to the earlier time.',
     formula: 't where C = Cmax',
+    caveat: 'For a simulated curve this is picked off the output grid, so it cannot resolve anything finer than the grid spacing. Raise the number of simulation points before reading small differences in Tmax.',
   },
   {
     key: 'half_life', displayName: 't<sub>½</sub>',
-    definition: 'Terminal half-life, from the slope of the terminal log-linear phase. The points used are chosen automatically by best adjusted R² after Tmax.',
+    definition: 'Terminal half-life, from the slope of the terminal log-linear phase. The points are chosen automatically by best adjusted R² after Tmax.',
     formula: 'ln 2 / λz',
+    caveat: 'Only as good as the terminal phase you actually sampled. If the profile stops before the true terminal phase, λz is fitted to a distribution phase instead and the half-life comes out short.',
   },
   {
     key: 'auc_last', displayName: 'AUC<sub>0–last</sub>',
     definition: 'Area under the curve up to the last measurable concentration. Simulated curves are integrated directly; observed data uses linear-up / log-down trapezoids.',
     formula: '∫ C dt from 0 to Tlast',
+    caveat: 'The endpoint is the last sample, not a fixed time. Two datasets whose sampling ends at different times are not comparable on this column.',
   },
   {
     key: 'auc_inf_obs', displayName: 'AUC<sub>0–∞</sub>',
-    definition: 'AUC extrapolated to infinity using the terminal slope and the last observed concentration.',
+    definition: 'AUC carried to infinity using the terminal slope and the last observed concentration.',
     formula: 'AUC(0–last) + Clast / λz',
+    caveat: 'Inherits everything uncertain about λz. Check %Extrap before trusting it — a large extrapolated share means this is mostly a fitted tail, not measured data.',
   },
   {
     key: 'auc_extrap_pct', displayName: '%Extrap',
-    definition: 'Share of AUC(0–∞) that comes from extrapolation. Above 20% the estimate leans heavily on the terminal slope.',
+    definition: 'The share of AUC(0–∞) that comes from extrapolating past the last measurement.',
     formula: '(AUC∞ − AUClast) / AUC∞ × 100',
+    caveat: 'Above roughly 20% the total leans more on the fitted terminal slope than on the data, and should be reported that way rather than as a measurement.',
   },
   {
     key: 'cl', displayName: 'CL',
-    definition: 'Clearance. Reported as CL/F when the dose does not enter the observed compartment directly. Left blank for amounts, since dividing a dose by the AUC of an amount is not a clearance.',
+    definition: 'Clearance — the volume cleared of drug per unit time.',
     formula: 'Dose / AUC(0–∞)',
+    caveat: 'Reported as CL/F when the dose does not enter the observed compartment directly, because bioavailability is unknown. Left blank for amounts, since a dose divided by the AUC of an amount is not a clearance, and blank under repeat dosing, where the single-dose formula does not hold.',
   },
   {
     key: 'vz', displayName: 'V<sub>z</sub>',
-    definition: 'Volume of distribution during the terminal phase. Reported as Vz/F for extravascular dosing.',
+    definition: 'Volume of distribution during the terminal phase.',
     formula: 'Dose / (λz · AUC(0–∞))',
+    caveat: 'Vz/F for extravascular dosing. It multiplies two uncertain quantities — λz and the extrapolated AUC — which makes it the least stable number in this table.',
   },
 ];
 
@@ -300,105 +321,234 @@ const PK_TABLE_SINGLE = [
 const PK_TABLE_STEADY = [
   {
     key: 'ss_c_max', displayName: 'C<sub>max,ss</sub>',
-    definition: 'Highest concentration within the dosing interval.',
+    definition: 'The highest concentration within one dosing interval.',
     formula: 'max(C) over one interval τ',
+    caveat: 'Taken from the interval that begins at the last dose. If steady state has not been reached — the line above this table says so — this is a snapshot of a curve that is still climbing.',
   },
   {
     key: 'ss_t_max', displayName: 'T<sub>max,ss</sub>',
     definition: 'Time of the peak, counted from the dose that starts the interval.',
     formula: 't at Cmax,ss − t at the dose',
+    caveat: 'Like Tmax, this is picked off the output grid and cannot resolve anything finer than the grid spacing.',
   },
   {
     key: 'ss_c_min', displayName: 'C<sub>min,ss</sub>',
-    definition: 'Lowest concentration within the interval. Before steady state it can fall earlier than the end of the interval, which is why it is reported separately from Ctrough.',
+    definition: 'The lowest concentration within the interval.',
     formula: 'min(C) over one interval τ',
+    caveat: 'Before steady state the minimum can fall in the middle of the interval rather than at its end, which is why it is reported separately from Ctrough. At steady state the two agree.',
   },
   {
     key: 'ss_c_trough', displayName: 'C<sub>trough</sub>',
-    definition: 'Concentration immediately before the next dose. At steady state this equals Cmin.',
+    definition: 'The concentration immediately before the next dose.',
     formula: 'C at the end of the interval',
+    caveat: 'Taken as the value approached from inside the interval. The dose instant is genuinely two-valued, so a grid point sitting exactly on it is not used — it may hold either side depending on how the data was produced.',
   },
   {
     key: 'ss_c_avg', displayName: 'C<sub>avg</sub>',
-    definition: 'Average concentration over the interval — the flat line with the same area under it.',
+    definition: 'The average concentration over the interval — the flat line with the same area beneath it.',
     formula: 'AUCτ / τ',
+    caveat: 'An average, not a plateau. It says nothing about how far the concentration swings around it, so read %Fluct alongside.',
   },
   {
     key: 'ss_auc_tau', displayName: 'AUC<sub>τ</sub>',
-    definition: 'Area under the curve across one dosing interval. At steady state this equals the whole AUC(0–∞) of a single dose, which is what makes it the exposure you compare against.',
+    definition: 'Area under the curve across one dosing interval.',
     formula: '∫ C dt across one interval τ',
+    caveat: 'Only equals the whole AUC(0–∞) of a single dose once steady state is reached. Before that it is still rising, and the comparison does not hold.',
   },
   {
     key: 'ss_fluctuation_pct', displayName: '%Fluct',
-    definition: 'How far the concentration swings across the interval, relative to its average. Large values mean deep troughs and high peaks between doses.',
+    definition: 'How far the concentration swings across the interval, relative to its average.',
     formula: '(Cmax,ss − Cmin,ss) / Cavg × 100',
+    caveat: 'Normalised by Cavg, so two regimens with the same absolute swing report different fluctuation when their averages differ. Compare it only between regimens at similar exposure.',
   },
   {
     key: 'ss_accumulation_auc', displayName: 'R<sub>acc</sub>',
-    definition: 'How much exposure builds up by steady state, against the first interval. For an IV bolus this is 1/(1 − e^(−λz·τ)); with absorption it comes out higher, because absorption pushes exposure out of the first interval.',
+    definition: 'How much exposure builds up by steady state, measured against the first interval.',
     formula: 'AUCτ at steady state / AUCτ of the first interval',
+    caveat: 'Needs the first interval to be inside the simulated range. The textbook 1/(1 − e^(−λz·τ)) holds for a bolus; with absorption the ratio comes out higher, because absorption pushes exposure out of the first interval.',
   },
   {
     key: 'ss_cl', displayName: 'CL<sub>ss</sub>',
-    definition: 'Clearance at steady state. Reported as CL/F when the dose does not enter the observed compartment directly.',
+    definition: 'Clearance at steady state.',
     formula: 'Dose / AUCτ',
+    caveat: 'Uses the dose given per administration, not the total across the regimen. Reported as CL/F when the dose does not enter the observed compartment directly.',
   },
   {
     key: 'ss_vz', displayName: 'V<sub>z,ss</sub>',
     definition: 'Volume of distribution during the terminal phase, from the steady-state interval.',
     formula: 'Dose / (λz · AUCτ)',
+    caveat: 'λz here is fitted to the decline after the last dose, so the simulation has to run past that dose. If it stops at the last interval there is no terminal phase to fit and this is left blank.',
   },
   {
     key: 'half_life', displayName: 't<sub>½</sub>',
     definition: 'Terminal half-life, from the log-linear decline after the last dose.',
     formula: 'ln 2 / λz',
+    caveat: 'Needs the simulation to continue past the last dose. Under repeat dosing the decline before that is not a terminal phase — it is interrupted by the next dose.',
   },
 ];
-
 
 
 /* 관측값과 그 시각의 예측값이 얼마나 맞는지.
  *
- * 열을 이렇게 고른 이유:
- *   AFE 와 AAFE 는 치우침과 크기를 로그 축에서 따로 잰다. 농도처럼 몇
- *   자릿수를 오가는 값에는 "몇 배 틀렸나"가 "얼마나 틀렸나"보다 뜻이 분명하다.
- *   다만 둘만으로는 분포를 알 수 없어서 — AAFE 1.5 는 모든 점이 1.5배
- *   어긋난 것일 수도, 절반은 딱 맞고 절반은 2.5배 어긋난 것일 수도 있다 —
- *   2배 이내 비율과 최악의 점을 함께 둔다. 배수는 무차원이라 자료의 단위로
- *   얼마나 벗어났는지는 RMSE 가 말한다.
- */
+ * 열을 이렇게 고른 이유: AFE 와 AAFE 는 치우침과 크기를 로그 축에서 따로
+ * 잰다. 농도처럼 몇 자릿수를 오가는 값에는 "몇 배 틀렸나"가 "얼마나
+ * 틀렸나"보다 뜻이 분명하다. 다만 둘만으로는 분포를 알 수 없어서 2배 이내
+ * 비율과 최악의 점을 함께 두고, 배수는 무차원이라 자료의 단위로 얼마나
+ * 벗어났는지는 RMSE 가 말한다. */
 const COMPARISON_COLUMNS = [
   {
     key: 'n', displayName: 'n',
-    definition: 'Paired points used. Points at or below zero cannot enter the fold metrics, which take a logarithm; the count of those is shown beside it.',
-    formula: 'observations matched to a simulated value at the same time',
+    definition: 'How many observations were matched to a simulated value at the same time.',
+    formula: 'paired points used  (−k = dropped)',
+    caveat: 'Points at or below zero cannot enter the fold metrics, which take a logarithm, and the number dropped is shown beside n. Samples outside the simulated time range are dropped too — widen the range to include them.',
   },
   {
     key: 'afe', displayName: 'AFE',
-    definition: 'Average fold error — the bias. 1 means no systematic over- or under-prediction, above 1 over-predicts, below 1 under-predicts. It is a signed average, so opposite errors cancel: an AFE of 1 does not mean the fit is good, only that it is not tilted.',
+    definition: 'Average fold error — whether the model leans high or low. 1 means no systematic tilt, above 1 over-predicts, below 1 under-predicts.',
     formula: '10 ^ mean( log₁₀(predicted / observed) )',
+    caveat: 'Signed, so opposite errors cancel. A model that runs 2× high early and 2× low late averages to 1.0 and looks unbiased. Never read it without AAFE.',
   },
   {
     key: 'aafe', displayName: 'AAFE',
-    definition: 'Absolute average fold error — how far off a typical point is, regardless of direction. Always 1 or more; 1 is a perfect fit. Read it together with AFE: AAFE says how big the errors are, AFE says whether they lean one way.',
+    definition: 'Absolute average fold error — how far off a typical point is, regardless of direction. Always 1 or more; 1 is a perfect fit.',
     formula: '10 ^ mean( |log₁₀(predicted / observed)| )',
+    caveat: 'A single average hides the shape of the errors. The same AAFE comes from every point being slightly off and from half being perfect while half are far out — the second is much worse. Read Within 2× alongside.',
   },
   {
     key: 'within_2fold_pct', displayName: 'Within 2×',
-    definition: 'Share of points predicted within a factor of two, the usual acceptance band. It catches what an average hides — the same AAFE can come from every point being slightly off or from half being perfect and half being far out.',
+    definition: 'The share of points predicted within a factor of two, the usual acceptance band.',
     formula: 'points with |log₁₀(pred/obs)| ≤ log₁₀ 2, as a percentage',
+    caveat: 'A pass/fail count, so it is blind to how badly the failures miss. A profile can sit at 90% while the remaining tenth is off by an order of magnitude — check Worst.',
   },
   {
     key: 'max_fold_error', displayName: 'Worst',
-    definition: 'The single largest discrepancy, and when it happened. Averages bury the one point that is badly wrong, which is often the interesting one.',
+    definition: 'The single largest discrepancy, and the time at which it happened.',
     formula: 'max fold error over all paired points',
+    caveat: 'One point, so it is sensitive to a single bad measurement. Look at where it falls before concluding the model is wrong — a miss in the absorption phase and a miss in the terminal phase mean different things.',
   },
   {
     key: 'rmse', displayName: 'RMSE',
-    definition: 'Root mean squared error in the units of the data. The fold metrics are dimensionless, so a fit can look fine in fold terms while being off by a lot where the concentration actually matters.',
+    definition: 'Root mean squared error, in the units of the data.',
     formula: '√( mean( (predicted − observed)² ) )',
+    caveat: 'Not scale-free, unlike the fold metrics, so it cannot be compared between datasets at different concentrations. Squaring makes it lean towards the largest residuals, which are usually the high concentrations.',
   },
 ];
+
+
+/* ============================================================ */
+/* Tooltip — 계산 정보 팝업                                       */
+/* ============================================================ */
+/**
+ * 표 머리글의 ⓘ 에 붙는 설명. 세 부분을 늘 같은 순서로 보여 준다.
+ *
+ *   정의    이 값이 무엇인가
+ *   수식    어떻게 계산했는가 — 코드 상자에 넣어 글이 아니라 식임을 보인다
+ *   주의    무엇이 이 값을 잘못 읽게 만드는가
+ *
+ * 셋째가 가장 값어치 있다. 정의와 수식은 교과서에도 있지만, "이 앱에서 이
+ * 숫자가 언제 거짓말을 하는가"는 여기서만 말할 수 있다.
+ *
+ * CSS 만으로 만들던 예전 방식(::after + content: attr(data-tip))에는 두
+ * 가지 문제가 있었다. 하나는 세 부분을 나눠 꾸밀 수 없다는 것이고, 다른
+ * 하나는 자리를 잡는 방식이었다 — absolute 라서 위치 잡힌 조상을 찾아
+ * 붙는데, 그 조상을 만들어 주는 규칙이 #pk-summary 에만 걸려 있어 다른
+ * 표에서는 엉뚱한 곳에 떴다. 게다가 .table-responsive 의 overflow 가
+ * 잘라 냈다.
+ *
+ * 그래서 팝업 하나를 body 에 두고 fixed 로 띄운다. 조상이 무엇이든,
+ * 어디서 잘리든 상관이 없어진다.
+ */
+const Tooltip = {
+  _el: null,
+  _anchor: null,
+
+  _panel() {
+    if (this._el) return this._el;
+    const el = document.createElement('div');
+    el.className = 'tip-pop';
+    el.setAttribute('role', 'tooltip');
+    el.hidden = true;
+    document.body.appendChild(el);
+    this._el = el;
+    return el;
+  },
+
+  show(anchor) {
+    const def = anchor.dataset.tipDef || '';
+    const formula = anchor.dataset.tipFormula || '';
+    const note = anchor.dataset.tipNote || '';
+    if (!def && !formula && !note) return;
+
+    const panel = this._panel();
+    panel.innerHTML =
+      (def ? `<p class="tip-def">${escapeAttr(def)}</p>` : '') +
+      (formula ? `<code class="tip-formula">${escapeAttr(formula)}</code>` : '') +
+      (note ? `<p class="tip-note">${escapeAttr(note)}</p>` : '');
+
+    panel.hidden = false;
+    this._anchor = anchor;
+    this._place(anchor);
+  },
+
+  hide() {
+    if (!this._el) return;
+    this._el.hidden = true;
+    this._anchor = null;
+  },
+
+  /** 트리거 바로 아래에 두되, 화면 밖으로 나가면 안쪽으로 당긴다. */
+  _place(anchor) {
+    const panel = this._el;
+    const a = anchor.getBoundingClientRect();
+
+    // 폭을 먼저 확정해야 높이를 잰 값이 맞는다.
+    panel.style.left = '0px';
+    panel.style.top = '0px';
+    const p = panel.getBoundingClientRect();
+    const margin = 8;
+
+    let left = a.left + a.width / 2 - p.width / 2;
+    left = Math.min(Math.max(left, margin), window.innerWidth - p.width - margin);
+
+    // 아래에 자리가 없으면 위로 뒤집는다.
+    let top = a.bottom + 6;
+    if (top + p.height > window.innerHeight - margin) {
+      const above = a.top - p.height - 6;
+      if (above >= margin) top = above;
+      else top = Math.max(margin, window.innerHeight - p.height - margin);
+    }
+
+    panel.style.left = Math.round(left) + 'px';
+    panel.style.top = Math.round(top) + 'px';
+  },
+
+  init() {
+    // 표는 수시로 다시 그려지므로 문서 단위로 위임한다.
+    document.addEventListener('mouseover', (event) => {
+      const anchor = event.target.closest('.pk-info');
+      if (anchor) this.show(anchor);
+    });
+    document.addEventListener('mouseout', (event) => {
+      const anchor = event.target.closest('.pk-info');
+      if (anchor && anchor === this._anchor) this.hide();
+    });
+    document.addEventListener('focusin', (event) => {
+      const anchor = event.target.closest('.pk-info');
+      if (anchor) this.show(anchor);
+    });
+    document.addEventListener('focusout', (event) => {
+      const anchor = event.target.closest('.pk-info');
+      if (anchor && anchor === this._anchor) this.hide();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') this.hide();
+    });
+    // 팝업은 fixed 라 스크롤을 따라오지 않는다. 따라오게 만드는 대신 닫는다 —
+    // 스크롤한다는 것은 이미 다른 곳을 보고 있다는 뜻이다.
+    window.addEventListener('scroll', () => this.hide(), true);
+    window.addEventListener('resize', () => this.hide());
+  },
+};
 
 const UI = {
   // --- 공용 및 일반 UI ---
@@ -873,9 +1023,7 @@ const UI = {
 
     const headers = ['<th>Variable · dataset</th>']
       .concat(COMPARISON_COLUMNS.map(col => {
-        const tip = col.definition + '  —  ' + col.formula;
-        return `<th>${col.displayName}<button type="button" class="pk-info" tabindex="0"
-                  aria-label="About ${col.key}" data-tip="${escapeAttr(tip)}">i</button></th>`;
+        return `<th>${col.displayName}${infoButton(col)}</th>`;
       }))
       .join('');
 
@@ -928,9 +1076,7 @@ const UI = {
     const headers = ['<th>Variable</th>']
       .concat(columns.map(col => {
         if (!col.definition) return `<th>${col.displayName}</th>`;
-        const tip = col.formula ? col.definition + '  —  ' + col.formula : col.definition;
-        return `<th>${col.displayName}<button type="button" class="pk-info" tabindex="0"
-                  aria-label="About ${col.key}" data-tip="${escapeAttr(tip)}">i</button></th>`;
+        return `<th>${col.displayName}${infoButton(col)}</th>`;
       }))
       .join('');
 
@@ -2923,6 +3069,7 @@ const App = {
     this._bindEvents();
     this._initialRender();
     Resize.init();
+    Tooltip.init();
     this._restoreSession();
   },
 

@@ -1629,50 +1629,65 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     outline: none;
 }
 
-/* 툴팁 본체. title 속성은 지연이 길고 줄바꿈을 못 넣어 직접 그린다. */
-.pk-info::after {
-    content: attr(data-tip);
-    position: absolute;
-    z-index: 20;
-    left: 0;
-    top: calc(100% + 6px);
-    width: max-content;
-    max-width: 320px;
-    padding: 0.55rem 0.7rem;
-    border-radius: 8px;
+/* 팝업 본체.
+   body 에 fixed 로 띄운다. absolute 였을 때는 위치 잡힌 조상을 찾아 붙었는데,
+   그 조상을 만들어 주는 규칙(#pk-summary th{position:relative})이 한 표에만
+   걸려 있어 다른 표에서는 엉뚱한 곳에 떴다. .table-responsive 의 overflow
+   에도 잘렸다. fixed 로 옮기면 둘 다 상관없어진다. */
+.tip-pop {
+    position: fixed;
+    z-index: 1080;   /* 모달(1055) 위에서도 보이도록 */
+    max-width: 340px;
+    padding: 0.6rem 0.75rem;
+    border-radius: 9px;
     background-color: var(--apple-text-primary);
     color: #fff;
     font-family: var(--bs-body-font-family, inherit);
-    font-style: normal;
     font-size: 12px;
     font-weight: 400;
     line-height: 1.55;
-    letter-spacing: 0;
     text-align: left;
-    text-transform: none;
-    white-space: normal;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.12s ease-in-out;
-}
-.pk-info:hover::after,
-.pk-info:focus-visible::after {
-    opacity: 1;
-    visibility: visible;
-}
-/* 툴팁이 헤더 셀을 기준으로 자리잡도록 */
-#pk-summary th {
-    position: relative;
-}
-/* 오른쪽 끝 열은 툴팁이 표 밖으로 나가지 않게 왼쪽으로 편다 */
-#pk-summary th:nth-last-child(-n + 3) .pk-info::after {
-    left: auto;
-    right: 0;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    pointer-events: none;   /* 팝업이 마우스를 가로채 깜빡이지 않게 */
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .pk-info::after { transition: none; }
+/* 앱에 p 를 직접 겨냥한 전역 규칙(색·글자 크기)이 있어 상속을 이긴다.
+   여기서 다시 못박지 않으면 정의가 배경과 같은 색으로 칠해져 안 보인다. */
+.tip-pop p {
+    margin: 0;
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+/* 수식은 글이 아니라 식이다. 상자에 넣어 눈으로 바로 갈라 보이게 한다. */
+.tip-formula {
+    display: block;
+    margin: 0.45rem 0;
+    padding: 0.35rem 0.5rem;
+    border-radius: 5px;
+    background-color: rgba(255, 255, 255, 0.12);
+    color: #f2f2f7;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* 주의사항. 정의와 같은 무게로 읽히면 안 되지만 묻혀서도 안 된다.
+   .tip-pop p 가 (0,1,1) 이라 .tip-note 단독(0,1,0)으로는 색을 뺏긴다. */
+.tip-pop .tip-note {
+    padding-top: 0.45rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+    color: #ffd8a8;
+    font-size: 11.5px;
+    line-height: 1.5;
+}
+
+.tip-pop .tip-note::before {
+    content: "Watch out — ";
+    font-weight: 600;
 }
 
 
@@ -2356,6 +2371,7 @@ body.is-resizing {
     .modal-backdrop,
     .sim-settings,
     .pk-info,
+    .tip-pop,
     .sens-switcher,
     #fit-apply-btn,
     #plot-placeholder,
