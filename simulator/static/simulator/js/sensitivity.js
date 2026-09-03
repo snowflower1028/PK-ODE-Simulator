@@ -622,14 +622,29 @@
   let results = [];
   let activeIndex = 0;
 
-  function render(list) {
+  function render(list, options) {
     results = Array.isArray(list) ? list : [list];
     activeIndex = 0;
     renderSwitcher();
     showResult(0);
     els.card.style.display = "block";
-    els.card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // 새로고침으로 되살릴 때는 스크롤하지 않는다 — 사용자가 무언가를
+    // 실행해서 생긴 결과가 아니라 원래 거기 있던 것이다.
+    if (!options || options.scroll !== false) {
+      els.card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    // 되살리는 중이면 Session 쪽에서 알아서 무시한다.
+    window.dispatchEvent(new Event("pk:result"));
   }
+
+  /* 세션 저장이 결과를 담아 갈 수 있도록 내놓는다. 결과는 이 안에만 있고
+     script.js 는 볼 수 없으므로, 다리를 하나 놓아야 한다. */
+  window.pkSensitivity = {
+    snapshot: () => (results.length ? results : null),
+    restore: (list) => {
+      if (Array.isArray(list) && list.length) render(list, { scroll: false });
+    },
+  };
 
   function renderSwitcher() {
     if (results.length < 2) {

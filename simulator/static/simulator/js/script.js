@@ -1730,6 +1730,7 @@ const Handlers = {
         State.latestPKSummary = response.data.pk;
         UI.plotSimulationResult(response.data.profile, DOM.toolbar.logScaleCheckbox.checked);
         UI.displayPKSummary(response.data.pk);
+        window.dispatchEvent(new Event('pk:result'));
       }
     } catch (error) {
        // API 모듈에서 이미 alert를 띄웠으므로, 콘솔에만 에러 기록
@@ -1833,33 +1834,12 @@ const Handlers = {
    * 현재 앱의 모든 상태를 하나의 JSON 파일로 만들어 다운로드합니다.
    */
   handleExportSessionClick() {
-    // 1. 현재 상태를 하나의 객체로 수집
-    const sessionData = {
-      ode: DOM.sidebar.odeInput.value,
-      initials: {},
-      parameters: {},
-      doses: State.doseList,
-      simulationSettings: {
-        start: +DOM.toolbar.simStartTime.value,
-        end: +DOM.toolbar.simEndTime.value,
-        steps: +document.getElementById('dropdown-sim-steps').value,
-        logScale: DOM.toolbar.logScaleCheckbox.checked,
-        selectedCompartments: [...DOM.simulation.compartmentsMenu.querySelectorAll(".sim-comp-checkbox:checked")].map(e => e.value)
-      }
-    };
-
-    State.compartments.forEach(c => {
-      sessionData.initials[c] = +DOM.sidebar.initValuesContainer.querySelector(`#init_${c}`).value;
-    });
-    State.parameters.forEach(p => {
-      sessionData.parameters[p] = +DOM.sidebar.paramValuesContainer.querySelector(`#param_${p}`).value;
-    });
-
-    // 2. JSON 문자열로 변환하여 파일로 다운로드
-    const jsonString = JSON.stringify(sessionData, null, 2); // 2는 가독성을 위한 들여쓰기
+    // 자동저장과 같은 것을 담는다. 결과와 관측값까지 한 파일에 들어가므로
+    // 파일 하나로 세션이 그대로 되살아난다.
+    const jsonString = JSON.stringify(Session.snapshot(), null, 2);
     const blob = new Blob([jsonString], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    
+
     const a = document.createElement('a');
     a.href = url;
     a.download = `pk-simulator-session-${new Date().toISOString().slice(0,10)}.json`;
@@ -1880,51 +1860,12 @@ const Handlers = {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const sessionData = JSON.parse(e.target.result);
-
-        // 1. ODE 입력창 채우고 파싱 실행
-        DOM.sidebar.odeInput.value = sessionData.ode || "";
-        await Handlers.handleParseClick();
-
-        // 2. 파싱 후 UI가 업데이트될 시간을 잠시 대기
-        setTimeout(() => {
-          // 3. 파라미터 및 초기값 복원
-          if(sessionData.parameters) {
-            Object.entries(sessionData.parameters).forEach(([key, value]) => {
-              const el = DOM.sidebar.paramValuesContainer.querySelector(`#param_${key}`);
-              if (el) el.value = value;
-            });
-          }
-          if(sessionData.initials) {
-            Object.entries(sessionData.initials).forEach(([key, value]) => {
-              const el = DOM.sidebar.initValuesContainer.querySelector(`#init_${key}`);
-              if (el) el.value = value;
-            });
-          }
-
-          // 4. 투여 계획(Dose) 복원
-          State.doseList = sessionData.doses || [];
-          UI.renderDoses();
-
-          // 5. 시뮬레이션 설정 복원
-          const settings = sessionData.simulationSettings || {};
-          DOM.toolbar.simStartTime.value = settings.start || 0;
-          DOM.toolbar.simEndTime.value = settings.end || 48;
-          document.getElementById('dropdown-sim-steps').value = settings.steps || 200;
-          DOM.toolbar.logScaleCheckbox.checked = settings.logScale || false;
-
-          // 6. 선택된 Compartment 복원
-          const selected = settings.selectedCompartments || State.compartments;
-          DOM.simulation.compartmentsMenu.querySelectorAll('.sim-comp-checkbox').forEach(cb => {
-            cb.checked = selected.includes(cb.value);
-          });
-          UI.updateSelectedBadges();
-
-          alert('Session loaded successfully!');
-        }, 500); // 0.5초 대기
-
+        const ok = await Session.restore(JSON.parse(e.target.result));
+        if (!ok) throw new Error("The file does not contain a model.");
+        Session.save();
+        alert('Session loaded successfully!');
       } catch (error) {
-        alert('Failed to load or parse the session file. Please check if the file is a valid JSON.');
+        alert('Failed to load the session file: ' + error.message);
         console.error("Session load error:", error);
       } finally {
         // 동일한 파일을 다시 선택할 수 있도록 입력값 초기화
@@ -2187,6 +2128,7 @@ async handleStartFittingClick() {
       // 말없이 바꾸는 셈이었기 때문이다. 적합값을 모델로 옮기고 싶으면
       // 카드의 'Apply to model' 을 누른다.
       UI.renderFitResult(response.data);
+      window.dispatchEvent(new Event('pk:result'));
 
     } else {
       throw new Error(response.message || "Fitting failed on the server.");
@@ -2392,6 +2334,171 @@ async handleStartFittingClick() {
   },
 };
 
+/* ============================================================ */
+/* Session — 한 벌의 상태를 만들고 되돌린다                        */
+/* ============================================================ */
+/**
+ * 새로고침으로 날아가지 않게 브라우저에 담아 두는 일과, 파일로 내보내고
+ * 불러오는 일은 결국 같은 것을 직렬화한다. 두 벌로 두면 반드시 한쪽만
+ * 갱신되어 어긋나므로 snapshot/restore 한 쌍만 두고 둘 다 그것을 쓴다.
+ */
+const Session = {
+  KEY: 'pkSimulator.session',
+  //: 담는 모양이 바뀌면 올린다. 예전 모양은 복원하지 않고 버린다 —
+  //  반쯤 이해한 상태로 되살리면 화면이 조용히 어긋난다.
+  VERSION: 2,
+  _timer: null,
+  _restoring: false,
+
+  /** 지금 화면에 있는 것 전부를 평범한 객체로. */
+  snapshot() {
+    const stepsInput = document.getElementById('dropdown-sim-steps');
+    const data = {
+      version: this.VERSION,
+      savedAt: new Date().toISOString(),
+      ode: DOM.sidebar.odeInput.value,
+      initials: {},
+      parameters: {},
+      doses: State.doseList,
+      observations: State.observations,
+      simulationSettings: {
+        start: +DOM.toolbar.simStartTime.value,
+        end: +DOM.toolbar.simEndTime.value,
+        steps: stepsInput ? +stepsInput.value : 200,
+        logScale: DOM.toolbar.logScaleCheckbox.checked,
+        symbolOrder: State.symbolOrder,
+        selectedCompartments: [...DOM.simulation.compartmentsMenu.querySelectorAll('.sim-comp-checkbox:checked')].map(e => e.value),
+      },
+      results: {
+        simulation: State.latestSimulationResult,
+        pk: State.latestPKSummary,
+        fit: State.lastFitResult,
+        sensitivity: (window.pkSensitivity && window.pkSensitivity.snapshot()) || null,
+      },
+    };
+
+    State.compartments.forEach(c => {
+      const el = DOM.sidebar.initValuesContainer.querySelector(`#init_${c}`);
+      if (el) data.initials[c] = +el.value;
+    });
+    State.parameters.forEach(p => {
+      const el = DOM.sidebar.paramValuesContainer.querySelector(`#param_${p}`);
+      if (el) data.parameters[p] = +el.value;
+    });
+    return data;
+  },
+
+  /**
+   * 객체를 화면으로 되돌린다.
+   *
+   * 파싱이 끝나야 파라미터 입력칸이 생기므로 반드시 기다린다. 예전 코드는
+   * setTimeout(500) 으로 어림잡았는데, 서버가 느리면 그대로 실패하고
+   * 아무 말도 하지 않았다.
+   */
+  async restore(data) {
+    if (!data || !data.ode) return false;
+
+    // 되돌리는 동안의 input/change 는 저장을 부르지 않는다. 아직 절반만
+    // 채워진 상태를 덮어써 버리면 원본이 사라진다.
+    this._restoring = true;
+    try {
+      DOM.sidebar.odeInput.value = data.ode;
+      await Handlers.handleParseClick();
+
+      Object.entries(data.parameters || {}).forEach(([key, value]) => {
+        const el = DOM.sidebar.paramValuesContainer.querySelector(`#param_${key}`);
+        if (el) el.value = value;
+      });
+      Object.entries(data.initials || {}).forEach(([key, value]) => {
+        const el = DOM.sidebar.initValuesContainer.querySelector(`#init_${key}`);
+        if (el) el.value = value;
+      });
+
+      State.doseList = data.doses || [];
+      UI.renderDoses();
+
+      State.observations = data.observations || [];
+      UI.renderObsList();
+
+      const settings = data.simulationSettings || {};
+      DOM.toolbar.simStartTime.value = settings.start ?? 0;
+      DOM.toolbar.simEndTime.value = settings.end ?? 48;
+      if (document.getElementById('dropdown-sim-steps')) {
+        document.getElementById('dropdown-sim-steps').value = settings.steps ?? 200;
+      }
+      DOM.toolbar.logScaleCheckbox.checked = !!settings.logScale;
+
+      const selected = settings.selectedCompartments || State.compartments;
+      DOM.simulation.compartmentsMenu.querySelectorAll('.sim-comp-checkbox').forEach(cb => {
+        cb.checked = selected.includes(cb.value);
+      });
+      UI.updateSelectedBadges();
+
+      // 결과는 다시 계산하지 않고 저장된 것을 그대로 그린다. 새로고침
+      // 한 번에 서버를 다시 부르면 느릴 뿐 아니라 결과가 달라질 수도 있다
+      // (그 사이 사이드바 값을 건드렸다면).
+      const results = data.results || {};
+      if (results.simulation) {
+        State.latestSimulationResult = results.simulation;
+        UI.plotSimulationResult(results.simulation, !!settings.logScale);
+      }
+      if (results.pk) {
+        State.latestPKSummary = results.pk;
+        UI.displayPKSummary(results.pk);
+      }
+      if (results.fit) {
+        UI.renderFitResult(results.fit);
+      }
+      if (results.sensitivity && window.pkSensitivity) {
+        window.pkSensitivity.restore(results.sensitivity);
+      }
+      return true;
+    } finally {
+      this._restoring = false;
+    }
+  },
+
+  save() {
+    if (this._restoring) return;
+    const data = this.snapshot();
+    try {
+      window.localStorage.setItem(this.KEY, JSON.stringify(data));
+    } catch (error) {
+      // 자리에서 가장 큰 것은 결과다. 모자라면 입력만이라도 남긴다 —
+      // 다시 돌리면 되는 것보다 다시 입력해야 하는 것이 아깝다.
+      try {
+        data.results = null;
+        data.resultsDropped = true;
+        window.localStorage.setItem(this.KEY, JSON.stringify(data));
+      } catch (again) {
+        this.clear();
+      }
+    }
+  },
+
+  /** 값을 칠 때마다 저장하지 않도록 잠깐 모았다 쓴다. */
+  saveSoon() {
+    window.clearTimeout(this._timer);
+    this._timer = window.setTimeout(() => this.save(), 400);
+  },
+
+  load() {
+    try {
+      const raw = window.localStorage.getItem(this.KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      return (data && data.version === this.VERSION) ? data : null;
+    } catch (error) {
+      return null;
+    }
+  },
+
+  clear() {
+    try { window.localStorage.removeItem(this.KEY); } catch (error) { /* 사생활 보호 모드 등 */ }
+  },
+};
+
+
 const App = {
   /**
    * 애플리케이션을 초기화하는 메인 함수.
@@ -2405,6 +2512,25 @@ const App = {
 
     this._bindEvents();
     this._initialRender();
+    this._restoreSession();
+  },
+
+  /**
+   * 새로고침해도 하던 일이 남아 있게 한다.
+   *
+   * 되살리다 실패하면 저장본을 버린다. 깨진 저장본을 그대로 두면 새로고침할
+   * 때마다 같은 자리에서 넘어져 앱을 열 수 없게 된다 — 한 번은 잃더라도
+   * 다음 새로고침은 되게 하는 편이 낫다.
+   */
+  async _restoreSession() {
+    const saved = Session.load();
+    if (!saved) return;
+    try {
+      await Session.restore(saved);
+    } catch (error) {
+      console.error("Could not restore the previous session:", error);
+      Session.clear();
+    }
   },
 
   /**
@@ -2479,6 +2605,15 @@ const App = {
     if(DOM.results.exportPlotBtn) DOM.results.exportPlotBtn.addEventListener('click', Handlers.handleExportPlotClick);
     if(DOM.results.exportSessionBtn) DOM.results.exportSessionBtn.addEventListener('click', Handlers.handleExportSessionClick);
     if(DOM.results.importSessionInput) DOM.results.importSessionInput.addEventListener('change', Handlers.handleImportSessionChange);
+
+    // --- 자동저장 ---
+    // 값이 바뀌는 자리를 하나씩 찾아다니는 대신 문서 단위로 듣는다. 입력칸이
+    // 파싱 뒤에 만들어지고 그룹 카드가 동적으로 늘어나는 앱이라, 개별 바인딩은
+    // 반드시 새로 생긴 것을 빠뜨린다.
+    document.addEventListener('input', () => Session.saveSoon());
+    document.addEventListener('change', () => Session.saveSoon());
+    // 결과는 위 두 이벤트로 잡히지 않으므로 만들어진 자리에서 직접 부른다.
+    window.addEventListener('pk:result', () => Session.saveSoon());
   },
 
   /**

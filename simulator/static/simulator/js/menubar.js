@@ -144,6 +144,9 @@
       if (dirty && !window.confirm(
         "Start a new session? The current model, doses and observed data will be discarded."
       )) return;
+      // 자동저장을 지우고 새로고침한다. 지우지 않으면 방금 버린 세션이
+      // 그대로 되살아나 "New Session" 이 아무 일도 하지 않는 것처럼 보인다.
+      try { window.localStorage.removeItem("pkSimulator.session"); } catch (e) { /* 무시 */ }
       window.location.reload();
     });
   }
