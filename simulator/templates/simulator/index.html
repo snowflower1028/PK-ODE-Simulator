@@ -8,7 +8,10 @@
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <!-- plotly.js 는 MIT 라이선스다 (헤더에 명시). 라이선스상 걸림돌은 없고
+       비용은 번들 크기뿐이라, 이 앱이 실제로 쓰는 것만 든 basic 배포판을
+       쓴다: scatter + bar, 그리고 react/purge/downloadImage. 3.6MB → 1.0MB. -->
+  <script src="https://cdn.plot.ly/plotly-basic-2.27.0.min.js"></script>
   <script defer src="{% static 'simulator/js/script.js' %}{{ asset_v }}"></script>
   <script defer src="{% static 'simulator/js/menubar.js' %}{{ asset_v }}"></script>
   <script defer src="{% static 'simulator/js/sensitivity.js' %}{{ asset_v }}"></script>
@@ -43,6 +46,7 @@
           <li><button type="button" id="export-plot-btn" class="dropdown-item"><i class="bi bi-image"></i> Plot Image <span class="app-menu-hint">.png</span></button></li>
           <li><button type="button" id="export-values-btn" class="dropdown-item"><i class="bi bi-123"></i> Values <span class="app-menu-hint">.csv</span></button></li>
           <li><button type="button" id="export-sensitivity-btn" class="dropdown-item"><i class="bi bi-sliders2"></i> Sensitivity Results <span class="app-menu-hint">.csv</span></button></li>
+          <li><button type="button" id="export-report-btn" class="dropdown-item"><i class="bi bi-file-earmark-pdf"></i> Results Report <span class="app-menu-hint">.pdf</span></button></li>
         </ul>
       </div>
 
@@ -256,8 +260,17 @@
     </section>
   </aside>
 
+<div class="sidebar-resizer" id="sidebar-resizer" role="separator"
+     aria-orientation="vertical" aria-label="Resize the sidebar" tabindex="0"></div>
+
 <main class="main-content">
   <div class="main-scrollable-area">
+    <header class="report-head print-only" id="report-head">
+      <h1>PK ODE Simulator &mdash; Report</h1>
+      <p class="report-meta" id="report-meta"></p>
+      <pre class="report-model" id="report-model"></pre>
+    </header>
+
     <header class="workspace-header">
       <h2 class="workspace-title">Simulation Result</h2>
       <div class="workspace-actions">

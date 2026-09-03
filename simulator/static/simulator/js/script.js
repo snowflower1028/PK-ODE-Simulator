@@ -739,6 +739,40 @@ const UI = {
   },
 
   /**
+   * 인쇄 직전에 리포트 머리말을 채웁니다.
+   *
+   * 메뉴가 아니라 Ctrl+P 로 인쇄해도 채워져야 하므로 beforeprint 에 겁니다.
+   * 무엇을 계산한 것인지 모르는 PDF 는 나중에 아무 쓸모가 없습니다.
+   */
+  fillReportHead() {
+    const meta = document.getElementById('report-meta');
+    const model = document.getElementById('report-model');
+
+    if (meta) {
+      const doses = State.doseList.map(d => {
+        const how = d.type === 'infusion' ? `over ${d.duration}` : 'bolus';
+        const rep = d.repeat_every ? `, every ${d.repeat_every} until ${d.repeat_until}` : '';
+        return `${d.amount} into ${d.compartment} at ${d.start_time} (${how}${rep})`;
+      });
+      const params = State.parameters
+        .map(p => `${p} = ${DOM.sidebar.paramValuesContainer.querySelector(`#param_${p}`)?.value}`)
+        .join(',  ');
+      meta.textContent = [
+        new Date().toLocaleString(),
+        `time ${DOM.toolbar.simStartTime.value}–${DOM.toolbar.simEndTime.value}`,
+        doses.length ? `dosing: ${doses.join('; ')}` : 'no dosing',
+        params ? `parameters: ${params}` : '',
+      ].filter(Boolean).join('  ·  ');
+    }
+
+    const ode = DOM.sidebar.odeInput.value.trim();
+    if (model) {
+      model.textContent = ode;
+      model.hidden = !ode;      // 빈 상자를 종이에 남기지 않는다
+    }
+  },
+
+  /**
    * PK 파라미터 요약 정보를 테이블로 표시합니다.
    */
   displayPKSummary(pkData) {
@@ -1834,6 +1868,24 @@ const Handlers = {
     exportSummaryToCsv(summaryArray, "pk_summary.csv");
   },
 
+  /**
+   * 결과 영역을 PDF 리포트로 뽑습니다.
+   *
+   * 브라우저의 인쇄 대화상자를 씁니다. html2canvas + jsPDF 를 얹으면 1MB 가까이
+   * 늘고 결과는 화면을 찍은 래스터라 표 글자가 뭉갭니다. 인쇄 경로는 글자가
+   * 글자로, Plotly 의 SVG 가 벡터로 들어가고 페이지 나눔도 브라우저가 맡습니다.
+   *
+   * 무엇을 계산한 것인지 모르는 PDF 는 나중에 쓸모가 없으므로, 인쇄 직전에
+   * 모델과 조건을 머리말에 채워 넣습니다.
+   */
+  handleExportReportClick() {
+    if (!State.latestSimulationResult) {
+      return alert("Run a simulation first — there are no results to report yet.");
+    }
+    window.print();
+  },
+
+
   handleExportPlotClick() {
     if (!State.latestSimulationResult) {
       alert("Please run a simulation first to export the plot.");
@@ -1903,7 +1955,11 @@ const Handlers = {
       return alert("Please parse ODEs first to define parameters for fitting.");
     }
     if (State.observations.filter(o => o.selected).length === 0) {
-      return alert("⚠️ Upload and select observed data first for fitting.");
+      alert("Fitting needs observed data to fit against. Upload a CSV and select it, then try again.");
+      // 알려 주고 끝내면 사용자가 그 창을 직접 찾아야 한다. 데려다 준다.
+      const panel = document.getElementById('obsPanel');
+      if (panel) bootstrap.Offcanvas.getOrCreateInstance(panel).show();
+      return;
     }
     
     // 모든 조건 통과 시, UI 모듈에 모달을 열도록 요청합니다.
@@ -2518,6 +2574,179 @@ const Session = {
 };
 
 
+/* ============================================================ */
+/* Resize — 사이드바 너비와 플롯 높이를 사용자가 정한다            */
+/* ============================================================ */
+/**
+ * 어느 쪽이 넓어야 하는지는 지금 무엇을 하는지에 달려 있다. ODE 를 고칠 때는
+ * 왼쪽이, 결과를 읽을 때는 오른쪽이 넓어야 한다. 정답을 하나 고르는 대신
+ * 손잡이를 준다.
+ *
+ * 크기는 세션이 아니라 localStorage 에 둔다 — 창을 어떻게 나눠 쓰는지는
+ * 모델의 일부가 아니라 이 브라우저의 습관이다. (사이드바 접힘 상태와 같은 자리)
+ */
+const Resize = {
+  SIDEBAR_KEY: 'pkSimulator.sidebarWidth',
+  PLOT_KEY: 'pkSimulator.plotHeights',
+  PLOTS: ['plot', 'fit-plot', 'sensitivity-plot'],
+
+  init() {
+    this._restoreSidebar();
+    this._bindSidebar();
+    this._restorePlotHeights();
+    this._watchPlots();
+    this.bindPrint();
+  },
+
+  /* ---------------- 사이드바 ---------------- */
+  _restoreSidebar() {
+    let saved = null;
+    try { saved = localStorage.getItem(this.SIDEBAR_KEY); } catch (e) { /* 무시 */ }
+    if (saved) document.documentElement.style.setProperty('--apple-sidebar-width', saved);
+  },
+
+  _bindSidebar() {
+    const handle = document.getElementById('sidebar-resizer');
+    const sidebar = document.querySelector('.sidebar');
+    if (!handle || !sidebar) return;
+
+    // min/max 는 CSS 가 이미 갖고 있다. 두 곳에 적어 두면 반드시 어긋나므로
+    // 여기서 읽어 쓴다.
+    const cs = getComputedStyle(sidebar);
+    const min = parseFloat(cs.minWidth) || 308;
+    const max = parseFloat(cs.maxWidth) || 460;
+
+    const apply = (px) => {
+      const clamped = Math.min(Math.max(px, min), max);
+      document.documentElement.style.setProperty('--apple-sidebar-width', clamped + 'px');
+      return clamped;
+    };
+
+    let dragging = false;
+    const onMove = (event) => {
+      if (!dragging) return;
+      // 사이드바는 왼쪽에 붙어 있으므로 포인터의 x 가 곧 너비다.
+      apply(event.clientX - sidebar.getBoundingClientRect().left);
+    };
+    const stop = () => {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('is-dragging');
+      document.body.classList.remove('is-resizing');
+      try {
+        localStorage.setItem(this.SIDEBAR_KEY,
+          getComputedStyle(document.documentElement).getPropertyValue('--apple-sidebar-width').trim());
+      } catch (e) { /* 무시 */ }
+      // 폭이 바뀌었으니 플롯도 다시 그려야 한다.
+      this._resizePlots();
+    };
+
+    handle.addEventListener('pointerdown', (event) => {
+      dragging = true;
+      handle.classList.add('is-dragging');
+      document.body.classList.add('is-resizing');
+      handle.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+
+    // 키보드로도 옮길 수 있어야 한다 — 손잡이가 tabindex 를 갖고 있다.
+    handle.addEventListener('keydown', (event) => {
+      const step = event.shiftKey ? 40 : 10;
+      if (event.key === 'ArrowLeft') apply(sidebar.offsetWidth - step);
+      else if (event.key === 'ArrowRight') apply(sidebar.offsetWidth + step);
+      else return;
+      event.preventDefault();
+      stop.call(this);
+      dragging = false;
+    });
+  },
+
+  /* ---------------- 플롯 높이 ---------------- */
+  /* CSS 의 resize:vertical 이 손잡이를 그려 주므로 드래그는 브라우저가 맡는다.
+     우리가 할 일은 두 가지 — 바뀐 높이를 기억하고, Plotly 에게 알려 주는 것.
+     Plotly 는 창 크기만 듣고 요소 크기는 듣지 않는다. */
+  _restorePlotHeights() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(this.PLOT_KEY) || '{}'); } catch (e) { saved = {}; }
+    this.PLOTS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && saved[id]) el.style.height = saved[id];
+    });
+  },
+
+  _savePlotHeights() {
+    if (this._printing) return;
+    const out = {};
+    this.PLOTS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && el.style.height) out[id] = el.style.height;
+    });
+    try { localStorage.setItem(this.PLOT_KEY, JSON.stringify(out)); } catch (e) { /* 무시 */ }
+  },
+
+  _resizePlots() {
+    this.PLOTS.forEach((id) => {
+      const el = document.getElementById(id);
+      // 그려진 적 없는 컨테이너에 resize 를 걸면 Plotly 가 던진다.
+      if (el && el.offsetParent !== null && el.querySelector('.main-svg')) {
+        try { Plotly.Plots.resize(el); } catch (e) { /* 무시 */ }
+      }
+    });
+  },
+
+  /* 인쇄할 때는 플롯을 종이 크기로 줄였다가 되돌린다.
+     CSS 로 컨테이너만 줄이면 Plotly 의 SVG 는 그대로 남아 그림이 잘린다.
+     Plotly 에게 직접 말해 줘야 다시 그린다. */
+  PRINT_HEIGHT: 300,
+  _printing: false,
+
+  bindPrint() {
+    let saved = null;
+    window.addEventListener('beforeprint', () => {
+      // 인쇄용으로 줄이는 것은 사용자가 정한 크기가 아니다. 관찰자가 그걸
+      // 취향으로 오해해 저장하면, 인쇄 한 번에 화면 설정이 바뀐다.
+      this._printing = true;
+      saved = {};
+      this.PLOTS.forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el || !el.querySelector('.main-svg')) return;
+        saved[id] = el.style.height;
+        el.style.height = this.PRINT_HEIGHT + 'px';
+        try { Plotly.Plots.resize(el); } catch (e) { /* 무시 */ }
+      });
+    });
+    window.addEventListener('afterprint', () => {
+      if (!saved) return;
+      Object.entries(saved).forEach(([id, height]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.height = height;
+        try { Plotly.Plots.resize(el); } catch (e) { /* 무시 */ }
+      });
+      saved = null;
+      this._printing = false;
+    });
+  },
+
+  _watchPlots() {
+    if (typeof ResizeObserver === 'undefined') return;
+    let timer = null;
+    const observer = new ResizeObserver(() => {
+      this._resizePlots();
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => this._savePlotHeights(), 400);
+    });
+    this.PLOTS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+  },
+};
+
+
 const App = {
   /**
    * 애플리케이션을 초기화하는 메인 함수.
@@ -2531,6 +2760,7 @@ const App = {
 
     this._bindEvents();
     this._initialRender();
+    Resize.init();
     this._restoreSession();
   },
 
@@ -2622,6 +2852,8 @@ const App = {
     if(DOM.results.exportProfileBtn) DOM.results.exportProfileBtn.addEventListener('click', Handlers.handleExportProfileClick);
     if(DOM.results.exportSummaryBtn) DOM.results.exportSummaryBtn.addEventListener('click', Handlers.handleExportSummaryClick);
     if(DOM.results.exportPlotBtn) DOM.results.exportPlotBtn.addEventListener('click', Handlers.handleExportPlotClick);
+    document.getElementById('export-report-btn')?.addEventListener('click', Handlers.handleExportReportClick);
+    window.addEventListener('beforeprint', () => UI.fillReportHead());
     if(DOM.results.exportSessionBtn) DOM.results.exportSessionBtn.addEventListener('click', Handlers.handleExportSessionClick);
     if(DOM.results.importSessionInput) DOM.results.importSessionInput.addEventListener('change', Handlers.handleImportSessionChange);
 
