@@ -1195,6 +1195,16 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 /* (#dose-list 는 renderDoses 가 항상 채우므로 :empty 플레이스홀더 규칙을 제거함) */
 
 
+/* 설정 카드들이 서로 맞닿아 테두리가 두 줄로 겹쳐 보이던 문제.
+   섹션마다 margin 을 주는 대신 컨테이너가 간격을 맡는다 — 숨긴 섹션
+   (민감도 모달의 [data-sens-view])은 flex 가 아예 세지 않으므로
+   빈 자리가 남지 않는다. 피팅·민감도 모달이 같은 클래스를 쓴다. */
+.fit-settings-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
 .fit-section {
     background-color: var(--apple-background-primary);
     border: 1px solid var(--apple-card-border);
@@ -1897,7 +1907,8 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 }
 
 .sens-status {
-    margin: 0.75rem 0 0;
+    /* 간격은 .fit-settings-body 의 gap 이 맡는다. */
+    margin: 0;
     min-height: 1.25rem;
     font-size: 0.8125rem;
     color: var(--apple-text-secondary);
@@ -1972,7 +1983,8 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 
 /* Scan / Tornado 전환은 모달 전체의 성격을 바꾸므로 맨 위에 둔다. */
 .sens-view-toggle {
-    margin-bottom: 1rem;
+    /* 간격은 .fit-settings-body 의 gap 이 맡는다. 정렬만 남긴다. */
+    align-self: flex-start;
 }
 
 /* 결과를 그대로 믿으면 안 되는 경우를 결과 바로 위에서 말해 준다. */
