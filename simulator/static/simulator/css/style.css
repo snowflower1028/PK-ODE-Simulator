@@ -144,7 +144,10 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     flex-shrink: 0;
     width: var(--apple-sidebar-width);
     height: 100%;
-    max-width: 460px;
+    /* 화면 절반까지 늘릴 수 있다. ODE 를 길게 쓰거나 파라미터가 많을 때는
+       왼쪽이 넓어야 한다. 창이 좁으면 50vw 가 min-width 밑으로 내려가는데,
+       그때는 CSS 규칙대로 min-width 가 이긴다. */
+    max-width: 50vw;
     min-width: 308px;
     overflow-y: auto;
     /* 각 구역이 흰 카드로 떠 보이도록 사이드바 바닥은 회색으로 내린다.

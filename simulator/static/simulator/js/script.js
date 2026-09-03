@@ -2599,10 +2599,31 @@ const Resize = {
   },
 
   /* ---------------- 사이드바 ---------------- */
+  /** 지금 창에서의 폭 한계. CSS 가 갖고 있는 값을 읽어 쓴다 — 두 곳에 적어
+   *  두면 반드시 어긋난다. max-width 는 50vw 라 창을 줄이면 같이 줄어든다. */
+  _limits() {
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar) return { min: 308, max: 460 };
+    const cs = getComputedStyle(sidebar);
+    // 좁은 화면에서는 사이드바가 본문 위로 쌓이고 max-width 가 none 이 된다.
+    // 거기서는 폭이 아무 뜻도 없으므로 자르지 않는다 — 자르면 창을 다시
+    // 넓혔을 때 사용자가 정해 둔 폭이 임의의 값으로 바뀌어 있다.
+    const max = parseFloat(cs.maxWidth);
+    return {
+      min: parseFloat(cs.minWidth) || 308,
+      max: Number.isFinite(max) ? max : Infinity,
+    };
+  },
+
   _restoreSidebar() {
     let saved = null;
     try { saved = localStorage.getItem(this.SIDEBAR_KEY); } catch (e) { /* 무시 */ }
-    if (saved) document.documentElement.style.setProperty('--apple-sidebar-width', saved);
+    if (!saved) return;
+
+    // 넓은 모니터에서 정한 폭을 좁은 화면에서 그대로 되살리면 본문이 사라진다.
+    const { min, max } = this._limits();
+    const px = Math.min(Math.max(parseFloat(saved) || min, min), max);
+    document.documentElement.style.setProperty('--apple-sidebar-width', px + 'px');
   },
 
   _bindSidebar() {
@@ -2612,11 +2633,10 @@ const Resize = {
 
     // min/max 는 CSS 가 이미 갖고 있다. 두 곳에 적어 두면 반드시 어긋나므로
     // 여기서 읽어 쓴다.
-    const cs = getComputedStyle(sidebar);
-    const min = parseFloat(cs.minWidth) || 308;
-    const max = parseFloat(cs.maxWidth) || 460;
-
     const apply = (px) => {
+      // 한계는 매번 다시 읽는다. max-width 가 50vw 라 창 크기를 따라 움직이므로,
+      // 한 번 읽어 두면 창을 줄인 뒤로는 낡은 값을 쓰게 된다.
+      const { min, max } = this._limits();
       const clamped = Math.min(Math.max(px, min), max);
       document.documentElement.style.setProperty('--apple-sidebar-width', clamped + 'px');
       return clamped;
