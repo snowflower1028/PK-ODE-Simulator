@@ -1153,12 +1153,23 @@ const UI = {
    * 사이드바를 건드리지 않으므로 메인 Profile 플롯은 계속 사이드바의 모델을
    * 그립니다. 어느 곡선이 무엇인지 헷갈릴 일이 없습니다.
    */
-  renderFitResult(data) {
+  renderFitResult(data, options) {
     State.lastFitResult = data;
     this.syncApplyFitButton();
     this.renderFitCaption(data);
     this.renderFitPlot(data.curves || []);
     this.renderFitSummary(data.params, data.ssr_total);
+
+    // 결과 카드는 화면 두 개쯤 아래에 있고 모달은 열린 채로 남는다. 데려다
+    // 주지 않으면 적합이 끝난 뒤 닫고 내려가 찾아야 한다. 민감도 카드와
+    // 같은 동작이다. 되살리는 중일 때는 하지 않는다 — 방금 무슨 일이
+    // 일어난 게 아니라 원래 거기 있던 것이다.
+    if (!options || options.scroll !== false) {
+      // behavior:"smooth" 는 이 중첩 스크롤 컨테이너에서 무시된다 — 넣어 두면
+    // 스크롤이 아예 일어나지 않는다. 애니메이션이 맞는 자리도 아니다: 피팅은
+    // 모달 뒤라 보이지도 않고, 두 화면을 미끄러져 가는 것은 어지럽기만 하다.
+      DOM.results.fitSummaryCard.scrollIntoView({ block: "nearest" });
+    }
   },
 
   /** 무엇으로 어떻게 적합했고 그 결과를 믿을 만한지 표 위에 밝힙니다. */
@@ -2447,7 +2458,7 @@ const Session = {
         UI.displayPKSummary(results.pk);
       }
       if (results.fit) {
-        UI.renderFitResult(results.fit);
+        UI.renderFitResult(results.fit, { scroll: false });
       }
       if (results.sensitivity && window.pkSensitivity) {
         window.pkSensitivity.restore(results.sensitivity);

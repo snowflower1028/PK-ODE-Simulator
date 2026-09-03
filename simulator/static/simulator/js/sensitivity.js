@@ -591,6 +591,7 @@
       }
 
       setStatus("Done — see the Sensitivity card below.", "ok");
+      scrollToCardWhenClosed();
       bootstrap.Modal.getInstance(modalEl).hide();
     } catch (error) {
       setStatus(error.message, "warn");
@@ -622,19 +623,30 @@
   let results = [];
   let activeIndex = 0;
 
-  function render(list, options) {
+  function render(list) {
     results = Array.isArray(list) ? list : [list];
     activeIndex = 0;
     renderSwitcher();
     showResult(0);
     els.card.style.display = "block";
-    // 새로고침으로 되살릴 때는 스크롤하지 않는다 — 사용자가 무언가를
-    // 실행해서 생긴 결과가 아니라 원래 거기 있던 것이다.
-    if (!options || options.scroll !== false) {
-      els.card.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
     // 되살리는 중이면 Session 쪽에서 알아서 무시한다.
     window.dispatchEvent(new Event("pk:result"));
+  }
+
+  /** 모달이 완전히 닫힌 뒤에 결과 카드로 데려간다.
+   *
+   *  여기서 곧바로 스크롤하면 잠깐 갔다가 되돌아온다. 이 모달은
+   *  data-bs-toggle 로 열리므로 Bootstrap 이 닫으면서 포커스를 트리거
+   *  버튼으로 돌려주는데, 그 버튼이 워크스페이스 맨 위에 있어 화면이 딸려
+   *  올라간다. hidden.bs.modal 은 그 포커스 복귀까지 끝난 뒤에 온다.
+   *  (피팅 모달은 JS 로 열려 트리거가 없으므로 이 문제가 없다.)
+   *
+   *  behavior:"smooth" 는 이 중첩 스크롤 컨테이너에서 무시된다 — 넣어 두면
+   *  스크롤이 아예 일어나지 않는다. */
+  function scrollToCardWhenClosed() {
+    modalEl.addEventListener("hidden.bs.modal", () => {
+      els.card.scrollIntoView({ block: "nearest" });
+    }, { once: true });
   }
 
   /* 세션 저장이 결과를 담아 갈 수 있도록 내놓는다. 결과는 이 안에만 있고
@@ -642,7 +654,7 @@
   window.pkSensitivity = {
     snapshot: () => (results.length ? results : null),
     restore: (list) => {
-      if (Array.isArray(list) && list.length) render(list, { scroll: false });
+      if (Array.isArray(list) && list.length) render(list);
     },
   };
 
