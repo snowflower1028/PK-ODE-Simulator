@@ -2,13 +2,27 @@ services:
   - type: web
     name: pk-ode-simulator
     runtime: python
-    plan: standard   # 1 CPU / 2GB — 수업 중 20~40명 동시 접속 기준. 소규모면 starter(0.5CPU/512MB)로 낮춰도 됩니다.
+    # starter = 0.5 CPU / 512MB ($7). 대시보드에서 바꿨다면 이 파일도 같이
+    # 바꿔야 한다 — Blueprint 로 관리되는 서비스는 다음 배포 때 이 값으로
+    # 되돌아간다.
+    #
+    # 용량 주의: standard(1CPU/2GB)는 수업 중 20~40명 동시 접속을 염두에 둔
+    # 값이었다. starter 에서는 워커 2개 · 0.5 CPU 이고 적분은 워커당 한 번에
+    # 하나씩만 돌므로(solver._INTEGRATOR_LOCK), 그 정도 동시 접속은 줄을 선다.
+    plan: starter
     region: singapore
     branch: main
     buildCommand: "./build.sh"
+    # --workers 2: 워커 하나가 171MB 상주한다(그중 122MB 가 numpy/scipy/
+    #   sympy/pandas import). 3개면 514MB 로 512MB 상한을 그대로 넘는다.
+    # --preload: 앱을 fork 전에 한 번만 올려 라이브러리 페이지를 워커끼리
+    #   공유하게 한다. 참조계수가 페이지를 조금씩 갈라놓지만
+    #   --max-requests 재활용이 주기적으로 되돌린다.
+    # --threads 1: 적분이 워커당 직렬화되므로 스레드를 늘려도 얻는 게 없다.
     startCommand: >-
       gunicorn pk_simulator.wsgi:application
-      --workers 3
+      --preload
+      --workers 2
       --threads 1
       --timeout 180
       --graceful-timeout 30
