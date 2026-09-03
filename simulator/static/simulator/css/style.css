@@ -2451,3 +2451,91 @@ body.is-resizing {
 .print-only {
     display: none;
 }
+
+/* ============================================================ */
+/* 31. 스크롤바                                                  */
+/* ============================================================ */
+/* 기본 스크롤바는 두껍고 홈이 파여 있어, 카드가 떠 있는 이 화면에서 혼자
+   무겁게 보인다. 얇게 줄이고 홈을 없앤다.
+
+   막대는 항상 보이게 둔다. 손을 올려야 나타나는 방식이 요즘 흔하지만,
+   아래에 내용이 더 있다는 것을 알려 주는 유일한 신호를 지우는 셈이라
+   표가 길게 이어지는 이 앱에서는 손해가 크다.
+
+   두 가지 방법을 겹쳐 쓰지 않는다 — Chrome 은 scrollbar-width 가 잡히면
+   ::-webkit-scrollbar 를 통째로 무시하므로, 둘 다 적어 두면 한쪽이 조용히
+   죽은 코드가 된다(실제로 그렇게 적었다가 확인하고 고쳤다). 표준 속성을
+   기본으로 쓰고, 그것이 없는 브라우저(Safari, 옛 Chrome)에만 옛 방식을
+   내려 준다.
+
+   모서리를 둥글게(알약 모양) 하는 것은 일부러 하지 않는다. 그건
+   ::-webkit-scrollbar 로만 지정할 수 있는데, 그러려면 엔진으로 갈라
+   Chrome 에서 표준 속성을 걷어 내야 하고 Firefox 는 그래도 각진 채로
+   남는다 — CSS Scrollbars 표준에는 두께와 색뿐이고 Firefox 는 의사요소를
+   구현하지 않는다. 브라우저마다 다르게 보이느니 어디서나 같은 얇은 막대가
+   낫다고 판단했다. 양쪽을 맞추려면 네이티브 스크롤바를 버리고 오버레이
+   막대를 직접 그려야 하는데, 표와 플롯이 수시로 다시 그려지는 이 앱에서
+   관성 스크롤·키보드·접근성까지 다시 만드는 값을 치를 일은 아니다. */
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
+}
+
+/* 사이드바는 바닥이 회색이라 같은 알파가 더 흐리게 보인다. 조금 진하게. */
+.sidebar {
+    scrollbar-color: rgba(0, 0, 0, 0.28) transparent;
+}
+
+/* 어두운 바탕(피팅 로그) 위에서는 검정 막대가 보이지 않는다. */
+#fit-console-output-modal {
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+@supports not (scrollbar-width: thin) {
+    ::-webkit-scrollbar {
+        width: 9px;
+        height: 9px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background-color: rgba(0, 0, 0, 0.22);
+        border-radius: 999px;
+        /* 투명 테두리 + background-clip 으로 그려지는 막대만 가늘게 한다.
+           잡는 영역은 9px 그대로 둬야 집기 쉽다. */
+        border: 2px solid transparent;
+        background-clip: content-box;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background-color: rgba(0, 0, 0, 0.38);
+    }
+
+    ::-webkit-scrollbar-thumb:active {
+        background-color: rgba(0, 0, 0, 0.5);
+    }
+
+    /* 가로·세로가 만나는 구석에 회색 사각형이 남지 않게 한다. */
+    ::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+        background-color: rgba(0, 0, 0, 0.28);
+    }
+
+    #fit-console-output-modal::-webkit-scrollbar-thumb {
+        background-color: rgba(255, 255, 255, 0.3);
+    }
+}
+
+/* 인쇄에는 스크롤바가 없다. */
+@media print {
+    * {
+        scrollbar-width: none;
+    }
+}
