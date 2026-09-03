@@ -2539,3 +2539,27 @@ body.is-resizing {
         scrollbar-width: none;
     }
 }
+
+/* 관측 대 예측 표 */
+.cmp-dropped {
+    color: #8A4000;
+    font-size: 0.75rem;
+}
+
+/* 2배 이내 비율이 낮으면 눈에 띄어야 한다 — 평균만 봐서는 안 보이는 값이다. */
+.cmp-low {
+    color: #8A4000;
+    font-weight: 600;
+}
+
+.cmp-at {
+    color: var(--apple-text-tertiary);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+#comparison-table td,
+#comparison-table th {
+    font-variant-numeric: tabular-nums;
+}
+

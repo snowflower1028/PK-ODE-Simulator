@@ -1,5 +1,6 @@
 const State = {
   lastFitResult: null,   // 'Apply to model' 이 참조한다
+  latestComparison: null, // 관측 대 예측 표
   // 1. 투여 관련 상태
   doseList: [],
 
@@ -101,6 +102,9 @@ const DOM = {
     plotPlaceholder: document.getElementById("plot-placeholder"),
     pkSummaryContainer: document.getElementById("pk-summary"),
     pkSummaryPlaceholder: document.getElementById("pk-summary-placeholder"),
+    comparisonCard: document.getElementById("comparison-card"),
+    comparisonTable: document.getElementById("comparison-table"),
+    comparisonCaption: document.getElementById("comparison-caption"),
     fitSummaryCard: document.getElementById("fit-summary-card"),
     fitSummaryContainer: document.getElementById("fit-summary"),
     exportProfileBtn: document.getElementById("export-profile-btn"),
@@ -351,6 +355,50 @@ const PK_TABLE_STEADY = [
   },
 ];
 
+
+
+/* 관측값과 그 시각의 예측값이 얼마나 맞는지.
+ *
+ * 열을 이렇게 고른 이유:
+ *   AFE 와 AAFE 는 치우침과 크기를 로그 축에서 따로 잰다. 농도처럼 몇
+ *   자릿수를 오가는 값에는 "몇 배 틀렸나"가 "얼마나 틀렸나"보다 뜻이 분명하다.
+ *   다만 둘만으로는 분포를 알 수 없어서 — AAFE 1.5 는 모든 점이 1.5배
+ *   어긋난 것일 수도, 절반은 딱 맞고 절반은 2.5배 어긋난 것일 수도 있다 —
+ *   2배 이내 비율과 최악의 점을 함께 둔다. 배수는 무차원이라 자료의 단위로
+ *   얼마나 벗어났는지는 RMSE 가 말한다.
+ */
+const COMPARISON_COLUMNS = [
+  {
+    key: 'n', displayName: 'n',
+    definition: 'Paired points used. Points at or below zero cannot enter the fold metrics, which take a logarithm; the count of those is shown beside it.',
+    formula: 'observations matched to a simulated value at the same time',
+  },
+  {
+    key: 'afe', displayName: 'AFE',
+    definition: 'Average fold error — the bias. 1 means no systematic over- or under-prediction, above 1 over-predicts, below 1 under-predicts. It is a signed average, so opposite errors cancel: an AFE of 1 does not mean the fit is good, only that it is not tilted.',
+    formula: '10 ^ mean( log₁₀(predicted / observed) )',
+  },
+  {
+    key: 'aafe', displayName: 'AAFE',
+    definition: 'Absolute average fold error — how far off a typical point is, regardless of direction. Always 1 or more; 1 is a perfect fit. Read it together with AFE: AAFE says how big the errors are, AFE says whether they lean one way.',
+    formula: '10 ^ mean( |log₁₀(predicted / observed)| )',
+  },
+  {
+    key: 'within_2fold_pct', displayName: 'Within 2×',
+    definition: 'Share of points predicted within a factor of two, the usual acceptance band. It catches what an average hides — the same AAFE can come from every point being slightly off or from half being perfect and half being far out.',
+    formula: 'points with |log₁₀(pred/obs)| ≤ log₁₀ 2, as a percentage',
+  },
+  {
+    key: 'max_fold_error', displayName: 'Worst',
+    definition: 'The single largest discrepancy, and when it happened. Averages bury the one point that is badly wrong, which is often the interesting one.',
+    formula: 'max fold error over all paired points',
+  },
+  {
+    key: 'rmse', displayName: 'RMSE',
+    definition: 'Root mean squared error in the units of the data. The fold metrics are dimensionless, so a fit can look fine in fold terms while being off by a lot where the concentration actually matters.',
+    formula: '√( mean( (predicted − observed)² ) )',
+  },
+];
 
 const UI = {
   // --- 공용 및 일반 UI ---
@@ -801,6 +849,74 @@ const UI = {
 
       pkSummaryPlaceholder.style.display = "none";
       pkSummaryContainer.style.display = "block";
+  },
+
+  /**
+   * 관측값과 예측값이 얼마나 맞는지 표로 보여 줍니다.
+   *
+   * 관찰 데이터가 모델 변수에 연결돼 있을 때만 나타납니다 — 연결이 없으면
+   * 견줄 짝이 없습니다.
+   */
+  displayComparison(comparison) {
+    const { comparisonCard, comparisonTable, comparisonCaption } = DOM.results;
+    if (!comparisonCard) return;
+
+    const rows = Object.entries(comparison || {});
+    if (!rows.length) {
+      comparisonCard.style.display = 'none';
+      State.latestComparison = null;
+      return;
+    }
+    State.latestComparison = comparison;
+
+    const fmt = (v, d) => (typeof v === 'number' && Number.isFinite(v)) ? v.toPrecision(d || 4) : '-';
+
+    const headers = ['<th>Variable · dataset</th>']
+      .concat(COMPARISON_COLUMNS.map(col => {
+        const tip = col.definition + '  —  ' + col.formula;
+        return `<th>${col.displayName}<button type="button" class="pk-info" tabindex="0"
+                  aria-label="About ${col.key}" data-tip="${escapeAttr(tip)}">i</button></th>`;
+      }))
+      .join('');
+
+    const body = rows.map(([key, r]) => {
+      const warn = (r.warnings && r.warnings.length)
+        ? `<span class="pk-warn" title="${escapeAttr(r.warnings.join('; '))}">!</span>` : '';
+
+      const cells = COMPARISON_COLUMNS.map(col => {
+        if (col.key === 'n') {
+          // 몇 개를 뺐는지 함께 보여 준다. 조용히 빼면 남은 숫자를 믿을 수 없다.
+          return `<td>${r.n}${r.n_excluded ? ` <span class="cmp-dropped">(−${r.n_excluded})</span>` : ''}</td>`;
+        }
+        if (col.key === 'within_2fold_pct') {
+          const v = r.within_2fold_pct;
+          const cls = (typeof v === 'number' && v < 80) ? ' class="cmp-low"' : '';
+          return `<td${cls}>${typeof v === 'number' ? v.toFixed(1) + '%' : '-'}</td>`;
+        }
+        if (col.key === 'max_fold_error') {
+          const at = (typeof r.max_fold_error_time === 'number')
+            ? ` <span class="cmp-at">at ${fmt(r.max_fold_error_time, 3)}</span>` : '';
+          return `<td>${fmt(r.max_fold_error)}×${at}</td>`;
+        }
+        return `<td>${fmt(r[col.key])}</td>`;
+      }).join('');
+
+      return `<tr><td class="pk-var">${key}${warn}</td>${cells}</tr>`;
+    }).join('');
+
+    comparisonTable.innerHTML = `
+      <div class="table-responsive">
+        <table class="table table-sm table-hover">
+          <thead class="table-light"><tr>${headers}</tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>`;
+
+    if (comparisonCaption) {
+      comparisonCaption.textContent =
+        `${rows.length} mapped series · predictions taken at the sample times, not interpolated`;
+    }
+    comparisonCard.style.display = 'block';
   },
 
   /** 한 종류의 행들을 표 하나로 그린다. 행이 없으면 아무것도 그리지 않는다. */
@@ -1783,6 +1899,7 @@ const Handlers = {
         State.latestPKSummary = response.data.pk;
         UI.plotSimulationResult(response.data.profile, DOM.toolbar.logScaleCheckbox.checked);
         UI.displayPKSummary(response.data.pk);
+        UI.displayComparison(response.data.comparison);
         window.dispatchEvent(new Event('pk:result'));
       }
     } catch (error) {
@@ -1878,6 +1995,27 @@ const Handlers = {
    * 무엇을 계산한 것인지 모르는 PDF 는 나중에 쓸모가 없으므로, 인쇄 직전에
    * 모델과 조건을 머리말에 채워 넣습니다.
    */
+  handleExportComparisonClick() {
+    if (!State.latestComparison) {
+      return alert("Run a simulation with observed data mapped to a model variable first.");
+    }
+    const rows = Object.entries(State.latestComparison).map(([key, r]) => ({
+      series: key,
+      variable: r.variable,
+      dataset: r.dataset,
+      column: r.column,
+      n: r.n,
+      n_excluded: r.n_excluded,
+      AFE: r.afe,
+      AAFE: r.aafe,
+      within_2fold_pct: r.within_2fold_pct,
+      max_fold_error: r.max_fold_error,
+      max_fold_error_time: r.max_fold_error_time,
+      RMSE: r.rmse,
+    }));
+    exportSummaryToCsv(rows, "observed_vs_predicted.csv");
+  },
+
   handleExportReportClick() {
     if (!State.latestSimulationResult) {
       return alert("Run a simulation first — there are no results to report yet.");
@@ -2447,6 +2585,7 @@ const Session = {
       results: {
         simulation: State.latestSimulationResult,
         pk: State.latestPKSummary,
+        comparison: State.latestComparison,
         fit: State.lastFitResult,
         sensitivity: (window.pkSensitivity && window.pkSensitivity.snapshot()) || null,
       },
@@ -2520,6 +2659,9 @@ const Session = {
       if (results.pk) {
         State.latestPKSummary = results.pk;
         UI.displayPKSummary(results.pk);
+      }
+      if (results.comparison) {
+        UI.displayComparison(results.comparison);
       }
       if (results.fit) {
         UI.renderFitResult(results.fit, { scroll: false });
@@ -2872,6 +3014,7 @@ const App = {
     if(DOM.results.exportProfileBtn) DOM.results.exportProfileBtn.addEventListener('click', Handlers.handleExportProfileClick);
     if(DOM.results.exportSummaryBtn) DOM.results.exportSummaryBtn.addEventListener('click', Handlers.handleExportSummaryClick);
     if(DOM.results.exportPlotBtn) DOM.results.exportPlotBtn.addEventListener('click', Handlers.handleExportPlotClick);
+    document.getElementById('export-comparison-btn')?.addEventListener('click', Handlers.handleExportComparisonClick);
     document.getElementById('export-report-btn')?.addEventListener('click', Handlers.handleExportReportClick);
     window.addEventListener('beforeprint', () => UI.fillReportHead());
     if(DOM.results.exportSessionBtn) DOM.results.exportSessionBtn.addEventListener('click', Handlers.handleExportSessionClick);

@@ -25,6 +25,7 @@ import re
 import numpy as np
 import pandas as pd
 
+from .metrics import prediction_error
 from .nca import AUCMethod, Administration, NCAResult, nca, nca_steady_state
 
 
@@ -383,6 +384,107 @@ def analyze_observed(
                 row["warnings"] = list(result.warnings)
 
             results[f"{variable} · {name}"] = row
+
+    return results
+
+
+
+#: 예측-관측 비교표에 실어 보내는 항목.
+COMPARISON_FIELDS = (
+    "n", "n_excluded",
+    "afe", "aafe", "within_2fold_pct",
+    "max_fold_error", "max_fold_error_time",
+    "rmse", "warnings",
+)
+
+
+def observed_times(datasets: Sequence[Dict]) -> List[float]:
+    """업로드된 관찰 데이터에 들어 있는 모든 채혈 시각.
+
+    시뮬레이션 격자에 이 시각들을 끼워 넣어야 예측값을 보간 없이 그대로
+    읽을 수 있다. 촘촘한 격자에서 가장 가까운 점을 집는 방식은 흡수상처럼
+    곡선이 가파른 구간에서 눈에 띄게 어긋난다.
+    """
+    out = set()
+    for dataset in datasets or []:
+        data = dataset.get("data") or {}
+        time_key = next((k for k in data if k.lower() == "time"), None)
+        if time_key is None:
+            continue
+        for value in data[time_key]:
+            try:
+                t = float(value)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(t):
+                out.add(t)
+    return sorted(out)
+
+
+def compare_observed(
+    df: pd.DataFrame,
+    datasets: Sequence[Dict],
+) -> Dict[str, Dict[str, object]]:
+    """관찰값과 같은 시각의 시뮬레이션 값을 견준다.
+
+    돌려주는 키는 analyze_observed 와 같은 "C1 · study-a.csv" 꼴이라, 같은
+    짝을 두 표에서 찾아보기 쉽다.
+
+    예측값은 df 에서 그 시각의 행을 그대로 집는다. views.py 가 채혈 시각을
+    t_eval 에 넣어 두므로 보간이 필요 없다. 시각이 시뮬레이션 구간 밖이면
+    그 점은 짝을 지을 수 없어 빠진다.
+    """
+    if df is None or "Time" not in df.columns:
+        return {}
+
+    grid = df["Time"].to_numpy(dtype=float)
+    results: Dict[str, Dict[str, object]] = {}
+
+    for dataset in datasets or []:
+        name = dataset.get("name") or "observed"
+        data = dataset.get("data") or {}
+        mappings = dataset.get("mappings") or {}
+
+        time_key = next((k for k in data if k.lower() == "time"), None)
+        if time_key is None:
+            continue
+        times = np.asarray(data[time_key], dtype=float)
+
+        for column, model_var in mappings.items():
+            if column not in data or model_var not in df.columns:
+                continue
+
+            observed = np.asarray(
+                [np.nan if v is None else v for v in data[column]], dtype=float)
+            n = min(times.size, observed.size)
+            t, observed = times[:n], observed[:n]
+
+            # 격자에서 같은 시각의 행을 찾는다. 없으면(구간 밖) 뺀다.
+            column_values = df[model_var].to_numpy(dtype=float)
+            predicted = np.full(t.shape, np.nan)
+            outside = 0
+            for i, moment in enumerate(t):
+                if not math.isfinite(moment):
+                    continue
+                hit = np.flatnonzero(np.isclose(grid, moment, rtol=0, atol=1e-9))
+                if hit.size:
+                    predicted[i] = column_values[hit[0]]
+                else:
+                    outside += 1
+
+            result = prediction_error(observed, predicted, times=t)
+            if outside:
+                result.warnings.append(
+                    f"{outside} sample times fall outside the simulated range and were skipped — "
+                    "widen the simulation time range to include them."
+                )
+
+            row = {key: _round(result.as_dict().get(key)) for key in COMPARISON_FIELDS}
+            row["warnings"] = result.warnings
+            row["variable"] = model_var
+            row["dataset"] = name
+            row["column"] = column
+            results[f"{model_var} · {name}"] = row
 
     return results
 

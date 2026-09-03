@@ -45,6 +45,7 @@
           <li><button type="button" id="export-summary-btn" class="dropdown-item"><i class="bi bi-table"></i> PK Summary Table <span class="app-menu-hint">.csv</span></button></li>
           <li><button type="button" id="export-plot-btn" class="dropdown-item"><i class="bi bi-image"></i> Plot Image <span class="app-menu-hint">.png</span></button></li>
           <li><button type="button" id="export-values-btn" class="dropdown-item"><i class="bi bi-123"></i> Values <span class="app-menu-hint">.csv</span></button></li>
+          <li><button type="button" id="export-comparison-btn" class="dropdown-item"><i class="bi bi-rulers"></i> Observed vs Predicted <span class="app-menu-hint">.csv</span></button></li>
           <li><button type="button" id="export-sensitivity-btn" class="dropdown-item"><i class="bi bi-sliders2"></i> Sensitivity Results <span class="app-menu-hint">.csv</span></button></li>
           <li><button type="button" id="export-report-btn" class="dropdown-item"><i class="bi bi-file-earmark-pdf"></i> Results Report <span class="app-menu-hint">.pdf</span></button></li>
         </ul>
@@ -340,6 +341,16 @@
         </div>
       </div>
 
+    </div>
+
+    <div class="card" id="comparison-card" style="display:none;">
+      <div class="card-header sim-card-header">
+        <h5 class="card-title mb-0"><i class="bi bi-rulers"></i> Observed vs Predicted</h5>
+        <span class="sens-caption" id="comparison-caption"></span>
+      </div>
+      <div class="card-body">
+        <div id="comparison-table"></div>
+      </div>
     </div>
 
     <div class="card" id="fit-summary-card" style="display:none;">

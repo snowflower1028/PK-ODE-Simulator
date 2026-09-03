@@ -17,7 +17,7 @@ from sympy import symbols, lambdify
 
 from .parser import parse_ode_input
 from .solver import solve_ode_system
-from .analyzer import analyze_observed, analyze_simulated
+from .analyzer import analyze_observed, analyze_simulated, compare_observed, observed_times
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +370,16 @@ def simulate(request):
         t_end = float(data.get("t_end", 48))
         t_steps = int(data.get("t_steps", 200))
         doses = data.get("doses", [])
+        observed_datasets = data.get("observed", []) or []
+
+        # 채혈 시각을 격자에 끼워 넣는다. 관측값과 예측값을 견주려면 같은
+        # 시각의 값이 필요한데, 가장 가까운 격자점을 집는 방식은 흡수상처럼
+        # 곡선이 가파른 구간에서 눈에 띄게 어긋난다. 구간 밖의 시각은 넣지
+        # 않는다 — 풀지 않은 곳을 풀 수는 없다.
         t_eval = np.linspace(t_start, t_end, t_steps)
+        samples = [t for t in observed_times(observed_datasets) if t_start <= t <= t_end]
+        if samples:
+            t_eval = np.unique(np.concatenate([t_eval, np.asarray(samples, dtype=float)]))
 
         # 2. 캐시에서 파싱된 결과(SymPy 객체) 가져오기
         cache_key = 'parsed_ode_sympy_' + hashlib.md5(ode_text.encode('utf-8')).hexdigest()
@@ -465,11 +474,15 @@ def simulate(request):
 
         # 업로드된 관찰 데이터가 함께 오면 같은 표에 나란히 놓는다.
         observed_summary = analyze_observed(
-            data.get("observed", []),
+            observed_datasets,
             doses,
             derived_expressions=derived_expressions,
         )
         pk_summary.update(observed_summary)
+
+        # 그리고 같은 시각끼리 견준다 — 요약을 나란히 놓는 것과, 점마다
+        # 얼마나 어긋나는지 재는 것은 다른 질문이다.
+        comparison = compare_observed(df_full, observed_datasets)
 
         # 7. 응답 데이터 필터링
         # 이제 'C1'과 같은 파생 변수도 결과에 포함될 수 있습니다.
@@ -481,7 +494,8 @@ def simulate(request):
             "status": "ok",
             "data": {
                 "profile": df_filtered.to_dict(orient="list"),
-                "pk": pk_summary
+                "pk": pk_summary,
+                "comparison": comparison
             }
         })
 
