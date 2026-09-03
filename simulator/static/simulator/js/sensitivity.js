@@ -21,7 +21,9 @@
 
   const els = {
     button: document.getElementById("sensitivity-btn"),
-    param: document.getElementById("sens-param"),
+    menu: document.getElementById("sens-param-menu"),
+    toggle: document.getElementById("sens-param-toggle"),
+    chosen: document.getElementById("sens-chosen"),
     current: document.getElementById("sens-current"),
     modeDesc: document.getElementById("sens-mode-desc"),
     from: document.getElementById("sens-from"),
@@ -39,6 +41,7 @@
     plot: document.getElementById("sensitivity-plot"),
     table: document.getElementById("sensitivity-table"),
     note: document.getElementById("sensitivity-note"),
+    switcher: document.getElementById("sensitivity-switcher"),
   };
 
   function setNote(text) {
@@ -114,11 +117,23 @@
   /* ---------------------------------------------------------- */
   /** 선택값은 "kind:target" 한 문자열로 실어 나른다. 구획 이름과
    *  파라미터 이름이 겹칠 수 있어 이름만으로는 구분되지 않는다. */
-  function selectedTarget() {
-    const raw = els.param.value || "";
-    const cut = raw.indexOf(":");
-    if (cut < 0) return { kind: "parameter", target: raw };
-    return { kind: raw.slice(0, cut), target: raw.slice(cut + 1) };
+  function parseTarget(raw, text) {
+    const cut = String(raw || "").indexOf(":");
+    if (cut < 0) return { kind: "parameter", target: raw, text: text || raw };
+    return { kind: raw.slice(0, cut), target: raw.slice(cut + 1), text: text || raw };
+  }
+
+  /** 고른 대상들. 여러 개를 골라도 함께 움직이지는 않는다 — 하나씩 따로
+   *  훑고 결과를 따로 돌려준다. */
+  function selectedTargets() {
+    return Array.prototype.slice
+      .call(els.menu.querySelectorAll(".sens-target-checkbox:checked"))
+      .map((cb) => parseTarget(cb.value, cb.dataset.text));
+  }
+
+  /** 미리보기나 범위 시드처럼 하나만 있으면 되는 자리에서 쓴다. */
+  function firstTarget() {
+    return selectedTargets()[0] || { kind: "parameter", target: "", text: "" };
   }
 
   /** 지금 화면에 들어 있는 그 대상의 값. 스윕의 기준점이 된다. */
@@ -132,15 +147,24 @@
     return undefined;
   }
 
-  function optionGroup(label, options) {
+  function menuGroup(label, options) {
     if (!options.length) return "";
-    const body = options
-      .map((o) => `<option value="${o.value}">${o.text}</option>`)
-      .join("");
-    return `<optgroup label="${label}">${body}</optgroup>`;
+    const body = options.map((o) => `
+      <li>
+        <label class="dropdown-item py-1">
+          <input type="checkbox" class="form-check-input me-2 sens-target-checkbox"
+                 value="${o.value}" data-text="${o.text}">
+          ${o.text}
+        </label>
+      </li>`).join("");
+    return `<li><h6 class="dropdown-header">${label}</h6></li>${body}`;
   }
 
+  /** 고를 수 있는 대상 목록. 앱의 'Plot Compartments' 와 같은 방식 —
+   *  체크박스가 든 드롭다운. 여러 개를 고를 수 있으면서도 자리를 덜 먹는다. */
   function buildTargetList() {
+    const previous = new Set(selectedTargets().map((s) => s.kind + ":" + s.target));
+
     const params = Object.keys(currentParameters()).map((n) => ({
       value: "parameter:" + n, text: n,
     }));
@@ -152,10 +176,29 @@
       text: d.compartment + " dose at " + d.start_time,
     }));
 
-    els.param.innerHTML =
-      optionGroup("Parameters", params) +
-      optionGroup("Initial values", initials) +
-      optionGroup("Doses", doses);
+    els.menu.innerHTML =
+      menuGroup("Parameters", params) +
+      menuGroup("Initial values", initials) +
+      menuGroup("Doses", doses);
+
+    // 아직 있는 대상이면 앞서 고른 것을 유지하고, 없으면 첫 파라미터 하나.
+    const boxes = els.menu.querySelectorAll(".sens-target-checkbox");
+    let restored = 0;
+    boxes.forEach((cb) => {
+      if (previous.has(cb.value)) { cb.checked = true; restored += 1; }
+    });
+    if (!restored && boxes.length) boxes[0].checked = true;
+  }
+
+  /** 무엇을 고르고 있는지 드롭다운 밖에서도 보이게 한다. */
+  function refreshChosen() {
+    const chosen = selectedTargets();
+    els.toggle.textContent = chosen.length === 1
+      ? chosen[0].text
+      : (chosen.length ? chosen.length + " selected" : "Choose");
+    els.chosen.innerHTML = chosen.length > 1
+      ? chosen.map((s) => `<span class="badge text-bg-secondary">${s.text}</span>`).join("")
+      : "";
   }
 
   /* ---------------------------------------------------------- */
@@ -281,7 +324,7 @@
       if (lastMode !== "list") {
         remembered[lastMode] = { from: +els.from.value, to: +els.to.value };
       }
-      if (mode !== "list") loadRange(mode, selectedTarget());
+      if (mode !== "list") loadRange(mode, firstTarget());
       lastMode = mode;
     }
 
@@ -293,19 +336,40 @@
   }
 
   function refreshPreview() {
-    const sel = selectedTarget();
-    const base = baseValue(sel);
-    els.current.textContent = base === undefined || Number.isNaN(base)
-      ? "" : "currently " + fmt(base, 4);
+    refreshChosen();
+    const chosen = selectedTargets();
 
-    const values = plannedValues(sel);
-    if (!values.length) {
-      els.preview.textContent = currentMode() === "list"
-        ? "Type or paste the values to run."
-        : "Enter a positive range.";
+    // 하나만 골랐으면 기준값을 옆에 적어 준다. 여럿이면 값이 여럿이라
+    // 한 줄에 담기지 않으므로 미리보기 쪽에서 대상마다 보여 준다.
+    if (chosen.length === 1) {
+      const base = baseValue(chosen[0]);
+      els.current.textContent = base === undefined || Number.isNaN(base)
+        ? "" : "currently " + fmt(base, 4);
+    } else {
+      els.current.textContent = "";
+    }
+
+    if (!chosen.length) {
+      els.preview.textContent = "Pick something to sweep.";
       return;
     }
-    els.preview.textContent = values.map((v) => fmt(v, 3)).join("   ");
+
+    const lines = [];
+    let total = 0;
+    chosen.forEach((sel) => {
+      const values = plannedValues(sel);
+      total += values.length;
+      const width = chosen.length > 1 ? 14 : 0;
+      const name = chosen.length > 1 ? (sel.text + " ").padEnd(width, " ") : "";
+      lines.push(name + (values.length
+        ? values.map((v) => fmt(v, 3)).join("   ")
+        : (currentMode() === "list" ? "(type or paste values)" : "(enter a positive range)")));
+    });
+    if (chosen.length > 1) {
+      lines.push("");
+      lines.push(`${chosen.length} sweeps · ${total} simulations`);
+    }
+    els.preview.textContent = lines.join("\n");
   }
 
   /* ---------------------------------------------------------- */
@@ -328,7 +392,7 @@
     // 대상 목록을 새로 만들었으니 절대 범위 기억은 더 이상 맞지 않는다.
     remembered.range = null;
     lastMode = currentMode();
-    if (lastMode !== "list") loadRange(lastMode, selectedTarget());
+    if (lastMode !== "list") loadRange(lastMode, firstTarget());
     applyMode();
     applyView();
   });
@@ -337,9 +401,11 @@
     el.addEventListener("change", applyView);
   });
 
-  els.param.addEventListener("change", () => {
+  // 체크박스는 메뉴 안에서 만들어지므로 위임해서 듣는다.
+  els.menu.addEventListener("change", (event) => {
+    if (!event.target.classList.contains("sens-target-checkbox")) return;
     remembered.range = null;
-    if (currentMode() === "range") loadRange("range", selectedTarget());
+    if (currentMode() === "range") loadRange("range", firstTarget());
     refreshPreview();
   });
 
@@ -386,49 +452,70 @@
     };
   }
 
+  async function postSweep(payload) {
+    const response = await fetch("/sweep/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (result.status !== "ok") throw new Error(result.message || "Sweep failed.");
+    return result.data;
+  }
+
   els.run.addEventListener("click", async () => {
-    let payload;
-    let waiting;
-
-    if (currentView() === "tornado") {
-      const delta = +els.delta.value / 100;
-      if (!(delta > 0 && delta < 1)) {
-        setStatus("Nudge by something between 0 and 100%.", "warn");
-        return;
-      }
-      const count = Object.values(currentParameters()).filter((v) => v).length;
-      payload = basePayload({ mode: "tornado", delta: delta, variable: els.variable.value });
-      waiting = "Nudging " + count + " parameters…";
-    } else {
-      const sel = selectedTarget();
-      const values = plannedValues(sel);
-      if (values.length < 2) {
-        setStatus("Give at least two values to sweep over.", "warn");
-        return;
-      }
-      payload = basePayload({
-        mode: "scan",
-        kind: sel.kind,
-        target: sel.target,
-        values: values,
-        variable: els.variable.value,
-      });
-      waiting = "Running " + values.length + " simulations…";
-    }
-
     els.run.disabled = true;
-    setStatus(waiting, null);
-
     try {
-      const response = await fetch("/sweep/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
-        body: JSON.stringify(payload),
-      });
-      const result = await response.json();
-      if (result.status !== "ok") throw new Error(result.message || "Sweep failed.");
+      if (currentView() === "tornado") {
+        const delta = +els.delta.value / 100;
+        if (!(delta > 0 && delta < 1)) {
+          setStatus("Nudge by something between 0 and 100%.", "warn");
+          return;
+        }
+        const count = Object.values(currentParameters()).filter((v) => v).length;
+        setStatus("Nudging " + count + " parameters…", null);
+        render([await postSweep(basePayload({
+          mode: "tornado", delta: delta, variable: els.variable.value,
+        }))]);
+      } else {
+        // 대상마다 따로 훑는다. 한 요청에 여러 대상을 담지 않는 이유는
+        // 값 목록이 대상마다 다르기 때문이다 — 배수는 각자의 기준값에
+        // 걸리므로 CL 의 ×2 와 V 의 ×2 는 다른 숫자다.
+        const chosen = selectedTargets();
+        if (!chosen.length) {
+          setStatus("Pick something to sweep.", "warn");
+          return;
+        }
+        const jobs = chosen.map((sel) => ({ sel: sel, values: plannedValues(sel) }));
+        const usable = jobs.filter((j) => j.values.length >= 2);
+        if (!usable.length) {
+          setStatus("Give at least two values to sweep over.", "warn");
+          return;
+        }
 
-      render(result.data);
+        const results = [];
+        for (let i = 0; i < usable.length; i += 1) {
+          const job = usable[i];
+          setStatus(usable.length > 1
+            ? `Sweeping ${job.sel.text} (${i + 1} of ${usable.length})…`
+            : `Running ${job.values.length} simulations…`, null);
+          results.push(await postSweep(basePayload({
+            mode: "scan",
+            kind: job.sel.kind,
+            target: job.sel.target,
+            values: job.values,
+            variable: els.variable.value,
+          })));
+        }
+        render(results);
+
+        const skipped = jobs.length - usable.length;
+        if (skipped) {
+          setStatus(`Done — ${skipped} of ${jobs.length} had no usable values and were skipped.`, "warn");
+          return;
+        }
+      }
+
       setStatus("Done — see the Sensitivity card below.", "ok");
       bootstrap.Modal.getInstance(modalEl).hide();
     } catch (error) {
@@ -455,14 +542,49 @@
 
   let lastResult = null;
 
-  function render(data) {
+  /* 여러 대상을 훑으면 결과도 여럿이다. 세로로 죽 쌓으면 다섯 개만 되어도
+     스크롤만 하게 되므로, 전부 들고 있다가 한 번에 하나씩 보여 준다.
+     이미 받아 둔 자료라 전환은 즉시고 다시 풀지 않는다. */
+  let results = [];
+  let activeIndex = 0;
+
+  function render(list) {
+    results = Array.isArray(list) ? list : [list];
+    activeIndex = 0;
+    renderSwitcher();
+    showResult(0);
+    els.card.style.display = "block";
+    els.card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function renderSwitcher() {
+    if (results.length < 2) {
+      els.switcher.hidden = true;
+      els.switcher.innerHTML = "";
+      return;
+    }
+    els.switcher.innerHTML = results.map((d, i) => `
+      <button type="button" class="sens-tab${i === activeIndex ? " is-active" : ""}"
+              data-index="${i}">${d.target}</button>`).join("");
+    els.switcher.hidden = false;
+  }
+
+  function showResult(i) {
+    const data = results[i];
+    if (!data) return;
+    activeIndex = i;
     lastResult = data;
     lastTornado = data.mode === "tornado" ? data : null;
     if (data.mode === "tornado") renderTornado(data);
     else renderScan(data);
-    els.card.style.display = "block";
-    els.card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    els.switcher.querySelectorAll(".sens-tab").forEach((b, j) =>
+      b.classList.toggle("is-active", j === i));
   }
+
+  els.switcher.addEventListener("click", (event) => {
+    const tab = event.target.closest(".sens-tab");
+    if (tab) showResult(+tab.dataset.index);
+  });
 
   function renderScan(data) {
     const runs = data.runs || [];

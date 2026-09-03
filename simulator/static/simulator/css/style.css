@@ -2131,3 +2131,72 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     text-overflow: ellipsis;
 }
 
+/* 훑을 대상 고르기 — 여러 개를 고를 수 있으니 체크박스 드롭다운. */
+.sens-param-menu {
+    max-height: 15rem;
+    overflow-y: auto;
+    min-width: 12rem;
+}
+
+.sens-param-menu .dropdown-header {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    padding-top: 0.5rem;
+}
+
+.sens-param-menu .dropdown-item {
+    display: flex;
+    align-items: center;
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+
+/* 드롭다운이 닫혀 있어도 무엇을 고르고 있는지 보여야 한다. */
+.sens-chosen {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.5rem;
+}
+
+.sens-chosen:empty {
+    display: none;
+}
+
+/* 결과 전환기. 대상마다 결과가 하나씩이고, 한 번에 하나를 본다. */
+.sens-switcher {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.9rem;
+}
+
+.sens-tab {
+    padding: 0.22rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--apple-control-border);
+    background-color: transparent;
+    color: var(--apple-text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.sens-tab:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+    color: var(--apple-text-primary);
+}
+
+.sens-tab.is-active {
+    color: var(--apple-system-blue);
+    background-color: rgba(0, 122, 255, 0.1);
+    border-color: var(--apple-system-blue);
+}
+
+.sens-tab:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+}

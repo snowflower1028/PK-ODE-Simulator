@@ -810,6 +810,14 @@ const UI = {
       </div>`;
   },
 
+  /** 적합 결과가 있을 때만 'Apply to model' 을 누를 수 있게 한다.
+   *  모달 안과 카드 위 두 곳에 같은 버튼이 있고, 하는 일도 같다. */
+  syncApplyFitButton() {
+    const ready = !!(State.lastFitResult && Array.isArray(State.lastFitResult.params));
+    const btn = document.getElementById('fit-apply-modal-btn');
+    if (btn) btn.disabled = !ready;
+  },
+
   /** 어느 구간을 보고 있는지, 그리고 그 값을 믿어도 되는지 표 위에 밝힌다.
    *
    *  정상상태에 이르지 못했으면 그 사실이 숫자보다 중요하다. 경고 아이콘
@@ -948,7 +956,10 @@ const UI = {
       startBtn.innerHTML = '<i class="bi bi-play-circle"></i> Start Fitting';
     }
 
-    // 8. 모달 표시
+    // 8. 이전 결과가 남아 있으면 Apply 를 켠 채로 연다.
+    this.syncApplyFitButton();
+
+    // 9. 모달 표시
     this._fittingModalInstance.show();
   },
 
@@ -1144,6 +1155,7 @@ const UI = {
    */
   renderFitResult(data) {
     State.lastFitResult = data;
+    this.syncApplyFitButton();
     this.renderFitCaption(data);
     this.renderFitPlot(data.curves || []);
     this.renderFitSummary(data.params, data.ssr_total);
@@ -2457,6 +2469,7 @@ const App = {
     document.querySelectorAll('input[name="fitObjective"]').forEach(el =>
       el.addEventListener('change', () => UI.applyFitObjective()));
     document.getElementById('fit-apply-btn')?.addEventListener('click', Handlers.handleApplyFitClick);
+    document.getElementById('fit-apply-modal-btn')?.addEventListener('click', Handlers.handleApplyFitClick);
     DOM.modals.fittingSettings.startBtn.addEventListener('click', () => Handlers.handleStartFittingClick());
     DOM.modals.fittingSettings.fetchInitialParamsBtn.addEventListener('click', Handlers.handleFetchInitialParamsClick);
 

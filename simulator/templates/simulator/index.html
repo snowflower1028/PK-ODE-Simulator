@@ -351,6 +351,7 @@
         <span class="sens-caption" id="sensitivity-caption"></span>
       </div>
       <div class="card-body">
+        <div class="sens-switcher" id="sensitivity-switcher" hidden></div>
         <p class="sens-note" id="sensitivity-note" hidden></p>
         <div id="sensitivity-plot"></div>
         <div id="sensitivity-table"></div>
@@ -424,14 +425,22 @@
           <section class="fit-section" data-sens-view="scan">
             <h6 class="fit-section-title"><i class="bi bi-ui-radios"></i> Sweep</h6>
             <p class="fit-section-desc">
-              A parameter, a compartment's starting amount, or a registered dose.
-              One at a time &mdash; sweeping two at once multiplies the runs and
-              buries the curves.
+              Parameters, compartment starting amounts, or registered doses. Pick
+              several and each is swept on its own, one at a time &mdash; you get a
+              separate result for each, not one run with everything moved at once.
             </p>
             <div class="sens-row">
-              <select id="sens-param" class="form-select form-select-sm"></select>
+              <div class="dropdown">
+                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                        id="sens-param-toggle" data-bs-toggle="dropdown"
+                        data-bs-auto-close="outside" aria-expanded="false">
+                  Choose
+                </button>
+                <ul class="dropdown-menu sens-param-menu" id="sens-param-menu"></ul>
+              </div>
               <span class="sens-current" id="sens-current"></span>
             </div>
+            <div class="sens-chosen" id="sens-chosen"></div>
           </section>
 
           <section class="fit-section" data-sens-view="scan">
@@ -686,8 +695,12 @@
         </section>
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Quit</button>
           <button type="button" class="btn btn-primary" id="start-fitting-btn"><i class="bi bi-play-circle"></i> Start Fitting</button>
+          <button type="button" class="btn btn-outline-primary" id="fit-apply-modal-btn" disabled
+                  title="Copy the fitted values into the model in the sidebar">
+            <i class="bi bi-box-arrow-in-left"></i> Apply to model
+          </button>
         </div>
       </div>
     </div>
