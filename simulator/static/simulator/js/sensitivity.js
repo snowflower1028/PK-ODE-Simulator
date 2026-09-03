@@ -29,7 +29,7 @@
     from: document.getElementById("sens-from"),
     to: document.getElementById("sens-to"),
     points: document.getElementById("sens-points"),
-    list: document.getElementById("sens-list"),
+    listFields: document.getElementById("sens-list-fields"),
     preview: document.getElementById("sens-preview"),
     delta: document.getElementById("sens-delta"),
     metric: document.getElementById("sens-metric"),
@@ -190,16 +190,59 @@
     if (!restored && boxes.length) boxes[0].checked = true;
   }
 
-  /** 무엇을 고르고 있는지 드롭다운 밖에서도 보이게 한다. */
+  /** 고른 것을 드롭다운 오른쪽에 늘어놓는다.
+   *
+   *  버튼 글씨는 "Choose" 로 고정한다 — 버튼은 목록을 여는 동작이고, 무엇을
+   *  골랐는지는 배지가 말한다. 둘 다 상태를 말하면 같은 것을 두 번 읽는다.
+   *  배지마다 ×를 달아 여기서 바로 뺄 수 있게 한다. */
   function refreshChosen() {
     const chosen = selectedTargets();
-    els.toggle.textContent = chosen.length === 1
-      ? chosen[0].text
-      : (chosen.length ? chosen.length + " selected" : "Choose");
-    els.chosen.innerHTML = chosen.length > 1
-      ? chosen.map((s) => `<span class="badge text-bg-secondary">${s.text}</span>`).join("")
-      : "";
+    els.chosen.innerHTML = chosen.map((s) => `
+      <span class="sens-badge">${s.text}<button type="button" class="sens-badge-x"
+        data-key="${keyOf(s)}" aria-label="Remove ${s.text}">&times;</button></span>`).join("");
   }
+
+  els.chosen.addEventListener("click", (event) => {
+    const btn = event.target.closest(".sens-badge-x");
+    if (!btn) return;
+    const box = els.menu.querySelector(`.sens-target-checkbox[value="${btn.dataset.key}"]`);
+    if (box) {
+      box.checked = false;
+      box.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+
+  /** List 모드는 대상마다 입력칸을 하나씩 준다. 하나만 골랐으면 칸도 하나라
+   *  예전과 같아 보이고, 여럿이면 각자 다른 값을 넣을 수 있다. */
+  function renderListFields() {
+    const chosen = selectedTargets();
+
+    // 다시 그리기 전에 지금 쳐 둔 값을 거둬 둔다.
+    els.listFields.querySelectorAll(".sens-list").forEach((f) => {
+      listText[f.dataset.key] = f.value;
+    });
+
+    // 새로 고른 대상은 마지막으로 친 목록에서 출발한다 — 대개 같은 값으로
+    // 시작해 조금씩 고치고 싶어 하기 때문이다.
+    const seed = chosen.map((s) => listText[keyOf(s)]).find((v) => v && v.trim()) || "";
+
+    els.listFields.innerHTML = chosen.map((s) => {
+      const key = keyOf(s);
+      if (listText[key] === undefined) listText[key] = seed;
+      return `
+        <div class="sens-list-row">
+          <label class="sens-label" for="sens-list-${key}">${s.text}</label>
+          <textarea id="sens-list-${key}" class="form-control form-control-sm sens-list"
+                    data-key="${key}" rows="1" placeholder="5  10  20  40">${listText[key]}</textarea>
+        </div>`;
+    }).join("") || '<p class="fit-section-desc mb-0">Pick something to sweep first.</p>';
+  }
+
+  els.listFields.addEventListener("input", (event) => {
+    if (!event.target.classList.contains("sens-list")) return;
+    listText[event.target.dataset.key] = event.target.value;
+    refreshPreview();
+  });
 
   /* ---------------------------------------------------------- */
   /* 훑을 값 만들기                                               */
@@ -240,9 +283,23 @@
     return out;
   }
 
+  function keyOf(sel) {
+    return sel.kind + ":" + sel.target;
+  }
+
+  /* List 모드에서 친 값은 대상마다 따로 기억한다. 같은 목록을 모든 대상에
+     쓰고 싶을 때도 있지만, CL 에 쓸 값과 V 에 쓸 값이 같을 이유는 없다. */
+  const listText = {};
+
+  function listFor(sel) {
+    const field = els.listFields.querySelector(`.sens-list[data-key="${keyOf(sel)}"]`);
+    if (field) return field.value;
+    return listText[keyOf(sel)] || "";
+  }
+
   function rawValues(sel, mode) {
     if (mode === "list") {
-      return els.list.value
+      return listFor(sel)
         .split(/[\s,;]+/)
         .map((s) => parseFloat(s))
         .filter((v) => Number.isFinite(v));
@@ -267,10 +324,15 @@
    *  절대 범위는 반대로 선형이 맞다. "5 에서 40 까지 일곱 점" 이라고 말할 때
    *  기대하는 것은 고르게 벌어진 값이지 기하급수가 아니다.
    *
-   *  훑는 범위 안에 현재값이 들어 있으면 그 점을 끼워 넣는다. 어디서
-   *  출발했는지 보이는 것이 스윕의 절반이고, 배수 모드가 아니면 현재값이
-   *  저절로 들어오지는 않는다. 범위 밖이면 넣지 않는다 — 보고 있지도 않은
-   *  구간의 곡선을 하나 더 그릴 이유가 없다.
+   *  범위를 말하는 모드(배수·범위)에서는 그 안에 현재값이 들어 있으면 끼워
+   *  넣는다. 어디서 출발했는지 보이는 것이 스윕의 절반이고, 배수 모드가
+   *  아니면 현재값이 저절로 들어오지는 않는다. 범위 밖이면 넣지 않는다 —
+   *  보고 있지도 않은 구간의 곡선을 하나 더 그릴 이유가 없다.
+   *
+   *  List 모드에는 넣지 않는다. 거기서 사용자는 범위가 아니라 값을 지목한
+   *  것이고, "The exact values you want" 라고 적어 놓고 하나를 더 넣으면
+   *  그 약속을 어기는 것이다. 대상마다 현재값이 범위 안에 있느냐에 따라
+   *  개수가 들쭉날쭉해 보이는 원인이기도 했다.
    *
    *  값이 커질수록 진해지는 색을 쓰므로 순서대로 정렬해서 돌려준다. */
   function plannedValues(sel) {
@@ -278,7 +340,8 @@
     if (!values.length) return [];
 
     const base = baseValue(sel);
-    if (Number.isFinite(base) && base >= Math.min.apply(null, values)
+    if (currentMode() !== "list"
+        && Number.isFinite(base) && base >= Math.min.apply(null, values)
         && base <= Math.max.apply(null, values)) {
       values.push(+base.toPrecision(6));
     }
@@ -328,6 +391,8 @@
       lastMode = mode;
     }
 
+    if (mode === "list") renderListFields();
+
     modalEl.querySelectorAll("[data-sens-mode]").forEach((el) => {
       el.hidden = !el.dataset.sensMode.split(" ").includes(mode);
     });
@@ -356,19 +421,27 @@
 
     const lines = [];
     let total = 0;
+    let marked = false;
     chosen.forEach((sel) => {
       const values = plannedValues(sel);
+      const base = baseValue(sel);
       total += values.length;
       const width = chosen.length > 1 ? 14 : 0;
       const name = chosen.length > 1 ? (sel.text + " ").padEnd(width, " ") : "";
       lines.push(name + (values.length
-        ? values.map((v) => fmt(v, 3)).join("   ")
+        ? values.map((v) => {
+            // 기준값에는 표를 단다. 범위 모드에서는 목록에 없던 이 값이
+            // 끼워 넣어지므로, 표시가 없으면 왜 한 점이 더 많은지 알 수 없다.
+            const isBase = Number.isFinite(base)
+              && Math.abs(v - base) <= 1e-9 * Math.max(Math.abs(v), 1);
+            if (isBase) marked = true;
+            return fmt(v, 3) + (isBase ? "*" : "");
+          }).join("   ")
         : (currentMode() === "list" ? "(type or paste values)" : "(enter a positive range)")));
     });
-    if (chosen.length > 1) {
-      lines.push("");
-      lines.push(`${chosen.length} sweeps · ${total} simulations`);
-    }
+    if (marked || chosen.length > 1) lines.push("");
+    if (marked) lines.push("* current value — drawn in black on the plot");
+    if (chosen.length > 1) lines.push(`${chosen.length} sweeps · ${total} simulations`);
     els.preview.textContent = lines.join("\n");
   }
 
@@ -406,10 +479,11 @@
     if (!event.target.classList.contains("sens-target-checkbox")) return;
     remembered.range = null;
     if (currentMode() === "range") loadRange("range", firstTarget());
+    renderListFields();
     refreshPreview();
   });
 
-  [els.from, els.to, els.points, els.list].forEach((el) => {
+  [els.from, els.to, els.points].forEach((el) => {
     el.addEventListener("input", refreshPreview);
     el.addEventListener("change", refreshPreview);
   });

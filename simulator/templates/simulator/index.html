@@ -438,9 +438,9 @@
                 </button>
                 <ul class="dropdown-menu sens-param-menu" id="sens-param-menu"></ul>
               </div>
+              <div class="sens-chosen" id="sens-chosen"></div>
               <span class="sens-current" id="sens-current"></span>
             </div>
-            <div class="sens-chosen" id="sens-chosen"></div>
           </section>
 
           <section class="fit-section" data-sens-view="scan">
@@ -466,9 +466,7 @@
               <input id="sens-points" type="number" class="form-control form-control-sm" value="7" min="2" max="40" step="1">
             </div>
             <div data-sens-mode="list">
-              <label for="sens-list" class="sens-label d-block mb-1">Values</label>
-              <textarea id="sens-list" class="form-control form-control-sm sens-list" rows="2"
-                        placeholder="5  10  20  40"></textarea>
+              <div id="sens-list-fields"></div>
             </div>
 
             <p class="sens-preview" id="sens-preview"></p>

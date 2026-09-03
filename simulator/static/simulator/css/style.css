@@ -1982,8 +1982,26 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 .sens-list {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
     font-size: 0.8125rem;
-    min-height: 3.6rem;
+    min-height: 2.1rem;
     resize: vertical;
+    flex: 1 1 auto;
+}
+
+/* 대상마다 한 줄. 라벨을 왼쪽에 세워 어느 값이 누구 것인지 붙여 읽힌다. */
+.sens-list-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.sens-list-row + .sens-list-row {
+    margin-top: 0.4rem;
+}
+
+.sens-list-row > .sens-label {
+    flex: 0 0 auto;
+    min-width: 4.5rem;
+    text-align: right;
 }
 
 /* 훑을 대상은 파라미터 / 초기값 / 용량으로 묶어 보여 준다. */
@@ -2158,12 +2176,56 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 .sens-chosen {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 0.3rem;
-    margin-top: 0.5rem;
 }
 
 .sens-chosen:empty {
     display: none;
+}
+
+/* 고른 대상. 회색은 "꺼져 있다"로 읽히므로 앱의 파랑 계열로 둔다 —
+   실제로 켜져 있는 것들이다. */
+.sens-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.12rem 0.2rem 0.12rem 0.5rem;
+    border-radius: 999px;
+    background-color: rgba(0, 122, 255, 0.12);
+    border: 1px solid rgba(0, 122, 255, 0.35);
+    color: var(--apple-system-blue);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.sens-badge-x {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05rem;
+    height: 1.05rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: transparent;
+    color: inherit;
+    font-size: 0.9rem;
+    line-height: 1;
+    opacity: 0.65;
+}
+
+.sens-badge-x:hover {
+    background-color: rgba(0, 122, 255, 0.2);
+    opacity: 1;
+}
+
+.sens-badge-x:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.4);
+    opacity: 1;
 }
 
 /* 결과 전환기. 대상마다 결과가 하나씩이고, 한 번에 하나를 본다. */
