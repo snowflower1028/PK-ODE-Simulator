@@ -2019,3 +2019,73 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     color: #8A4000;
 }
 
+/* ============================================================ */
+/* 28. Fitting objective                                        */
+/* ============================================================ */
+/* [hidden] 은 UA 스타일이라 작성자 규칙에 진다. 여기서 못을 박는다. */
+[data-fit-objective][hidden] {
+    display: none !important;
+}
+
+#fit-objective-section .seg-toggle {
+    align-self: flex-start;
+    margin-bottom: 0.85rem;
+}
+
+#fit-objective-section .seg-toggle .btn {
+    font-size: 12px !important;
+    padding: 0.22rem 0.7rem;
+}
+
+/* 목적함수 식. 무엇을 최소화하는지가 이 섹션에서 가장 중요한 한 줄이다. */
+.fit-formula {
+    margin: 0 0 0.7rem;
+    padding: 0.55rem 0.75rem;
+    border-radius: 7px;
+    background-color: var(--apple-background-secondary);
+    border: 1px solid var(--apple-card-border);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 0.8125rem;
+    color: var(--apple-text-primary);
+    overflow-x: auto;
+}
+
+.fit-choice-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+/* 선택지마다 이름·식·언제 쓰는지를 한 덩어리로 묶는다. 이름만으로는
+   무엇이 달라지는지 알 수 없다. */
+.fit-choice .form-check-label {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+    column-gap: 0.6rem;
+    row-gap: 0.15rem;
+    cursor: pointer;
+}
+
+.fit-choice .form-check-label strong {
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.fit-choice .form-check-label code {
+    font-size: 0.75rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 4px;
+    background-color: var(--apple-background-secondary);
+    border: 1px solid var(--apple-card-border);
+    color: var(--apple-text-secondary);
+    white-space: nowrap;
+}
+
+.fit-choice .form-check-label span {
+    grid-column: 1 / -1;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--apple-text-secondary);
+}
+

@@ -545,21 +545,98 @@
                 </div>
           </section>
 
-          <section id="fit-error-model-section" class="fit-section">
-            <h6 class="fit-section-title"><i class="bi bi-graph-up-arrow"></i> Error Model (MLE)</h6>
-            <p class="fit-section-desc">Residual error model used for the maximum-likelihood objective.</p>
-            <div class="d-flex gap-3 flex-wrap">
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="errorModel" id="errConst" value="constant" checked>
-                <label class="form-check-label" for="errConst">Additive (Constant)</label>
+          <section id="fit-objective-section" class="fit-section">
+            <h6 class="fit-section-title"><i class="bi bi-graph-up-arrow"></i> Objective</h6>
+            <p class="fit-section-desc">
+              What the optimiser minimises &mdash; and so which points get the most
+              say in the answer. Pick one: both of these decide how residuals are
+              weighted, and stacking them would weight twice.
+            </p>
+
+            <div class="btn-group btn-group-sm seg-toggle" role="group" aria-label="Objective function">
+              <input type="radio" class="btn-check" name="fitObjective" id="objMle" value="mle" checked>
+              <label class="btn" for="objMle">Maximum likelihood</label>
+              <input type="radio" class="btn-check" name="fitObjective" id="objWls" value="wls">
+              <label class="btn" for="objWls">Weighted least squares</label>
+            </div>
+
+            <div data-fit-objective="mle">
+              <p class="fit-formula">minimise &nbsp; &frac12; &sum; [ ln &sigma;<sub>i</sub><sup>2</sup> + ( (y<sub>i</sub> &minus; &#375;<sub>i</sub>) / &sigma;<sub>i</sub> )<sup>2</sup> ]</p>
+              <p class="fit-section-desc">
+                &sigma; is <strong>estimated together with the parameters</strong>, not
+                something you supply &mdash; it comes back in the results as its own row.
+                It is built from the <strong>predicted</strong> value &#375;, not the
+                observed one, so noise in a measurement cannot feed back into its own
+                weight.
+              </p>
+              <div class="fit-choice-list">
+                <div class="form-check fit-choice">
+                  <input class="form-check-input" type="radio" name="errorModel" id="errConst" value="constant" checked>
+                  <label class="form-check-label" for="errConst">
+                    <strong>Additive (Constant)</strong>
+                    <code>&sigma;<sub>i</sub> = &sigma;<sub>add</sub></code>
+                    <span>Absolute residuals count equally, so the high concentrations
+                      dominate the fit.</span>
+                  </label>
+                </div>
+                <div class="form-check fit-choice">
+                  <input class="form-check-input" type="radio" name="errorModel" id="errProp" value="proportional">
+                  <label class="form-check-label" for="errProp">
+                    <strong>Proportional</strong>
+                    <code>&sigma;<sub>i</sub> = &#375;<sub>i</sub> &middot; &sigma;<sub>prop</sub></code>
+                    <span>Relative residuals count equally, so the low concentrations get
+                      the same say. Usual choice when the assay error is a percentage.</span>
+                  </label>
+                </div>
+                <div class="form-check fit-choice">
+                  <input class="form-check-input" type="radio" name="errorModel" id="errComb" value="combined">
+                  <label class="form-check-label" for="errComb">
+                    <strong>Combined</strong>
+                    <code>&sigma;<sub>i</sub> = &radic;(&sigma;<sub>add</sub><sup>2</sup> + (&#375;<sub>i</sub>&sigma;<sub>prop</sub>)<sup>2</sup>)</code>
+                    <span>An additive floor near zero, proportional higher up. Two sigmas
+                      to estimate, so it needs more data to pin down.</span>
+                  </label>
+                </div>
               </div>
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="errorModel" id="errProp" value="proportional">
-                <label class="form-check-label" for="errProp">Proportional</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="errorModel" id="errComb" value="combined">
-                <label class="form-check-label" for="errComb">Combined</label>
+            </div>
+
+            <div data-fit-objective="wls">
+              <p class="fit-formula">minimise &nbsp; &sum; w<sub>i</sub> (y<sub>i</sub> &minus; &#375;<sub>i</sub>)<sup>2</sup></p>
+              <p class="fit-section-desc">
+                Weights are fixed from the <strong>observed</strong> values, so they do not
+                shift while the fit runs. No &sigma; is estimated, and with no likelihood
+                there is no AIC or BIC &mdash; those come back blank. A point measured at
+                exactly zero is dropped rather than floored, since flooring would let that
+                one point dominate everything.
+              </p>
+              <div class="fit-choice-list">
+                <div class="form-check fit-choice">
+                  <input class="form-check-input" type="radio" name="fitWeighting" id="weightNone" value="none" checked>
+                  <label class="form-check-label" for="weightNone">
+                    <strong>None</strong>
+                    <code>w<sub>i</sub> = 1</code>
+                    <span>Ordinary least squares. Fine when the error is roughly the same
+                      size at every concentration.</span>
+                  </label>
+                </div>
+                <div class="form-check fit-choice">
+                  <input class="form-check-input" type="radio" name="fitWeighting" id="weight1Y" value="1/Y">
+                  <label class="form-check-label" for="weight1Y">
+                    <strong>1/Y</strong>
+                    <code>w<sub>i</sub> = 1 / y<sub>i</sub></code>
+                    <span>Pulls the low concentrations back into the fit when the error
+                      grows with the measurement.</span>
+                  </label>
+                </div>
+                <div class="form-check fit-choice">
+                  <input class="form-check-input" type="radio" name="fitWeighting" id="weight1Y2" value="1/Y2">
+                  <label class="form-check-label" for="weight1Y2">
+                    <strong>1/Y&sup2;</strong>
+                    <code>w<sub>i</sub> = 1 / y<sub>i</sub><sup>2</sup></code>
+                    <span>Equal relative weight to every point &mdash; the least-squares
+                      counterpart of a proportional error model.</span>
+                  </label>
+                </div>
               </div>
             </div>
           </section>
@@ -574,32 +651,6 @@
               <button type="button" class="btn btn-sm btn-outline-success mt-2" id="add-fitting-group-btn">
                   <i class="bi bi-plus-circle"></i> Add Experimental Group
               </button>
-          </section>
-
-          <section id="fit-weighting-section" class="fit-section">
-            <h6 class="fit-section-title"><i class="bi bi-distribute-vertical"></i> Weighting Scheme</h6>
-            <p class="fit-section-desc">Select a weighting method to adjust the influence of each data point on the fit. This is useful for balancing errors across a wide range of concentrations.</p>
-
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="fitWeighting" id="weightNone" value="none" checked>
-              <label class="form-check-label" for="weightNone">
-                <strong>No Weighting</strong> (Ordinary Least Squares)
-              </label>
-            </div>
-            
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="fitWeighting" id="weight1Y" value="1/Y">
-              <label class="form-check-label" for="weight1Y">
-                <strong>1/Y</strong> (Relative Error) - Divides residuals by observed concentration.
-              </label>
-            </div>
-            
-            <div class="form-check">
-              <input class="form-check-input" type="radio" name="fitWeighting" id="weight1Y2" value="1/Y2">
-              <label class="form-check-label" for="weight1Y2">
-                <strong>1/Y²</strong> - Divides residuals by the square of observed concentration.
-              </label>
-            </div>
           </section>
 
         </div>

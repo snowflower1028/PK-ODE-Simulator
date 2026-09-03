@@ -154,6 +154,56 @@ def _neg_log_likelihood(x, fit_keys, fixed_param, equations_callable, all_parame
     return total_nll
 
 
+def _weights(y_obs, weighting):
+    """관측값에서 가중치를 만든다.
+
+    가중치는 **관측값** 으로 정한다. MLE 쪽이 예측값 ŷ 로 sigma 를 만드는 것과
+    반대인데, 이것이 1/Y 라는 이름이 뜻하는 바이기도 하고, 반복 중에 가중치가
+    따라 움직이지 않아 목적함수가 고정된 가중최소제곱으로 잘 정의되기 때문이다.
+
+    농도 0 은 나눌 수 없으므로 그 점은 가중치 0 으로 빼 버린다 — 임의의 작은
+    수로 바닥을 깔면 그 한 점이 목적함수를 통째로 지배한다.
+    """
+    y = np.abs(np.asarray(y_obs, dtype=float))
+    if weighting == '1/Y':
+        power = 1.0
+    elif weighting == '1/Y2':
+        power = 2.0
+    else:
+        return np.ones_like(y)
+
+    w = np.zeros_like(y)
+    usable = y > 0
+    w[usable] = 1.0 / y[usable] ** power
+    return w
+
+
+def _weighted_ssr(x, fit_keys, fixed_param, equations_callable, all_parameters,
+                  comps, initials, fitting_groups, param_scopes, weighting,
+                  derived_expressions):
+    """가중 잔차제곱합 (minimize 대상).
+
+    sum(w_i * (y_i - yhat_i)^2). MLE 와 달리 추정할 sigma 가 없으므로 x 는
+    모델 파라미터만 담는다.
+    """
+    try:
+        pairs = _predict_pairs(x, fit_keys, fixed_param, equations_callable, all_parameters,
+                               comps, initials, fitting_groups, param_scopes, None,
+                               derived_expressions)
+    except Exception:
+        # 적분 실패 등은 매우 나쁜 해로 취급해 optimizer가 피해가도록 한다.
+        return 1e12
+
+    total = 0.0
+    for y_obs, y_pred in pairs:
+        w = _weights(y_obs, weighting)
+        total += float(np.sum(w * (y_obs - y_pred) ** 2))
+
+    if not np.isfinite(total):
+        return 1e12
+    return total
+
+
 def _numeric_hessian(func, x, args):
     """
     최적해에서 NLL의 수치 Hessian(관측 Fisher 정보행렬)을 중심차분으로 계산한다.
@@ -189,10 +239,14 @@ def _numeric_hessian(func, x, args):
     return H
 
 
-def _standard_errors(func, x, args, dof):
+def _standard_errors(func, x, args, dof, scale=1.0):
     """
     Hessian 역행렬(공분산)에서 표준오차와 95% 신뢰구간을 계산한다.
     계산이 불가능하면 None으로 채운 리스트를 돌려준다.
+
+    scale 은 Hessian 을 공분산으로 바꿀 때 곱하는 상수다. NLL 의 Hessian 은
+    그 자체가 관측 Fisher 정보행렬이라 1 이지만, 가중잔차제곱합 f = sum(w r^2)
+    는 H ~ 2 J'WJ 이고 공분산이 s^2 (J'WJ)^-1 이므로 2 s^2 이 된다.
     """
     n = len(x)
     blank = [(None, None, None)] * n
@@ -200,7 +254,7 @@ def _standard_errors(func, x, args, dof):
         H = _numeric_hessian(func, x, args)
         if not np.all(np.isfinite(H)):
             return blank
-        cov = np.linalg.inv(H)
+        cov = np.linalg.inv(H) * scale
         var = np.diag(cov)
         tcrit = float(stats.t.ppf(0.975, dof)) if dof and dof > 0 else 1.96
 
@@ -254,7 +308,20 @@ def fit(data: dict) -> dict:
 
     fitting_groups = data.get("fitting_groups", [])
     param_scopes = data.get("param_scopes", {})
-    error_model = data.get("error_model", "constant")
+
+    # 목적함수는 둘 중 하나다. 최대가능도는 sigma 를 함께 추정해 가중치를
+    # 스스로 정하고, 가중최소제곱은 관측값에서 가중치를 미리 정한다. 둘을
+    # 겹쳐 쓰면 가중이 이중으로 걸리므로 배타적으로 고른다.
+    objective = data.get("objective", "mle")
+    if objective not in ("mle", "wls"):
+        return {"status": "error", "message": f"Unknown objective '{objective}'."}
+
+    error_model = data.get("error_model", "constant") if objective == "mle" else None
+    weighting = data.get("weighting", "none") if objective == "wls" else None
+    if objective == "mle" and error_model not in ("constant", "proportional", "combined"):
+        return {"status": "error", "message": f"Unknown error model '{error_model}'."}
+    if objective == "wls" and weighting not in ("none", "1/Y", "1/Y2"):
+        return {"status": "error", "message": f"Unknown weighting '{weighting}'."}
 
     if not fit_keys:
         return {"status": "error", "message": "No parameters selected to fit."}
@@ -300,15 +367,21 @@ def fit(data: dict) -> dict:
         x0.append(0.1); bounds.append((1e-6, np.inf)); labels.append(("Sigma (Additive)", 'error', None))
         x0.append(0.1); bounds.append((1e-6, np.inf)); labels.append(("Sigma (Proportional)", 'error', None))
 
+    # 두 목적함수는 인자 수가 같아서 Hessian 계산 경로를 공유한다.
+    # 아홉 번째 자리만 다르다 — MLE 는 error_model, WLS 는 weighting.
+    obj_func = _neg_log_likelihood if objective == "mle" else _weighted_ssr
+    obj_args = (fit_keys, fixed_param, equations_callable, all_parameters, all_compartments,
+                initials, fitting_groups, param_scopes,
+                error_model if objective == "mle" else weighting, derived_expressions)
     nll_args = (fit_keys, fixed_param, equations_callable, all_parameters, all_compartments,
                 initials, fitting_groups, param_scopes, error_model, derived_expressions)
 
     # --- 4. 최적화 ---
     try:
         result = minimize(
-            _neg_log_likelihood,
+            obj_func,
             np.array(x0, dtype=float),
-            args=nll_args,
+            args=obj_args,
             method='L-BFGS-B',
             bounds=bounds,
             options={'maxiter': 500}
@@ -323,6 +396,7 @@ def fit(data: dict) -> dict:
         pairs = _predict_pairs(x_hat, *nll_args)
         residuals = np.concatenate([y_obs - y_pred for y_obs, y_pred in pairs]) if pairs else np.array([])
     except Exception:
+        pairs = []
         residuals = np.array([])
 
     n_obs = int(residuals.size)
@@ -331,14 +405,23 @@ def fit(data: dict) -> dict:
     n_est = len(x_hat)
     dof = max(n_obs - n_est, 0)
 
-    nll = float(result.fun)
-    # NLL은 상수항 0.5*n*log(2*pi)를 생략한 값이므로 AIC/BIC 계산 시 더해준다.
-    full_nll = nll + 0.5 * n_obs * math.log(2.0 * math.pi) if n_obs else nll
-    aic = 2.0 * n_est + 2.0 * full_nll
-    bic = (n_est * math.log(n_obs) + 2.0 * full_nll) if n_obs > 0 else None
+    if objective == "mle":
+        nll = float(result.fun)
+        # NLL은 상수항 0.5*n*log(2*pi)를 생략한 값이므로 AIC/BIC 계산 시 더해준다.
+        full_nll = nll + 0.5 * n_obs * math.log(2.0 * math.pi) if n_obs else nll
+        aic = 2.0 * n_est + 2.0 * full_nll
+        bic = (n_est * math.log(n_obs) + 2.0 * full_nll) if n_obs > 0 else None
+        se_scale = 1.0
+    else:
+        # 가중최소제곱에는 가능도가 없다. AIC/BIC 를 우도 기반으로 지어내지 않고
+        # 비워서 내보낸다. 대신 가중잔차분산 s^2 이 공분산의 배율이 된다.
+        nll = aic = bic = None
+        wssr = float(result.fun)
+        se_scale = (2.0 * wssr / dof) if dof > 0 else None
 
     # --- 6. 표준오차 / 신뢰구간 ---
-    se_ci = _standard_errors(_neg_log_likelihood, x_hat, nll_args, dof)
+    se_ci = (_standard_errors(obj_func, x_hat, obj_args, dof, scale=se_scale)
+             if se_scale else [(None, None, None)] * n_est)
 
     # --- 7. 결과 정리 ---
     params_summary = []
@@ -376,7 +459,9 @@ def fit(data: dict) -> dict:
         "bic": bic,
         "n_obs": n_obs,
         "dof": dof,
+        "objective": objective,
         "error_model": error_model,
+        "weighting": weighting,
         "converged": bool(result.success),
         "message": result.message if isinstance(result.message, str) else str(result.message),
         "nfev": int(result.nfev),

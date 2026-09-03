@@ -926,9 +926,14 @@ const UI = {
     // 5. Bounds UI 초기화 (아무것도 선택되지 않은 상태로 시작)
     this.renderFitParamBoundsUI();
 
-    // 6. Error Model 초기화 (기본값: Additive/Constant)
+    // 6. Objective 초기화 (기본값: 최대가능도 + Additive)
+    const defaultObjective = document.getElementById('objMle');
+    if (defaultObjective) defaultObjective.checked = true;
     const defaultErrModel = document.getElementById('errConst');
     if (defaultErrModel) defaultErrModel.checked = true;
+    const defaultWeighting = document.getElementById('weightNone');
+    if (defaultWeighting) defaultWeighting.checked = true;
+    this.applyFitObjective();
 
     // 7. 진행 상태 섹션 숨기기 및 버튼 초기화
     const { progressSection, startBtn } = DOM.modals.fittingSettings;
@@ -940,6 +945,19 @@ const UI = {
 
     // 8. 모달 표시
     this._fittingModalInstance.show();
+  },
+
+  /**
+   * 고른 목적함수의 설정만 보여 줍니다.
+   * 두 방식이 모두 잔차 가중을 정하므로, 안 쓰는 쪽을 남겨 두면
+   * 고르지 않은 설정이 적용된 것처럼 읽힙니다.
+   */
+  applyFitObjective() {
+    const checked = document.querySelector('input[name="fitObjective"]:checked');
+    const objective = checked ? checked.value : 'mle';
+    document.querySelectorAll('#fit-objective-section [data-fit-objective]').forEach(el => {
+      el.hidden = el.dataset.fitObjective !== objective;
+    });
   },
 
   /**
@@ -1923,10 +1941,15 @@ async handleStartFittingClick() {
       bounds[pName] = [lbVal, ubVal];
     });
 
-    // --- 2. 데이터 수집: Error Model (MLE) ---
-    // 모달에 Error Model 라디오 버튼(name="errorModel")이 있다고 가정
+    // --- 2. 데이터 수집: Objective ---
+    // 최대가능도와 가중최소제곱은 둘 다 잔차 가중을 정하므로 배타적이다.
+    // 고른 쪽의 설정만 보낸다.
+    const objectiveRadio = document.querySelector('input[name="fitObjective"]:checked');
+    const objective = objectiveRadio ? objectiveRadio.value : 'mle';
     const errorModelRadio = document.querySelector('input[name="errorModel"]:checked');
-    const errorModel = errorModelRadio ? errorModelRadio.value : 'constant'; // 기본값 constant (additive)
+    const errorModel = errorModelRadio ? errorModelRadio.value : 'constant';
+    const weightingRadio = document.querySelector('input[name="fitWeighting"]:checked');
+    const weighting = weightingRadio ? weightingRadio.value : 'none';
 
     // --- 3. 데이터 수집: 초기값 및 현재 파라미터 값 ---
     const initials = {};
@@ -2016,12 +2039,11 @@ async handleStartFittingClick() {
       bounds: bounds,
       fitting_groups: fittingGroups,
       
-      // [신규 기능] 파라미터 범위 및 에러 모델 정보 추가
       param_scopes: paramScopes,
+      // 서버는 objective 를 보고 둘 중 하나만 읽는다.
+      objective: objective,
       error_model: errorModel,
-      
-      // 기존 weighting 필드는 error_model로 대체되므로 필요하다면 하위 호환성을 위해 남겨두거나 제거
-      weighting: 'none' 
+      weighting: weighting
     };
 
     // --- 6. API 호출 ---
@@ -2293,6 +2315,8 @@ const App = {
     DOM.modals.fittingSettings.addGroupBtn.addEventListener('click', Handlers.handleAddFittingGroupClick);
     DOM.modals.fittingSettings.groupsContainer.addEventListener('click', Handlers.handleFittingGroupEvents);
     DOM.modals.fittingSettings.groupsContainer.addEventListener('change', Handlers.handleFittingGroupChange);
+    document.querySelectorAll('input[name="fitObjective"]').forEach(el =>
+      el.addEventListener('change', () => UI.applyFitObjective()));
     DOM.modals.fittingSettings.startBtn.addEventListener('click', () => Handlers.handleStartFittingClick());
     DOM.modals.fittingSettings.fetchInitialParamsBtn.addEventListener('click', Handlers.handleFetchInitialParamsClick);
 
