@@ -475,8 +475,12 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
 
 
 
+/* 결과 카드의 모서리.
+   카드 자체는 네 모서리가 같지만, 헤더가 Bootstrap 기본 inner radius(5px)로
+   잘려 위쪽이 더 각져 보였다. 카드 쪽을 헤더에 맞춰 작은 값으로 내린다 —
+   6px 카드의 inner radius 가 정확히 5px 라 위아래가 같은 곡률로 읽힌다. */
 .results-grid .card, .main-scrollable-area > .card {
-  border-radius: 12px !important; /* 모서리 곡률을 12px로 통일 */
+  border-radius: 6px !important;
   border: 1px solid var(--apple-card-border);
   box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }

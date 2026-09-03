@@ -729,9 +729,13 @@ const UI = {
       autosize: true,
     };
     
-    Plotly.react(plotContainer, traces, layout, { responsive: true });
+    // 그리기 전에 먼저 보여 준다. Plotly 는 그리는 순간의 컨테이너 폭을
+    // 재는데 display:none 이면 0 을 재고 기본 폭으로 떨어진다. 뒤늦게
+    // 보여 줘도 다시 재지 않으므로, 창을 흔들거나 두세 번 다시 그려야
+    // 폭이 맞는 것처럼 보였다.
     plotPlaceholder.style.display = "none";
     plotContainer.style.display = "block";
+    Plotly.react(plotContainer, traces, layout, { responsive: true });
   },
 
   /**
@@ -1156,18 +1160,22 @@ const UI = {
   renderFitResult(data, options) {
     State.lastFitResult = data;
     this.syncApplyFitButton();
+
+    // 플롯을 그리기 전에 카드를 보여 준다. 숨은 카드 안에서 그리면 Plotly 가
+    // 폭 0 을 재고 기본 폭으로 그려 놓고, 나중에 보여 줘도 다시 재지 않는다.
+    DOM.results.fitSummaryCard.style.display = "block";
+
     this.renderFitCaption(data);
     this.renderFitPlot(data.curves || []);
     this.renderFitSummary(data.params, data.ssr_total);
 
     // 결과 카드는 화면 두 개쯤 아래에 있고 모달은 열린 채로 남는다. 데려다
-    // 주지 않으면 적합이 끝난 뒤 닫고 내려가 찾아야 한다. 민감도 카드와
-    // 같은 동작이다. 되살리는 중일 때는 하지 않는다 — 방금 무슨 일이
-    // 일어난 게 아니라 원래 거기 있던 것이다.
+    // 주지 않으면 적합이 끝난 뒤 닫고 내려가 찾아야 한다. 되살리는 중일
+    // 때는 하지 않는다 — 방금 무슨 일이 일어난 게 아니라 원래 있던 것이다.
+    //
+    // behavior:"smooth" 는 이 중첩 스크롤 컨테이너에서 무시된다 — 넣어 두면
+    // 스크롤이 아예 일어나지 않는다. 애니메이션이 맞는 자리도 아니다.
     if (!options || options.scroll !== false) {
-      // behavior:"smooth" 는 이 중첩 스크롤 컨테이너에서 무시된다 — 넣어 두면
-    // 스크롤이 아예 일어나지 않는다. 애니메이션이 맞는 자리도 아니다: 피팅은
-    // 모달 뒤라 보이지도 않고, 두 화면을 미끄러져 가는 것은 어지럽기만 하다.
       DOM.results.fitSummaryCard.scrollIntoView({ block: "nearest" });
     }
   },

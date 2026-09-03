@@ -626,9 +626,11 @@
   function render(list) {
     results = Array.isArray(list) ? list : [list];
     activeIndex = 0;
+    // 카드를 먼저 보여 줘야 Plotly 가 제 폭을 잰다. 숨은 채로 그리면
+    // 폭 0 을 재고 기본 폭으로 그려서, 창을 흔들기 전까지 작게 남는다.
+    els.card.style.display = "block";
     renderSwitcher();
     showResult(0);
-    els.card.style.display = "block";
     // 되살리는 중이면 Session 쪽에서 알아서 무시한다.
     window.dispatchEvent(new Event("pk:result"));
   }
