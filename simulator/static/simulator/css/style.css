@@ -2332,7 +2332,8 @@ body.is-resizing {
     min-height: 200px;
 }
 
-#plot {
+#plot,
+#nca-plot {
     height: 420px;
 }
 
@@ -2423,7 +2424,7 @@ body.is-resizing {
 
     /* 높이는 beforeprint 에서 JS 가 맞춘다. CSS 로만 줄이면 컨테이너만 작아지고
        Plotly 의 SVG 는 그대로라 그림이 잘린 채 인쇄된다. */
-    #plot, #fit-plot, #sensitivity-plot {
+    #plot, #fit-plot, #sensitivity-plot, #nca-plot {
         resize: none !important;
         break-inside: avoid;
         page-break-inside: avoid;

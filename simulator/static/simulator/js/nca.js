@@ -562,7 +562,10 @@ function plotProfile() {
     // 아래 여백은 축 제목과 범례가 함께 들어갈 만큼 둔다 — 좁게 잡으면
     // "Time (h)" 위에 범례가 겹쳐 앉는다.
     margin: { l: 62, r: 18, t: 12, b: 78 },
-    height: 380,
+    // 높이는 여기서 정하지 않는다. 컨테이너가 CSS 로 높이를 갖고 있고
+    // 사용자가 손잡이로 늘릴 수 있는데, 여기에 숫자를 적어 두면 둘이 싸운다 —
+    // ResizeObserver 가 Plotly.Plots.resize 를 부르는 순간 컨테이너 쪽이
+    // 이기므로, 적어 둔 값은 첫 틱까지만 살아 있는 거짓말이 된다.
     xaxis: { title: `Time (${spec.time})`, zeroline: false },
     yaxis: {
       title: `Concentration (${spec.conc})`,
@@ -1691,10 +1694,22 @@ function init() {
     if (!ds || !ds._points) return;
     const from = Number($('nca-lz-from').value);
     const to = Number($('nca-lz-to').value);
-    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return;
+
+    // 받아들일 수 없는 범위는 칸을 되돌려 놓는다. 그냥 두면 칸에는 새 숫자가,
+    // 계산에는 옛 구간이 남아 화면이 거짓말을 한다 — 다음에 반대쪽 칸을
+    // 고칠 때 사용자가 보고 있던 범위와 실제로 적용되는 범위가 달라진다.
+    const refuse = (why) => { showMessage(why); renderTerminalBar(); };
+
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) {
+      refuse('The terminal phase needs a start time earlier than its end.');
+      return;
+    }
     const picked = ds._points.time.filter(
       (t, i) => t >= from && t <= to && ds._points.conc[i] > 0);
-    if (picked.length < 3) { showMessage('That range holds fewer than three points.'); return; }
+    if (picked.length < 3) {
+      refuse(`That range holds ${picked.length} point(s); the fit needs at least three.`);
+      return;
+    }
     NcaState.lambdaTimes[ds.id] = picked;
     run();
   };
