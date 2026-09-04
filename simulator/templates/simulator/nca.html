@@ -421,12 +421,18 @@
             converted by a single multiplication &mdash; nothing is recomputed, so the
             terminal phase you chose stays exactly as it is.
           </p>
+          <p class="nca-hint">
+            Concentration and time start in the units you entered. Clearance and
+            volume do not: dividing a dose in mg by an area in ng/mL&middot;h gives
+            mg/((ng/mL)&middot;h), which is correct and unreadable, so they are
+            converted to the units people actually write.
+          </p>
           <div id="nca-units-form"></div>
           <p class="nca-hint" id="nca-units-follow"></p>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-sm btn-outline-secondary" id="nca-units-reset">
-            Back to the entered units
+            Back to the defaults
           </button>
           <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
         </div>

@@ -721,8 +721,12 @@ def nca_units(request):
             if native is None:
                 continue
             choices = U.display_options(field, native, mw, bw)
+            # 조립한 이름이 읽히지 않는 항목은 처음부터 관용 단위에 담는다.
+            # mg/((ng/mL)·h) 는 틀린 이름이 아니지만 아무도 그렇게 적지 않는다.
+            preferred = U.preferred_unit(field, native, mw, bw)
             out[field] = {
                 "native": native.label,
+                "default": preferred or native.label,
                 # 같은 종류끼리 묶어 한 번에 고르게 하려면 이름이 필요하다.
                 # 항목마다 따로 고르면 Cmax 는 ng/mL 인데 Clast 는 µg/mL 인
                 # 표가 나올 수 있고, 그걸 원하는 사람은 없다.

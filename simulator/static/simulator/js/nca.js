@@ -660,27 +660,37 @@ function formatValue(value, digits = 5) {
  */
 const BASE_GROUPS = ['concentration', 'time', 'dose'];
 
-/** 한 종류의 기준 단위 대비 배율. 고른 것이 없으면 1 이다. */
-function groupFactor(group) {
-  const chosen = NcaState.displayUnit[group];
-  if (!chosen) return 1;
-  const entry = Object.values(NcaState.units).find((e) => e.group === group);
-  if (!entry) return 1;
-  const choice = entry.choices.find((c) => c.label === chosen);
+/* 아래 넷은 단위 맵을 인자로 받는다. 기본값은 지금 보고 있는 계열의 것이고,
+   내보내기는 계열마다 다른 맵을 넘긴다 — 계열마다 입력 단위가 다를 수 있어
+   한 계열의 배율을 전부에 먹이면 µg/mL 로 넣은 자료가 ng/mL 인 척 나온다. */
+
+/** 한 종류의 기준 단위 대비 배율. 계산된 단위 그대로면 1 이다. */
+function groupFactor(group, units) {
+  units = units || NcaState.units;
+  const entry = Object.values(units).find((e) => e.group === group);
+  const choice = activeChoice(entry);
   return choice ? choice.factor : 1;
 }
 
-function groupLabel(group) {
-  const entry = Object.values(NcaState.units).find((e) => e.group === group);
-  if (!entry) return '';
-  return NcaState.displayUnit[group] || entry.native;
+function groupLabel(group, units) {
+  units = units || NcaState.units;
+  const entry = Object.values(units).find((e) => e.group === group);
+  return entry ? activeLabel(entry) : '';
 }
 
-/** 이 항목에 대해 사람이 직접 고른 단위가 있으면 그 선택. */
-function chosenFor(entry) {
-  if (!entry || !entry.group || !entry.choices.length) return null;
-  const label = NcaState.displayUnit[entry.group];
-  if (!label) return null;
+/** 지금 이 항목에 걸려 있는 단위 이름. 사람이 고른 것이 없으면 서버가
+ *  권한 기본값이고, 그것도 없으면 계산된 그대로다. */
+function activeLabel(entry) {
+  if (!entry) return '';
+  if (!entry.choices || !entry.choices.length) return entry.default || entry.native;
+  return NcaState.displayUnit[entry.group] || entry.default || entry.native;
+}
+
+/** 그 이름으로 옮기는 배율. 계산된 단위 그대로면 null. */
+function activeChoice(entry) {
+  if (!entry || !entry.choices || !entry.choices.length) return null;
+  const label = activeLabel(entry);
+  if (!label || label === entry.native) return null;
   return entry.choices.find((c) => c.label === label) || null;
 }
 
@@ -691,19 +701,20 @@ function chosenFor(entry) {
  * 것이 중요하다 — 청소율은 스스로 고를 목록이 있지만, 아무것도 고르지 않은
  * 채로 시간 단위만 분으로 바꾸면 t½ 은 분인데 CL 은 시간당인 표가 된다.
  */
-function displayed(field, value) {
+function displayed(field, value, units) {
+  units = units || NcaState.units;
   if (typeof value !== 'number') return value;
-  const entry = NcaState.units[field];
+  const entry = units[field];
   if (!entry) return value;
 
-  const choice = chosenFor(entry);
+  const choice = activeChoice(entry);
   if (choice) return value * choice.factor;
 
   const shape = entry.shape || { conc: 0, time: 0, dose: 0 };
   return value
-    * Math.pow(groupFactor('concentration'), shape.conc)
-    * Math.pow(groupFactor('time'), shape.time)
-    * Math.pow(groupFactor('dose'), shape.dose);
+    * Math.pow(groupFactor('concentration', units), shape.conc)
+    * Math.pow(groupFactor('time', units), shape.time)
+    * Math.pow(groupFactor('dose', units), shape.dose);
 }
 
 /**
@@ -713,12 +724,12 @@ function displayed(field, value) {
  * 물으러 다녀오면 단위를 바꿀 때마다 왕복이 생긴다 — 곱셈 하나로 끝나는
  * 일에 그럴 이유가 없다.
  */
-function unitLabel(field) {
-  const entry = NcaState.units[field];
+function unitLabel(field, units) {
+  units = units || NcaState.units;
+  const entry = units[field];
   if (!entry) return '';
 
-  const choice = chosenFor(entry);
-  if (choice) return choice.label;
+  if (entry.choices && entry.choices.length) return activeLabel(entry);
 
   const shape = entry.shape;
   if (!shape) return entry.native;
@@ -726,12 +737,12 @@ function unitLabel(field) {
   const parts = [['dose', shape.dose], ['concentration', shape.conc], ['time', shape.time]]
     .filter(([, power]) => power);
   // 조립할 조각이 없거나 아직 단위를 못 받았으면 서버가 준 이름을 쓴다.
-  if (!parts.length || parts.some(([group]) => !groupLabel(group))) return entry.native;
+  if (!parts.length || parts.some(([group]) => !groupLabel(group, units))) return entry.native;
 
   const top = [];
   const bottom = [];
   parts.forEach(([group, power]) => {
-    let piece = groupLabel(group);
+    let piece = groupLabel(group, units);
     if (Math.abs(power) !== 1) piece = `${piece}^${Math.abs(power)}`;
     // 빗금이 든 단위는 다른 조각과 붙을 때만 괄호가 필요하다.
     if (piece.includes('/') && parts.length > 1) piece = `(${piece})`;
@@ -1185,36 +1196,132 @@ function pasteGrid(text, startRow, startCol) {
 /* ------------------------------------------------------------ */
 /* 내보내기                                                       */
 /* ------------------------------------------------------------ */
-/** 화면은 하나를 보여 주지만 파일은 전부 낸다. 열둘을 계산해 놓고 한 줄만
- *  가져가는 것은 말이 안 된다.
+/**
+ * 계열이 한 줄씩인 가로 표. 여러 개체를 나란히 견주기 위한 것이다.
  *
- *  단위를 열 이름에 적는다. 계열마다 단위가 다를 수 있으므로, 이걸 빼면
- *  숫자만 남은 표가 되어 나중에 읽을 수 없다. */
-function exportCsv() {
+ * 계열마다 단위를 따로 묻는다. 계열마다 입력 단위가 다를 수 있는데, 지금
+ * 보고 있는 계열의 배율을 전부에 먹이면 µg/mL 로 넣은 자료가 ng/mL 인 척
+ * 나온다 — 표에서는 한 계열만 보이므로 이 어긋남이 눈에 띄지 않는다.
+ *
+ * 열이 쓸 단위는 지금 보고 있는 계열이 정하고, 다른 계열은 그 단위로 옮겨
+ * 담는다. 이름이 다르다고 버리지 않는다 — µg/mL 은 ng/mL 로 옮길 수 있고,
+ * 옮겨야 두 계열을 한 열에서 견줄 수 있다.
+ *
+ * 정말로 옮길 수 없는 경우는 남는다. 용량을 mg 으로 넣은 계열과 mg/kg 으로
+ * 넣은 계열이 섞이면 청소율을 한 단위에 담을 방법이 없다. 그런 칸은 비우고
+ * 맨 위에 이유를 적는다 — 빈 칸은 정직하지만 틀린 숫자는 그렇지 않다.
+ */
+async function exportCsv() {
   const ids = Object.keys(NcaState.results);
   if (!ids.length) { showMessage('Nothing to export yet.'); return; }
 
-  const keys = NCA_ROWS.filter((r) => !r.group).map((r) => r.key);
-  const header = ['Series', 'Conc. unit', 'Time unit', 'Dose unit', ...keys];
+  const button = $('nca-export-csv-btn');
+  button.disabled = true;
+  const unitsFor = {};
+  try {
+    for (const id of ids) {
+      const ds = dataset(id);
+      try {
+        unitsFor[id] = ds ? (await post('/nca/units/', currentUnitSpec(ds))).units || {} : {};
+      } catch (err) {
+        unitsFor[id] = {};
+      }
+    }
+  } finally {
+    button.disabled = false;
+  }
 
-  const lines = [header.join(',')];
-  ids.forEach((id) => {
+  const rows = NCA_ROWS.filter((r) => !r.group);
+  const columnUnit = {};
+  rows.forEach((row) => { columnUnit[row.key] = unitLabel(row.key); });
+
+  // 열이 정한 기본 셋. 조립되는 항목(AUC, AUMC, λz, 용량정규화)은 이것으로
+  // 만든다.
+  const baseLabel = {
+    concentration: groupLabel('concentration'),
+    time: groupLabel('time'),
+    dose: groupLabel('dose'),
+  };
+
+  /** 이 계열에서 그 기준 단위로 가는 배율. 갈 수 없으면 null. */
+  const baseFactor = (units, group) => {
+    const entry = Object.values(units).find((e) => e.group === group);
+    if (!entry) return null;
+    const label = baseLabel[group];
+    if (!label || label === entry.native) return 1;
+    const choice = (entry.choices || []).find((c) => c.label === label);
+    return choice ? choice.factor : null;
+  };
+
+  /** 이 계열의 값 하나를 열의 단위로 옮긴다. 옮길 수 없으면 null. */
+  const toColumn = (units, key, value) => {
+    const entry = units[key];
+    // 단위 항목이 없다는 것은 무차원이라는 뜻이다 — Span, R²adj, %Extrap
+    // 같은 것들. 옮길 것이 없으니 그대로 낸다.
+    if (!entry) return value;
+    const want = columnUnit[key];
+
+    if (entry.choices && entry.choices.length) {
+      if (!want || want === entry.native) return value;
+      const choice = entry.choices.find((c) => c.label === want);
+      return choice ? value * choice.factor : null;
+    }
+
+    const shape = entry.shape;
+    if (!shape) return want === entry.native ? value : null;
+
+    let factor = 1;
+    for (const [group, power] of [['concentration', shape.conc],
+                                  ['time', shape.time], ['dose', shape.dose]]) {
+      if (!power) continue;
+      const f = baseFactor(units, group);
+      if (f === null) return null;
+      factor *= Math.pow(f, power);
+    }
+    return value * factor;
+  };
+
+  const mismatched = new Set();
+  const line = (cells) => cells.map(csvCell).join(',');
+
+  const body = ids.map((id) => {
     const ds = dataset(id);
     const values = NcaState.results[id].values;
-    const cells = keys.map((k) => {
-      const shown = displayed(k, values[k]);
-      return shown === null || shown === undefined ? '' : shown;
+    const units = unitsFor[id];
+
+    const cells = rows.map((row) => {
+      const raw = values[row.key];
+      if (raw === null || raw === undefined) return '';
+      if (typeof raw !== 'number') return raw;
+
+      const moved = toColumn(units, row.key, raw);
+      if (moved === null) {
+        mismatched.add(ds ? ds.name : id);
+        return '';
+      }
+      return moved;
     });
-    lines.push([
-      ds ? ds.name : id,
-      ds ? `${ds.units.concAmount}/${ds.units.concVolume}` : '',
-      ds ? ds.units.time : '',
-      ds ? ds.dose.unit : '',
-      ...cells,
-    ].join(','));
+
+    return line([ds ? ds.name : id, ...cells]);
   });
 
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const header = line(['Series', ...rows.map((row) => {
+    const label = plainLabel(row.label);
+    const unit = columnUnit[row.key];
+    return unit ? `${label} (${unit})` : label;
+  })]);
+
+  const out = [];
+  if (mismatched.size) {
+    out.push(line(['Note', 'Some values could not be put in these columns and were '
+      + 'left blank: ' + [...mismatched].join(', ')
+      + '. Their dose was entered in a different kind of unit, so clearance and '
+      + 'volume cannot share a column. Export those one at a time.']));
+    out.push('');
+  }
+  out.push(header, ...body);
+
+  const blob = new Blob([out.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = 'nca_results.csv';
@@ -1252,8 +1359,13 @@ function renderUnitsForm() {
       (e) => e.group === group && e.choices.length);
     if (!entry) return '';
 
-    const chosen = NcaState.displayUnit[group] || entry.native;
-    const labels = [entry.native, ...entry.choices.map((c) => c.label)]
+    const chosen = activeLabel(entry);
+    // 계산된 그대로의 이름은, 그것이 기본값일 때만 목록에 올린다. 청소율처럼
+    // 관용 단위를 기본으로 두는 자리에서는 (mg/kg)/((ng/mL)·h) 를 고를 사람이
+    // 없고, 목록에 두면 읽을 수 없는 글자가 맨 위를 차지한다.
+    const keepsNative = entry.default === entry.native;
+    const labels = (keepsNative ? [entry.native] : [])
+      .concat(entry.choices.map((c) => c.label))
       .filter((label, i, all) => all.indexOf(label) === i);
     const options = labels.map((label) =>
       `<option value="${escapeAttr(label)}"${label === chosen ? ' selected' : ''}>${escapeAttr(label)}</option>`

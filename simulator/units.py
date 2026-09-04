@@ -48,6 +48,7 @@ __all__ = [
     "scale_factor",
     "display_options",
     "unit_group",
+    "preferred_unit",
     "UnitError",
 ]
 
@@ -470,6 +471,52 @@ def _catalogue(field: str) -> Tuple[str, ...]:
     # 둘이 서로 안 맞는 표가 된다. AUC·AUMC·용량정규화 값도 같은 이유로
     # 비워 둔다. 조립은 쓰는 쪽이 지수를 보고 한다.
     return ()
+
+
+#: 조립한 이름이 읽히지 않는 항목에 대해, 사람들이 실제로 쓰는 단위.
+#: 앞에 적힌 것부터 시도해 닿을 수 있는 첫째를 쓴다.
+_PREFERRED = {
+    # 청소율 — 체중당으로 투여했으면 전임상 관례를 따른다.
+    Composed(dose=1, conc=-1, time=-1): {
+        "per_weight": ("mL/min/kg", "L/h/kg"),
+        "absolute": ("L/h", "mL/min"),
+    },
+    # 분포용적
+    Composed(dose=1, conc=-1): {
+        "per_weight": ("L/kg", "mL/kg"),
+        "absolute": ("L", "mL"),
+    },
+}
+
+
+def preferred_unit(field: str, native: Unit,
+                   mw: Optional[float] = None,
+                   bw: Optional[float] = None) -> Optional[str]:
+    """이 항목을 기본으로 어떤 단위에 담아 보여 줄 것인가.
+
+    용량이 mg 이고 농도가 ng/mL 이면 CL 의 조립된 이름은 mg/((ng/mL)·h) 가
+    된다. 틀린 이름은 아니지만 아무도 그렇게 적지 않는다. 단위가 서로 맞물려
+    있지 않아도 환산은 곱셈 하나로 끝나므로, 처음부터 읽히는 단위에 담는다.
+
+    농도·시간·용량은 여기 없다. 그 셋은 사용자가 자료를 넣은 단위 그대로
+    두는 것이 맞다 — 넣은 ng/mL 을 말없이 mg/L 로 바꿔 보여 줄 이유가 없다.
+    """
+    shape = FIELD_UNITS.get(field)
+    table = _PREFERRED.get(shape) if shape else None
+    if table is None:
+        return None
+
+    # 어느 계열을 권할지는 용량을 어떻게 적었는지가 정한다. 체중을 주면 둘 다
+    # 닿을 수 있게 되지만, 그렇다고 mg/kg 로 넣은 사람에게 L/h 를 들이밀 이유는
+    # 없다.
+    wanted = table["per_weight"] if native.dim.bw else table["absolute"]
+    for label in wanted:
+        try:
+            scale_factor(native, parse_unit(label), mw, bw)
+        except UnitError:
+            continue
+        return label
+    return None
 
 
 def display_options(field: str, native: Optional[Unit] = None,

@@ -15,6 +15,7 @@ from simulator.units import (
     display_options,
     field_unit,
     parse_unit,
+    preferred_unit,
     scale_factor,
     unit_group,
 )
@@ -312,6 +313,56 @@ class Rates(unittest.TestCase):
     def test_a_rate_is_not_a_time(self):
         with self.assertRaises(UnitError):
             convert(1.0, P("1/h"), P("h"))
+
+
+class PreferredUnits(unittest.TestCase):
+    """조립한 이름이 읽히지 않는 항목은 처음부터 관용 단위에 담는다.
+
+    용량 mg 을 ng/mL·h 로 나누면 mg/((ng/mL)·h) 가 나온다. 틀린 이름은
+    아니지만 아무도 그렇게 적지 않는다. 단위가 서로 맞물려 있지 않아도 환산은
+    곱셈 하나라, 처음부터 읽히는 쪽에 담는 것이 맞다.
+    """
+
+    def setUp(self):
+        self.C, self.T = P("ng/mL"), P("h")
+
+    def _pref(self, field, dose):
+        native = field_unit(field, self.C, self.T, P(dose))
+        return preferred_unit(field, native), native
+
+    def test_an_absolute_dose_gives_the_clinical_units(self):
+        label, native = self._pref("cl", "mg")
+        self.assertEqual(label, "L/h")
+        # mg/((ng/mL)·h) 는 L/h 의 1000 배다.
+        self.assertAlmostEqual(scale_factor(native, P(label)), 1000.0, places=6)
+
+        label, _ = self._pref("vz", "mg")
+        self.assertEqual(label, "L")
+
+    def test_a_dose_per_kilogram_gives_the_preclinical_units(self):
+        label, native = self._pref("cl", "mg/kg")
+        self.assertEqual(label, "mL/min/kg")
+        # 4000 L/h/kg 은 분당 66666.7 mL/kg 이다.
+        self.assertAlmostEqual(scale_factor(native, P(label)),
+                               1000.0 * 1000.0 / 60.0, places=3)
+
+        for field in ("vz", "vss"):
+            label, _ = self._pref(field, "mg/kg")
+            self.assertEqual(label, "L/kg", msg=field)
+
+    def test_units_that_already_line_up_are_left_alone_in_size(self):
+        # µg 를 ng/mL 로 나누면 정확히 L 이 된다 — 이름만 바뀌고 값은 그대로다.
+        label, native = self._pref("cl", "ug")
+        self.assertEqual(label, "L/h")
+        self.assertAlmostEqual(scale_factor(native, P(label)), 1.0, places=12)
+
+    def test_what_the_user_entered_is_not_second_guessed(self):
+        # 농도·시간·용량은 넣은 그대로 둔다. 넣은 ng/mL 을 말없이 mg/L 로
+        # 바꿔 보여 줄 이유가 없다.
+        for field in ("c_max", "half_life", "t_max", "dose", "auc_last",
+                      "aumc_last", "lambda_z"):
+            native = field_unit(field, self.C, self.T, P("mg"))
+            self.assertIsNone(preferred_unit(field, native), msg=field)
 
 
 class DisplayChoices(unittest.TestCase):
