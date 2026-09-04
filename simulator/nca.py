@@ -39,6 +39,7 @@ __all__ = [
     "auc",
     "aumc",
     "back_extrapolate_c0",
+    "partial_auc",
     "best_fit_lambda_z",
     "nca",
     "clip_interval",
@@ -174,6 +175,8 @@ class LambdaZ:
     t_last: Optional[float] = None
     r_squared: Optional[float] = None
     adj_r_squared: Optional[float] = None
+    #: ln C 와 t 의 상관계수. 말기 구간이므로 음수여야 정상이다.
+    corr_xy: Optional[float] = None
 
     @property
     def ok(self) -> bool:
@@ -256,6 +259,8 @@ def best_fit_lambda_z(
             t_last=float(ts[-1]),
             r_squared=r2,
             adj_r_squared=adj,
+            # 기울기가 음수인 후보만 여기까지 오므로 상관계수도 음수다.
+            corr_xy=float(-np.sqrt(r2)) if np.isfinite(r2) and r2 >= 0 else None,
         )
         if best is None or adj > (best.adj_r_squared or -np.inf) + 1e-4:
             best = candidate
@@ -286,6 +291,78 @@ def back_extrapolate_c0(
 
 
 # ---------------------------------------------------------------------------
+# 구간 넓이 (partial AUC)
+# ---------------------------------------------------------------------------
+def _interp_at(t: np.ndarray, c: np.ndarray, at: float, method: AUCMethod) -> float:
+    """격자에 없는 시각의 농도를, 사다리꼴이 그 구간을 잇는 방식 그대로 세운다.
+
+    적분 규칙과 보간 규칙이 어긋나면 AUC(0-x) + AUC(x-tlast) 가 AUC(0-tlast)
+    와 달라진다. 같은 규칙을 써야 쪼갠 넓이의 합이 원래 넓이가 된다.
+    """
+    i = int(np.searchsorted(t, at))
+    if i <= 0:
+        return float(c[0])
+    if i >= t.size:
+        return float(c[-1])
+    t0, t1, c0, c1 = t[i - 1], t[i], c[i - 1], c[i]
+    if t1 == t0:
+        return float(c1)
+    if method is AUCMethod.LINEAR_LOG and c1 < c0 and c0 > 0 and c1 > 0:
+        k = np.log(c0 / c1) / (t1 - t0)
+        return float(c0 * np.exp(-k * (at - t0)))
+    return float(c0 + (c1 - c0) * (at - t0) / (t1 - t0))
+
+
+def partial_auc(
+    time: Sequence[float],
+    conc: Sequence[float],
+    t_end: float,
+    t_start: float = 0.0,
+    method: AUCMethod = AUCMethod.LINEAR_LOG,
+    lambda_z: Optional[float] = None,
+) -> float:
+    """AUC(t_start - t_end). 정해진 시각까지의 노출량.
+
+    AUC(0-24) 처럼 채혈이 끝난 시각과 무관하게 정해진 창을 견줄 때 쓴다.
+    경계가 격자 위에 있으면 그 점을 쓰고, 없으면 보간해 세운다 —
+    clip_interval 과 달리 경계에 걸친 점을 버리지 않는다. 투여 시각처럼
+    농도가 두 값을 갖는 자리가 아니기 때문이다.
+
+    t_end 가 마지막 채혈보다 뒤면 lambda_z 로 외삽한다. lambda_z 가 없으면
+    NaN 을 돌려준다 — 없는 자료를 말없이 지어내지 않는다.
+    """
+    t, c = _clean(time, conc)
+    if t.size < 2 or not (t_end > t_start):
+        return float("nan")
+
+    last = float(t[-1])
+    inner_end = min(t_end, last)
+    total = 0.0
+
+    if inner_end > t_start:
+        eps = 1e-9 * max(abs(t_start), abs(inner_end), 1.0)
+        inside = (t > t_start + eps) & (t < inner_end - eps)
+        seg_t = np.concatenate(([t_start], t[inside], [inner_end]))
+        seg_c = np.concatenate((
+            [_interp_at(t, c, t_start, method)],
+            c[inside],
+            [_interp_at(t, c, inner_end, method)],
+        ))
+        total = auc(seg_t, seg_c, method)
+
+    # 자료 밖으로 나가는 몫은 말기 기울기로만 세울 수 있다.
+    if t_end > last:
+        if not lambda_z or lambda_z <= 0:
+            return float("nan")
+        c_last = float(c[-1])
+        if c_last <= 0:
+            return float("nan")
+        total += c_last * (1.0 - np.exp(-lambda_z * (t_end - last))) / lambda_z
+
+    return float(total)
+
+
+# ---------------------------------------------------------------------------
 # 결과
 # ---------------------------------------------------------------------------
 @dataclass
@@ -305,20 +382,44 @@ class NCAResult:
     lambda_z_t_first: Optional[float] = None
     lambda_z_t_last: Optional[float] = None
     lambda_z_adj_r_squared: Optional[float] = None
+    lambda_z_r_squared: Optional[float] = None
+    lambda_z_corr_xy: Optional[float] = None
+    #: 회귀선의 ln C 절편. 이 값이 있어야 회귀선을 다시 그릴 수 있다.
+    lambda_z_intercept: Optional[float] = None
+    #: 말기 구간이 반감기의 몇 배를 덮는가 (WinNonlin 의 Span).
+    #: 2 보다 작으면 반감기 하나도 못 본 것이라 기울기를 믿기 어렵다.
+    lambda_z_span: Optional[float] = None
 
     # 노출량
     auc_last: Optional[float] = None
+    #: 마지막 채혈 시각까지 — Tlast 뒤에 0 이 이어지면 auc_last 와 갈린다.
+    auc_all: Optional[float] = None
     auc_inf_obs: Optional[float] = None
     auc_inf_pred: Optional[float] = None
     auc_extrap_pct: Optional[float] = None
+    auc_extrap_pct_pred: Optional[float] = None
+    #: 회귀선이 Tlast 에서 말하는 농도. 관찰된 Clast 와 벌어지면 적합이 나쁘다.
+    c_last_pred: Optional[float] = None
     aumc_last: Optional[float] = None
     aumc_inf: Optional[float] = None
+    aumc_extrap_pct: Optional[float] = None
 
     # 용량이 필요한 항목
     cl: Optional[float] = None
     vz: Optional[float] = None
-    mrt: Optional[float] = None
     vss: Optional[float] = None
+
+    # 평균 체류시간. 용량이 없어도 구해진다 — 넓이의 비이기 때문이다.
+    mrt: Optional[float] = None
+    mrt_last: Optional[float] = None
+
+    # 용량으로 나눈 값. 용량군이 다른 프로파일끼리 노출량을 견줄 때 쓴다.
+    c_max_dn: Optional[float] = None
+    auc_last_dn: Optional[float] = None
+    auc_inf_obs_dn: Optional[float] = None
+
+    #: 요청한 구간 넓이. {"0-24": 12.3} 꼴. 세울 수 없으면 None 이 들어간다.
+    partial_auc: Dict[str, Optional[float]] = field(default_factory=dict)
 
     # 어떻게 계산했는지
     method: str = AUCMethod.LINEAR_LOG.value
@@ -350,6 +451,7 @@ def nca(
     administration: Administration = Administration.IV_BOLUS,
     infusion_duration: float = 0.0,
     min_lambda_z_points: int = 3,
+    partial_times: Sequence[float] = (),
 ) -> NCAResult:
     """시간-농도 프로파일 하나에 대한 비구획 분석.
 
@@ -399,16 +501,39 @@ def nca(
         res.lambda_z_t_first = _f(lz.t_first)
         res.lambda_z_t_last = _f(lz.t_last)
         res.lambda_z_adj_r_squared = _f(lz.adj_r_squared)
+        res.lambda_z_r_squared = _f(lz.r_squared)
+        res.lambda_z_corr_xy = _f(lz.corr_xy)
+        res.lambda_z_intercept = _f(lz.intercept)
+
+        # Span — 회귀에 쓴 구간이 반감기의 몇 배인가. 기울기를 믿을지 판단하는
+        # 근거로는 R² 보다 이쪽이 낫다. 짧은 구간에 몰린 점들은 서로 잘 늘어서
+        # R² 가 높게 나오지만, 정작 소실을 거의 보지 못한 것이기 때문이다.
+        if res.half_life and lz.t_first is not None and lz.t_last is not None:
+            span = (lz.t_last - lz.t_first) / res.half_life
+            res.lambda_z_span = _f(span)
+            if span < 2.0:
+                res.warnings.append(
+                    f"The terminal phase spans only {span:.1f} half-lives; "
+                    "lambda_z and everything derived from it are poorly determined."
+                )
     else:
         res.warnings.append("Terminal slope could not be estimated.")
 
     # --- 노출량 -----------------------------------------------------------
-    res.auc_last = _f(auc(t, c, method))
-    res.aumc_last = _f(aumc(t, c, method))
+    # AUClast 는 마지막으로 "정량된" 점까지다. 그 뒤에 0 이 이어져도 넣지
+    # 않는다 — 넣으면 Clast 에서 0 으로 내려오는 넓이를 사다리꼴로 한 번 세고,
+    # 다시 Clast/λz 로 외삽해 두 번 세게 된다. 마지막 채혈 시각까지 전부 더한
+    # 값은 AUCall 로 따로 낸다.
+    res.auc_all = _f(auc(t, c, method))
+    if positive.size:
+        end = int(positive[-1]) + 1
+        res.auc_last = _f(auc(t[:end], c[:end], method))
+        res.aumc_last = _f(aumc(t[:end], c[:end], method))
 
     if lz.ok and res.auc_last is not None and res.c_last is not None:
         res.auc_inf_obs = _f(res.auc_last + res.c_last / lz.value)
         c_last_pred = lz.predict(res.t_last)
+        res.c_last_pred = _f(c_last_pred)
         res.auc_inf_pred = _f(res.auc_last + c_last_pred / lz.value)
 
         if res.aumc_last is not None:
@@ -417,6 +542,10 @@ def nca(
                 + res.t_last * res.c_last / lz.value
                 + res.c_last / lz.value ** 2
             )
+            if res.aumc_inf:
+                res.aumc_extrap_pct = _f(
+                    100.0 * (res.aumc_inf - res.aumc_last) / res.aumc_inf
+                )
 
         if res.auc_inf_obs:
             extrap = 100.0 * (res.auc_inf_obs - res.auc_last) / res.auc_inf_obs
@@ -425,23 +554,55 @@ def nca(
                 res.warnings.append(
                     f"{extrap:.0f}% of AUC is extrapolated — observe longer if you can."
                 )
+        if res.auc_inf_pred:
+            res.auc_extrap_pct_pred = _f(
+                100.0 * (res.auc_inf_pred - res.auc_last) / res.auc_inf_pred
+            )
+
+    # --- 평균 체류시간 -----------------------------------------------------
+    # 넓이의 비라서 용량이 필요 없다. 용량을 주지 않아도 나와야 한다.
+    def _corrected(value: float) -> float:
+        # 주입은 투여 자체가 시간을 쓰므로 그 절반을 빼 준다.
+        if administration is Administration.IV_INFUSION and infusion_duration > 0:
+            return value - infusion_duration / 2.0
+        return value
+
+    if res.aumc_inf is not None and res.auc_inf_obs:
+        res.mrt = _f(_corrected(res.aumc_inf / res.auc_inf_obs))
+    if res.aumc_last is not None and res.auc_last:
+        res.mrt_last = _f(_corrected(res.aumc_last / res.auc_last))
 
     # --- 용량이 필요한 항목 ------------------------------------------------
-    if dose and dose > 0 and res.auc_inf_obs:
-        res.cl = _f(dose / res.auc_inf_obs)
-        if lz.ok:
-            res.vz = _f(dose / (lz.value * res.auc_inf_obs))
+    if dose and dose > 0:
+        # 용량으로 나눈 값. 선형이라면 용량군이 달라도 겹쳐야 한다.
+        if res.c_max is not None:
+            res.c_max_dn = _f(res.c_max / dose)
+        if res.auc_last is not None:
+            res.auc_last_dn = _f(res.auc_last / dose)
 
-        if res.aumc_inf is not None:
-            mrt = res.aumc_inf / res.auc_inf_obs
-            # 주입은 투여 자체가 시간을 쓰므로 그만큼 빼 준다.
-            if administration is Administration.IV_INFUSION and infusion_duration > 0:
-                mrt -= infusion_duration / 2.0
-            res.mrt = _f(mrt)
+        if res.auc_inf_obs:
+            res.auc_inf_obs_dn = _f(res.auc_inf_obs / dose)
+            res.cl = _f(dose / res.auc_inf_obs)
+            if lz.ok:
+                res.vz = _f(dose / (lz.value * res.auc_inf_obs))
 
             # Vss 는 정맥 투여에서만 뜻이 있다. 혈관외는 F 를 모르기 때문.
             if administration is not Administration.EXTRAVASCULAR and res.cl and res.mrt:
                 res.vss = _f(res.cl * res.mrt)
+
+    # --- 요청한 구간 넓이 ---------------------------------------------------
+    for t_end in partial_times:
+        t_end = float(t_end)
+        if not np.isfinite(t_end) or t_end <= 0:
+            continue
+        label = f"0-{t_end:g}"
+        value = partial_auc(t, c, t_end, method=method, lambda_z=lz.value)
+        res.partial_auc[label] = _f(value)
+        if value != value and t_end > t[-1]:  # NaN — 외삽할 기울기가 없었다
+            res.warnings.append(
+                f"AUC(0-{t_end:g}) needs the terminal slope to reach past the "
+                "last sample, and it could not be estimated."
+            )
 
     return res
 

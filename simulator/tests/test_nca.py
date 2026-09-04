@@ -26,6 +26,7 @@ from simulator.nca import (
     back_extrapolate_c0,
     best_fit_lambda_z,
     clip_interval,
+    partial_auc,
     nca,
     nca_steady_state,
 )
@@ -171,6 +172,165 @@ class SingleDoseNca(unittest.TestCase):
 
     def test_extrapolated_fraction_is_small_for_this_sampling(self):
         self.assertLess(self.res.auc_extrap_pct, 5.0)
+
+
+# ---------------------------------------------------------------------------
+# Tlast 뒤에 0 이 이어질 때
+# ---------------------------------------------------------------------------
+class TrailingZeros(unittest.TestCase):
+    """정량한계 아래로 떨어져 0 이 기록된 구간을 AUClast 에 넣으면 안 된다.
+
+    넣으면 Clast 에서 0 으로 내려오는 넓이를 사다리꼴로 한 번 세고, 다시
+    Clast/λz 로 외삽해 두 번 센다. 해석해가 있으니 몇 %를 더 세는지까지
+    확인할 수 있다.
+    """
+
+    def setUp(self):
+        t = np.array([0, 1, 2, 4, 8, 12, 24], dtype=float)
+        c = iv_bolus(t)
+        # 48시간 시료는 정량한계 아래여서 0 으로 기록됐다.
+        self.t = np.append(t, 48.0)
+        self.c = np.append(c, 0.0)
+        self.res = nca(self.t, self.c, dose=DOSE,
+                       administration=Administration.IV_BOLUS)
+
+    def test_last_measurable_point_is_the_endpoint(self):
+        self.assertAlmostEqual(self.res.t_last, 24.0)
+        self.assertAlmostEqual(self.res.c_last, float(iv_bolus(24.0)), places=9)
+
+    def test_auc_inf_still_recovers_the_closed_form(self):
+        # 두 번 세면 여기서 7% 넘게 부풀어 오른다.
+        self.assertAlmostEqual(self.res.auc_inf_obs, DOSE / CL, places=5)
+
+    def test_auc_all_carries_the_zero_tail_and_auc_last_does_not(self):
+        tail = 0.5 * (48.0 - 24.0) * float(iv_bolus(24.0))
+        self.assertGreater(self.res.auc_all, self.res.auc_last)
+        self.assertAlmostEqual(self.res.auc_all - self.res.auc_last, tail, places=9)
+
+
+# ---------------------------------------------------------------------------
+# WinNonlin 이 함께 내보내는 항목들
+# ---------------------------------------------------------------------------
+class ReportedDiagnostics(unittest.TestCase):
+    """값 옆에 붙는 진단 — 이 값을 믿어도 되는지를 말한다."""
+
+    def setUp(self):
+        self.t = np.array([0.5, 1, 2, 4, 8, 12, 24, 36, 48], dtype=float)
+        self.c = iv_bolus(self.t)
+        self.res = nca(self.t, self.c, dose=DOSE,
+                       administration=Administration.IV_BOLUS)
+
+    def test_correlation_is_negative_and_matches_r_squared(self):
+        self.assertLess(self.res.lambda_z_corr_xy, 0.0)
+        self.assertAlmostEqual(
+            self.res.lambda_z_corr_xy, -math.sqrt(self.res.lambda_z_r_squared), places=9
+        )
+
+    def test_intercept_reconstructs_the_regression_line(self):
+        # 순수한 단일지수라 회귀선이 점을 정확히 지난다.
+        at = 24.0
+        drawn = math.exp(self.res.lambda_z_intercept - self.res.lambda_z * at)
+        self.assertAlmostEqual(drawn, float(iv_bolus(at)), places=9)
+
+    def test_predicted_clast_agrees_with_the_observed_one(self):
+        self.assertAlmostEqual(self.res.c_last_pred, self.res.c_last, places=9)
+
+    def test_span_counts_half_lives_covered_by_the_fit(self):
+        expected = (self.res.lambda_z_t_last - self.res.lambda_z_t_first) / self.res.half_life
+        self.assertAlmostEqual(self.res.lambda_z_span, expected, places=9)
+        self.assertGreater(self.res.lambda_z_span, 2.0)
+        self.assertFalse([w for w in self.res.warnings if "half-lives" in w])
+
+    def test_short_sampling_is_called_out(self):
+        t = np.array([0, 1, 2, 3], dtype=float)
+        res = nca(t, iv_bolus(t), dose=DOSE, administration=Administration.IV_BOLUS)
+        self.assertLess(res.lambda_z_span, 2.0)
+        self.assertTrue([w for w in res.warnings if "half-lives" in w])
+
+    def test_aumc_extrapolated_fraction_is_reported(self):
+        self.assertGreater(self.res.aumc_extrap_pct, 0.0)
+        self.assertLess(self.res.aumc_extrap_pct, 100.0)
+        # AUMC 는 시간을 한 번 더 곱하므로 꼬리의 몫이 AUC 보다 늘 크다.
+        self.assertGreater(self.res.aumc_extrap_pct, self.res.auc_extrap_pct)
+
+    def test_dose_normalised_values(self):
+        self.assertAlmostEqual(self.res.c_max_dn, self.res.c_max / DOSE, places=12)
+        self.assertAlmostEqual(self.res.auc_last_dn, self.res.auc_last / DOSE, places=12)
+        self.assertAlmostEqual(self.res.auc_inf_obs_dn, self.res.auc_inf_obs / DOSE, places=12)
+
+
+class MeanResidenceTime(unittest.TestCase):
+    """MRT 는 넓이의 비다 — 용량을 몰라도 나와야 한다."""
+
+    def setUp(self):
+        self.t = np.array([0.5, 1, 2, 4, 8, 12, 24, 36, 48], dtype=float)
+        self.c = iv_bolus(self.t)
+
+    def test_available_without_a_dose(self):
+        res = nca(self.t, self.c, dose=None, administration=Administration.IV_BOLUS)
+        self.assertIsNone(res.cl)
+        self.assertAlmostEqual(res.mrt, 1.0 / K, places=4)
+
+    def test_mrt_last_is_shorter_than_mrt_infinity(self):
+        res = nca(self.t, self.c, dose=DOSE, administration=Administration.IV_BOLUS)
+        self.assertLess(res.mrt_last, res.mrt)
+
+    def test_infusion_subtracts_half_the_duration_from_both(self):
+        free = nca(self.t, self.c, dose=DOSE, administration=Administration.IV_INFUSION)
+        held = nca(self.t, self.c, dose=DOSE, administration=Administration.IV_INFUSION,
+                   infusion_duration=2.0)
+        self.assertAlmostEqual(free.mrt - held.mrt, 1.0, places=9)
+        self.assertAlmostEqual(free.mrt_last - held.mrt_last, 1.0, places=9)
+
+
+# ---------------------------------------------------------------------------
+# 구간 넓이
+# ---------------------------------------------------------------------------
+class PartialAuc(unittest.TestCase):
+    """정해진 창까지의 노출량. 채혈이 끝난 시각과 무관하게 견줄 수 있어야 한다."""
+
+    def setUp(self):
+        self.t = np.array([0, 0.5, 1, 2, 4, 8, 12, 24, 36, 48], dtype=float)
+        self.c = iv_bolus(self.t)
+
+    def test_matches_the_closed_form_on_a_grid_point(self):
+        # AUC(0-T) = C0/k · (1 - e^(-kT))
+        for T in (12.0, 24.0, 48.0):
+            got = partial_auc(self.t, self.c, T)
+            want = (DOSE / V) / K * (1 - math.exp(-K * T))
+            self.assertAlmostEqual(got, want, places=4, msg=f"T={T}")
+
+    def test_boundary_between_samples_is_interpolated(self):
+        # 18시간은 격자에 없다. 12와 24 사이를 로그로 이으므로 해석해와 맞는다.
+        got = partial_auc(self.t, self.c, 18.0)
+        want = (DOSE / V) / K * (1 - math.exp(-K * 18.0))
+        self.assertAlmostEqual(got, want, places=4)
+
+    def test_split_pieces_add_back_up(self):
+        whole = partial_auc(self.t, self.c, 48.0)
+        left = partial_auc(self.t, self.c, 18.0)
+        right = partial_auc(self.t, self.c, 48.0, t_start=18.0)
+        self.assertAlmostEqual(left + right, whole, places=9)
+
+    def test_past_the_last_sample_needs_the_terminal_slope(self):
+        beyond = 72.0
+        self.assertTrue(math.isnan(partial_auc(self.t, self.c, beyond)))
+        got = partial_auc(self.t, self.c, beyond, lambda_z=K)
+        want = (DOSE / V) / K * (1 - math.exp(-K * beyond))
+        self.assertAlmostEqual(got, want, places=4)
+
+    def test_nca_reports_requested_windows(self):
+        res = nca(self.t, self.c, dose=DOSE,
+                  administration=Administration.IV_BOLUS,
+                  partial_times=(12, 24))
+        self.assertEqual(sorted(res.partial_auc), ["0-12", "0-24"])
+        self.assertAlmostEqual(
+            res.partial_auc["0-24"],
+            (DOSE / V) / K * (1 - math.exp(-K * 24.0)), places=4)
+        # 창이 자료 전체를 덮으면 AUClast 와 같아야 한다.
+        full = nca(self.t, self.c, dose=DOSE,
+                   administration=Administration.IV_BOLUS, partial_times=(48,))
+        self.assertAlmostEqual(full.partial_auc["0-48"], full.auc_last, places=9)
 
 
 # ---------------------------------------------------------------------------
