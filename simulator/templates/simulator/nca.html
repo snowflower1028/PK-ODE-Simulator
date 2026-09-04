@@ -72,50 +72,13 @@
         </button>
       </header>
       <div class="collapse show sidebar-section-body" id="nca-section-data">
-
-        <input type="file" id="nca-file-input" class="form-control form-control-sm mb-2" accept=".csv,.txt">
-        <p class="nca-hint" id="nca-file-hint">
-          A CSV with one row per sample. A profile column is optional &mdash; without it
-          the whole file is one profile.
-        </p>
-
-        <div id="nca-mapping" hidden>
-          <div class="nca-field">
-            <label class="nca-label" for="nca-col-id">Profile</label>
-            <select id="nca-col-id" class="form-select form-select-sm"></select>
-          </div>
-          <div class="nca-field">
-            <label class="nca-label" for="nca-col-time">Time</label>
-            <select id="nca-col-time" class="form-select form-select-sm"></select>
-          </div>
-          <div class="nca-field">
-            <label class="nca-label" for="nca-col-conc">Conc.</label>
-            <select id="nca-col-conc" class="form-select form-select-sm"></select>
-          </div>
-        </div>
-
-        <hr class="nca-rule">
-
-        <div class="nca-field">
-          <label class="nca-label" for="nca-conc-amount">Conc. unit</label>
-          <div class="nca-unit-pair">
-            <select id="nca-conc-amount" class="form-select form-select-sm" aria-label="Concentration amount unit"></select>
-            <span class="nca-slash" aria-hidden="true">/</span>
-            <select id="nca-conc-volume" class="form-select form-select-sm" aria-label="Concentration volume unit"></select>
-          </div>
-        </div>
-        <div class="nca-field">
-          <label class="nca-label" for="nca-time-unit">Time unit</label>
-          <select id="nca-time-unit" class="form-select form-select-sm"></select>
-        </div>
-        <div class="nca-field">
-          <label class="nca-label" for="nca-mw">Mol. weight</label>
-          <input type="number" id="nca-mw" class="form-control form-control-sm"
-                 placeholder="g/mol — optional" min="0" step="any">
-        </div>
+        <div class="nca-data-list" id="nca-data-list"></div>
+        <button type="button" class="nca-add-btn" id="nca-add-data-btn">
+          <i class="bi bi-plus-lg"></i> Register observed data
+        </button>
         <p class="nca-hint">
-          A molecular weight is only needed to move between mass and molar units.
-          Without one those choices stay hidden rather than giving a wrong number.
+          One card is one time&ndash;concentration series. Click a card to look at it;
+          the plot and the table on the right follow whichever is selected.
         </p>
       </div>
     </section>
@@ -137,6 +100,11 @@
         </button>
       </header>
       <div class="collapse show sidebar-section-body" id="nca-section-dose">
+        <p class="nca-bound-note" id="nca-dose-owner">
+          <i class="bi bi-link-45deg" aria-hidden="true"></i>
+          <span>Select a data series first.</span>
+        </p>
+
         <div class="nca-field">
           <label class="nca-label" for="nca-dose">Amount</label>
           <div class="nca-unit-pair">
@@ -158,7 +126,23 @@
           <input type="number" id="nca-infusion" class="form-control form-control-sm"
                  value="0" min="0" step="any">
         </div>
+        <div class="nca-field">
+          <label class="nca-label" for="nca-bw">Body wt.</label>
+          <div class="nca-unit-pair">
+            <input type="number" id="nca-bw" class="form-control form-control-sm"
+                   placeholder="optional" min="0" step="any">
+            <select id="nca-bw-unit" class="form-select form-select-sm" aria-label="Body weight unit">
+              <option value="kg" selected>kg</option>
+              <option value="g">g</option>
+            </select>
+          </div>
+        </div>
         <p class="nca-hint" id="nca-dose-hint">
+          Give the dose per kilogram and CL and Vz come out per kilogram too &mdash;
+          no body weight needed. A body weight is only for moving between the two,
+          so L/h and L/h/kg both become available once you enter one.
+        </p>
+        <p class="nca-hint">
           Leave the amount blank to skip CL, Vz and Vss. Everything else is still
           computed &mdash; they are the only values that need a dose.
         </p>
@@ -251,10 +235,6 @@
       <header class="workspace-header">
         <h2 class="workspace-title">NCA Result</h2>
         <div class="workspace-actions">
-          <div class="nca-profile-picker" id="nca-profile-picker" hidden>
-            <label class="nca-label" for="nca-profile-select">Profile</label>
-            <select id="nca-profile-select" class="form-select form-select-sm"></select>
-          </div>
           <button id="nca-run-btn" class="btn btn-primary" disabled>
             <i class="bi bi-calculator"></i> Calculate
           </button>
@@ -317,6 +297,104 @@
 
     </div>
   </main>
+  </div>
+
+  <!-- 관측값 등록·관리 -->
+  <div class="modal fade" id="ncaDataModal" tabindex="-1" aria-labelledby="ncaDataModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="ncaDataModalLabel">Observed Data</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body nca-manager">
+          <!-- 왼쪽: 등록된 것들 -->
+          <aside class="nca-manager-rail">
+            <h6 class="nca-subhead">Series</h6>
+            <div class="nca-rail-list" id="nca-rail-list"></div>
+            <button type="button" class="nca-add-btn nca-add-btn-sm" id="nca-rail-add">
+              <i class="bi bi-plus-lg"></i> New series
+            </button>
+          </aside>
+
+          <!-- 오른쪽: 고른 것의 속성과 표 -->
+          <div class="nca-manager-main" id="nca-manager-main">
+            <div class="nca-manager-empty" id="nca-manager-empty">
+              <i class="bi bi-table" aria-hidden="true"></i>
+              <p>Nothing registered yet. Start a series, then type the times and
+                 concentrations in &mdash; or bring them in from a file.</p>
+            </div>
+
+            <div id="nca-manager-editor" hidden>
+              <div class="nca-editor-head">
+                <div class="nca-field">
+                  <label class="nca-label" for="nca-edit-name">Name</label>
+                  <input type="text" id="nca-edit-name" class="form-control form-control-sm"
+                         placeholder="e.g. S-01">
+                </div>
+                <div class="nca-field">
+                  <label class="nca-label" for="nca-edit-conc-amount">Conc. unit</label>
+                  <div class="nca-unit-pair">
+                    <select id="nca-edit-conc-amount" class="form-select form-select-sm" aria-label="Concentration amount unit"></select>
+                    <span class="nca-slash" aria-hidden="true">/</span>
+                    <select id="nca-edit-conc-volume" class="form-select form-select-sm" aria-label="Concentration volume unit"></select>
+                  </div>
+                </div>
+                <div class="nca-field">
+                  <label class="nca-label" for="nca-edit-time-unit">Time unit</label>
+                  <select id="nca-edit-time-unit" class="form-select form-select-sm"></select>
+                </div>
+                <div class="nca-field">
+                  <label class="nca-label" for="nca-edit-mw">Mol. weight</label>
+                  <input type="number" id="nca-edit-mw" class="form-control form-control-sm"
+                         placeholder="g/mol — optional" min="0" step="any">
+                </div>
+              </div>
+
+              <div class="nca-sheet-bar">
+                <label class="nca-import-btn btn btn-sm btn-outline-secondary mb-0">
+                  <i class="bi bi-upload"></i> Import file
+                  <input type="file" id="nca-sheet-import" accept=".csv,.txt,.tsv,.xlsx,.xls" hidden>
+                </label>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="nca-sheet-clear">
+                  <i class="bi bi-eraser"></i> Clear rows
+                </button>
+                <span class="nca-sheet-note" id="nca-sheet-note">
+                  Paste straight from a spreadsheet &mdash; copy two columns and press
+                  Ctrl&nbsp;V in the grid.
+                </span>
+                <span class="nca-sheet-count ms-auto" id="nca-sheet-count"></span>
+              </div>
+
+              <div class="nca-sheet-wrap">
+                <table class="nca-sheet" id="nca-sheet">
+                  <thead>
+                    <tr>
+                      <th class="nca-sheet-use" title="Include this point in the analysis">Use</th>
+                      <th>Time</th>
+                      <th>Concentration</th>
+                      <th class="nca-sheet-del" aria-label="Remove"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="nca-sheet-body"></tbody>
+                </table>
+              </div>
+              <p class="nca-hint">
+                Unticking a row leaves the point out of every calculation without
+                deleting it &mdash; the reason for dropping a sample usually needs to
+                survive the analysis. Text that is not a number (BLQ, &lt;LLOQ) is kept
+                and treated as below the limit.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- 도움말 -->

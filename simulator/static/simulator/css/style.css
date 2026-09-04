@@ -2826,3 +2826,355 @@ body.is-resizing {
 .nca-warnings li + li {
     margin-top: 0.25rem;
 }
+
+/* ------------------------------------------------------------ */
+/* 34. 관측값 카드와 스프레드시트                                   */
+/* ------------------------------------------------------------ */
+/* 카드 하나가 시간-농도 계열 하나다. 고른 것은 색으로 채우고 나머지는
+   회색으로 둔다 — 무엇을 보고 있는지가 목록에서 바로 읽혀야 오른쪽의
+   결과가 어느 자료의 것인지 헷갈리지 않는다. */
+.nca-data-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.55rem;
+}
+
+.nca-data-card {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.55rem 0.6rem 0.55rem 0.7rem;
+    border: 1px solid var(--apple-control-border);
+    border-radius: 8px;
+    background-color: var(--apple-background-secondary);
+    color: var(--apple-text-secondary);
+    font-size: 13px;
+    line-height: 1.45;
+    text-align: left;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.nca-data-card:hover {
+    border-color: var(--apple-separator-color);
+    background-color: #ececef;
+}
+.nca-data-card.is-selected {
+    background-color: var(--apple-system-blue);
+    border-color: var(--apple-system-blue);
+    color: #fff;
+}
+.nca-data-card.is-selected:hover {
+    background-color: var(--apple-system-blue-hover);
+}
+
+.nca-card-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.nca-card-meta {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+}
+/* 카드 안의 아이콘 버튼. 고른 카드에서는 흰 글자 위에 놓이므로 색을 물려받는다. */
+.nca-card-btn {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    opacity: 0.6;
+    font-size: 0.8125rem;
+    line-height: 1;
+}
+.nca-card-btn:hover {
+    opacity: 1;
+    background-color: rgba(120, 120, 128, 0.18);
+}
+.nca-data-card.is-selected .nca-card-btn {
+    /* 흰 글자를 진한 파랑 위에 60% 로 얹으면 아이콘이 거의 안 보인다.
+       회색 카드에서는 같은 값이 충분하지만 여기서는 아니다. */
+    opacity: 0.85;
+}
+.nca-data-card.is-selected .nca-card-btn:hover {
+    opacity: 1;
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+/* 아무것도 없을 때. 빈 자리를 비워 두면 고장처럼 보인다. */
+.nca-data-placeholder {
+    padding: 1.1rem 0.75rem;
+    border: 1px dashed var(--apple-control-border);
+    border-radius: 8px;
+    color: var(--apple-text-tertiary);
+    font-size: 12.5px;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.nca-add-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px dashed var(--apple-control-border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--apple-system-blue);
+    font-size: 13px;
+    font-weight: 600;
+}
+.nca-add-btn:hover {
+    border-color: var(--apple-system-blue);
+    background-color: rgba(0, 122, 255, 0.06);
+}
+.nca-add-btn-sm {
+    padding: 0.35rem;
+    font-size: 12px;
+}
+
+/* 용량이 어느 자료에 딸린 것인지. 이걸 말하지 않으면 전역 설정으로 읽힌다. */
+.nca-bound-note {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    margin: 0 0 0.7rem;
+    padding: 0.4rem 0.55rem;
+    border-radius: 6px;
+    background-color: rgba(0, 122, 255, 0.07);
+    color: var(--apple-text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+.nca-bound-note b {
+    color: var(--apple-text-primary);
+}
+
+/* ── 등록·관리 모달 ─────────────────────────────────────────── */
+.nca-manager {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 1.1rem;
+    min-height: 24rem;
+}
+.nca-manager-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding-right: 1.1rem;
+    border-right: 1px solid var(--apple-card-border);
+}
+.nca-manager-rail .nca-subhead {
+    margin: 0 0 0.15rem;
+}
+.nca-rail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    max-height: 22rem;
+    overflow-y: auto;
+}
+.nca-rail-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--apple-text-secondary);
+    font-size: 12.5px;
+    text-align: left;
+}
+.nca-rail-item:hover {
+    background-color: var(--apple-background-secondary);
+}
+.nca-rail-item.is-selected {
+    background-color: rgba(0, 122, 255, 0.1);
+    border-color: rgba(0, 122, 255, 0.25);
+    color: var(--apple-text-primary);
+    font-weight: 600;
+}
+
+.nca-manager-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.nca-manager-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    flex: 1 1 auto;
+    color: var(--apple-text-tertiary);
+    text-align: center;
+}
+.nca-manager-empty i {
+    font-size: 2rem;
+}
+.nca-manager-empty p {
+    max-width: 24rem;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--apple-text-tertiary);
+}
+
+.nca-editor-head {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 0.2rem 1.1rem;
+    margin-bottom: 0.85rem;
+}
+
+.nca-sheet-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+.nca-sheet-note {
+    font-size: 11.5px;
+    color: var(--apple-text-tertiary);
+}
+.nca-sheet-count {
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--apple-text-secondary);
+    white-space: nowrap;
+}
+.nca-import-btn {
+    cursor: pointer;
+}
+
+/* 표 자체. 셀마다 input 을 둔다 — contenteditable 보다 붙잡기 쉽고,
+   탭 이동과 화면 낭독기 지원이 그냥 따라온다. */
+.nca-sheet-wrap {
+    max-height: 20rem;
+    overflow: auto;
+    border: 1px solid var(--apple-card-border);
+    border-radius: 8px;
+}
+.nca-sheet {
+    width: 100%;
+    margin: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+}
+.nca-sheet thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 0.4rem 0.6rem;
+    background-color: var(--apple-background-secondary);
+    border-bottom: 1px solid var(--apple-card-border);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    text-align: left;
+}
+.nca-sheet th.nca-sheet-use { width: 3.2rem; text-align: center; }
+.nca-sheet th.nca-sheet-del { width: 2.4rem; }
+
+.nca-sheet td {
+    padding: 0;
+    border-bottom: 1px solid var(--apple-card-border);
+    vertical-align: middle;
+}
+.nca-sheet tbody tr:last-child td {
+    border-bottom: none;
+}
+/* 빠진 행은 흐리게 둔다 — 지운 것이 아니라 뺀 것임이 보여야 한다. */
+.nca-sheet tr.is-excluded .nca-cell {
+    color: var(--apple-text-tertiary);
+    text-decoration: line-through;
+    text-decoration-color: var(--apple-separator-color);
+}
+
+.nca-cell {
+    width: 100%;
+    padding: 0.35rem 0.6rem;
+    border: none;
+    background: transparent;
+    color: var(--apple-text-primary);
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+}
+.nca-cell:focus {
+    outline: 2px solid var(--apple-system-blue);
+    outline-offset: -2px;
+    border-radius: 3px;
+}
+.nca-sheet td.nca-cell-use {
+    text-align: center;
+}
+.nca-sheet .nca-row-del {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0.25rem;
+    border: none;
+    background: transparent;
+    color: var(--apple-text-tertiary);
+    font-size: 0.8125rem;
+    opacity: 0;
+}
+.nca-sheet tr:hover .nca-row-del,
+.nca-sheet .nca-row-del:focus-visible {
+    opacity: 1;
+}
+.nca-sheet .nca-row-del:hover {
+    color: var(--apple-red, #d70015);
+}
+
+/* 카드에서 고르는 부분. 버튼을 겹쳐 넣지 않고 형제로 둔다 — 키보드 이동과
+   화면 낭독기가 그냥 맞는다. */
+.nca-card-select {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+.nca-card-select:focus-visible {
+    outline: 2px solid var(--apple-system-blue);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+.nca-data-card.is-selected .nca-card-select:focus-visible {
+    outline-color: #fff;
+}
+
+.nca-rail-item .nca-card-name {
+    flex: 1 1 auto;
+}
+.nca-rail-item .nca-card-meta {
+    font-weight: 400;
+}

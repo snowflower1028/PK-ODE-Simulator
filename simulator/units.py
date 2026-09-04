@@ -60,24 +60,33 @@ class UnitError(ValueError):
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Dimension:
-    """기준 차원의 지수. 질량과 몰은 분자량 없이 섞이지 않으므로 따로 센다."""
+    """기준 차원의 지수.
+
+    질량과 몰은 분자량 없이 섞이지 않으므로 따로 센다. 체중도 따로 센다 —
+    kg 이라는 같은 이름을 쓰지만 약물의 질량과 몸의 질량은 다른 양이다.
+    한 차원으로 묶으면 mg/kg 이 무차원이 되어 버리고, 그러면 CL 이 L/h/kg
+    으로 나와야 할 자리에 L/h 가 나온다.
+    """
 
     mass: int = 0
     mole: int = 0
     volume: int = 0
     time: int = 0
+    bw: int = 0
 
     def __mul__(self, other: "Dimension") -> "Dimension":
         return Dimension(self.mass + other.mass, self.mole + other.mole,
-                         self.volume + other.volume, self.time + other.time)
+                         self.volume + other.volume, self.time + other.time,
+                         self.bw + other.bw)
 
     def __truediv__(self, other: "Dimension") -> "Dimension":
         return Dimension(self.mass - other.mass, self.mole - other.mole,
-                         self.volume - other.volume, self.time - other.time)
+                         self.volume - other.volume, self.time - other.time,
+                         self.bw - other.bw)
 
     def __pow__(self, n: int) -> "Dimension":
         return Dimension(self.mass * n, self.mole * n,
-                         self.volume * n, self.time * n)
+                         self.volume * n, self.time * n, self.bw * n)
 
     @property
     def is_dimensionless(self) -> bool:
@@ -89,6 +98,7 @@ MASS = Dimension(mass=1)
 MOLE = Dimension(mole=1)
 VOLUME = Dimension(volume=1)
 TIME = Dimension(time=1)
+BODYWEIGHT = Dimension(bw=1)
 
 
 @dataclass(frozen=True)
@@ -129,6 +139,11 @@ _VOLUME: Dict[str, Unit] = {
     "ul": _u("µL", 1e-6, VOLUME), "ml": _u("mL", 1e-3, VOLUME),
     "dl": _u("dL", 1e-1, VOLUME), "l": _u("L", 1.0, VOLUME),
 }
+#: 체중. 질량과 이름은 같지만 다른 차원이다 — 아래 _denominator 참고.
+_BW: Dict[str, Unit] = {
+    "kg": _u("kg", 1.0, BODYWEIGHT),
+    "g": _u("g", 1e-3, BODYWEIGHT),
+}
 _TIME: Dict[str, Unit] = {
     "s": _u("s", 1.0 / 3600.0, TIME), "sec": _u("s", 1.0 / 3600.0, TIME),
     "min": _u("min", 1.0 / 60.0, TIME),
@@ -155,8 +170,23 @@ def _normalise(text: str) -> str:
 
 
 def _simple(key: str) -> Optional[Unit]:
-    """등록된 홑단위 하나를 찾는다."""
+    """분자 자리의 홑단위. 여기서 kg 은 약물의 질량이다."""
     for table in (_MASS, _MOLE, _VOLUME, _TIME):
+        if key in table:
+            return table[key]
+    return None
+
+
+def _denominator(key: str) -> Optional[Unit]:
+    """분모 자리의 홑단위. 여기서 kg 과 g 은 체중이다.
+
+    같은 글자가 자리에 따라 다른 뜻을 갖는다. 어색해 보이지만 실제로 쓰는
+    방식이 그렇다 — mg/kg 의 kg 은 약을 1 kg 준다는 뜻이 아니라 몸무게고,
+    L/h/kg 의 kg 도 마찬가지다. 분자에 kg 이 오는 경우(1 kg 을 투여)는
+    여전히 질량으로 읽는다. 부피와 시간을 먼저 보므로 mL 나 min 은 이 규칙에
+    걸리지 않는다.
+    """
+    for table in (_VOLUME, _TIME, _BW, _MASS, _MOLE):
         if key in table:
             return table[key]
     return None
@@ -165,8 +195,9 @@ def _simple(key: str) -> Optional[Unit]:
 def parse_unit(text: str) -> Unit:
     """단위 하나를 세운다.
 
-    홑단위(mg, L, h)와 'a/b' 꼴을 모두 받는다. 뒤쪽은 농도(ng/mL)만이 아니라
-    청소율(L/h)도 같은 자리에 들어오므로 두 홑단위의 나눗셈으로 일반화했다.
+    홑단위(mg, L, h)와 빗금으로 이은 꼴을 받는다. 빗금은 여러 번 나올 수
+    있다 — 농도(ng/mL)와 청소율(L/h)만이 아니라 체중당 청소율(L/h/kg)도
+    같은 자리에 들어오기 때문이다. 첫 조각이 분자고 나머지는 전부 분모다.
     """
     key = _normalise(text)
     if not key:
@@ -181,14 +212,20 @@ def parse_unit(text: str) -> Unit:
         return concentration_unit(amount, volume)
 
     if "/" in key:
-        top_key, _, bottom_key = key.partition("/")
-        top, bottom = _simple(top_key), _simple(bottom_key)
+        pieces = [p for p in key.split("/")]
+        top = _simple(pieces[0])
         if top is None:
-            raise UnitError(f"Unrecognised unit: {top_key!r} in {text!r}")
-        if bottom is None:
-            raise UnitError(f"Unrecognised unit: {bottom_key!r} in {text!r}")
-        return Unit(f"{top.label}/{bottom.label}",
-                    top.factor / bottom.factor, top.dim / bottom.dim)
+            raise UnitError(f"Unrecognised unit: {pieces[0]!r} in {text!r}")
+
+        factor, dim, labels = top.factor, top.dim, [top.label]
+        for piece in pieces[1:]:
+            bottom = _denominator(piece)
+            if bottom is None:
+                raise UnitError(f"Unrecognised unit: {piece!r} in {text!r}")
+            factor /= bottom.factor
+            dim = dim / bottom.dim
+            labels.append(bottom.label)
+        return Unit("/".join(labels), factor, dim)
 
     raise UnitError(f"Unrecognised unit: {text!r}")
 
@@ -299,10 +336,13 @@ def _label(shape: Composed, conc: Unit, time: Unit, dose: Unit) -> str:
 # ---------------------------------------------------------------------------
 # 환산
 # ---------------------------------------------------------------------------
-def scale_factor(frm: Unit, to: Unit, mw: Optional[float] = None) -> float:
+def scale_factor(frm: Unit, to: Unit, mw: Optional[float] = None,
+                 bw: Optional[float] = None) -> float:
     """frm 으로 잰 값에 곱하면 to 로 잰 값이 되는 수.
 
-    질량과 몰이 갈리면 분자량(g/mol)이 필요하다. 없으면 거절한다.
+    두 군데에 다리가 필요하다. 질량과 몰 사이는 분자량(g/mol)이, 절대량과
+    체중당 사이는 체중(kg)이 놓는다. 둘 다 없으면 거절한다 — 틀린 숫자를
+    조용히 내놓느니 못 한다고 말하는 편이 낫다.
     """
     gap = frm.dim / to.dim
     if gap.volume or gap.time:
@@ -310,30 +350,39 @@ def scale_factor(frm: Unit, to: Unit, mw: Optional[float] = None) -> float:
             f"{frm.label} and {to.label} are not the same kind of quantity."
         )
 
-    if gap.mass == 0 and gap.mole == 0:
-        return frm.factor / to.factor
+    factor = frm.factor / to.factor
 
-    if gap.mass != -gap.mole:
-        raise UnitError(
-            f"{frm.label} and {to.label} are not the same kind of quantity."
-        )
-    if not mw or mw <= 0:
-        raise UnitError(
-            f"Converting {frm.label} to {to.label} crosses mass and moles, "
-            "which needs a molecular weight."
-        )
+    # 체중당 ↔ 절대량. CL(L/h) = CL(L/h/kg) × 체중.
+    if gap.bw:
+        if not bw or bw <= 0:
+            raise UnitError(
+                f"Converting {frm.label} to {to.label} crosses body weight, "
+                "which needs a body weight."
+            )
+        factor *= float(bw) ** (-gap.bw)
 
-    # 기준 질량은 mg, 기준 몰은 µmol.  1 mg = (1e3 / MW) µmol
-    per_mg = 1e3 / float(mw)
-    return (frm.factor / to.factor) * (per_mg ** gap.mass)
+    # 질량 ↔ 몰. 기준 질량은 mg, 기준 몰은 µmol.  1 mg = (1e3 / MW) µmol
+    if gap.mass or gap.mole:
+        if gap.mass != -gap.mole:
+            raise UnitError(
+                f"{frm.label} and {to.label} are not the same kind of quantity."
+            )
+        if not mw or mw <= 0:
+            raise UnitError(
+                f"Converting {frm.label} to {to.label} crosses mass and moles, "
+                "which needs a molecular weight."
+            )
+        factor *= (1e3 / float(mw)) ** gap.mass
+
+    return factor
 
 
 def convert(value: Optional[float], frm: Unit, to: Unit,
-            mw: Optional[float] = None) -> Optional[float]:
+            mw: Optional[float] = None, bw: Optional[float] = None) -> Optional[float]:
     """값 하나를 옮긴다. None 은 None 으로 둔다."""
     if value is None:
         return None
-    return float(value) * scale_factor(frm, to, mw)
+    return float(value) * scale_factor(frm, to, mw, bw)
 
 
 # ---------------------------------------------------------------------------
@@ -346,10 +395,20 @@ CONCENTRATION_CHOICES: Tuple[str, ...] = (
 TIME_CHOICES: Tuple[str, ...] = ("h", "min", "day", "s", "week")
 DOSE_CHOICES: Tuple[str, ...] = (
     "mg", "µg", "ng", "g", "nmol", "µmol", "mmol", "mol",
+    # 체중당 용량. 전임상에서는 이쪽이 오히려 기본이다.
+    "mg/kg", "µg/kg", "ng/kg", "mg/g", "µmol/kg", "nmol/kg",
 )
 #: 조합해 놓으면 읽기 어려운 항목은 이 목록에서 고르게 한다.
-VOLUME_CHOICES: Tuple[str, ...] = ("L", "mL", "dL")
-CLEARANCE_CHOICES: Tuple[str, ...] = ("L/h", "mL/h", "mL/min", "L/day")
+#: 체중당 용량을 쓰면 CL 과 Vz 도 체중당이 되므로 두 계열을 함께 담아 두고,
+#: display_options 가 native 를 보고 닿을 수 있는 것만 남긴다.
+VOLUME_CHOICES: Tuple[str, ...] = (
+    "L", "mL", "dL",
+    "L/kg", "mL/kg",
+)
+CLEARANCE_CHOICES: Tuple[str, ...] = (
+    "L/h", "mL/h", "mL/min", "L/day",
+    "L/h/kg", "mL/h/kg", "mL/min/kg", "L/day/kg",
+)
 
 
 def _catalogue(field: str) -> Tuple[str, ...]:
@@ -375,12 +434,16 @@ def _catalogue(field: str) -> Tuple[str, ...]:
 
 
 def display_options(field: str, native: Optional[Unit] = None,
-                    mw: Optional[float] = None) -> Tuple[str, ...]:
+                    mw: Optional[float] = None,
+                    bw: Optional[float] = None) -> Tuple[str, ...]:
     """이 항목을 어떤 단위로 보여 줄 수 있는지.
 
     native 를 주면 실제로 갈 수 있는 곳만 남긴다. 질량으로 잰 농도에 분자량
     없이 nmol/L 을 권해 놓고 고르는 순간 거절하면, 막는다는 약속이 사용자
     눈에는 그냥 고장으로 보인다. 고를 수 없는 것은 아예 내놓지 않는다.
+
+    체중을 주면 L/h 와 L/h/kg 이 함께 열린다. 다리가 놓였으니 실제로 갈 수
+    있기 때문이다.
     """
     choices = _catalogue(field)
     if native is None:
@@ -389,7 +452,7 @@ def display_options(field: str, native: Optional[Unit] = None,
     reachable: List[str] = []
     for choice in choices:
         try:
-            scale_factor(native, parse_unit(choice), mw)
+            scale_factor(native, parse_unit(choice), mw, bw)
         except UnitError:
             continue
         reachable.append(choice)

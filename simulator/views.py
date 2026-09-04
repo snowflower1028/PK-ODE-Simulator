@@ -636,10 +636,6 @@ def nca_run(request):
             )
 
         method = AUCMethod(data.get("method") or AUCMethod.LINEAR_LOG.value)
-        administration = Administration(data.get("route") or Administration.EXTRAVASCULAR.value)
-        dose = data.get("dose")
-        dose = float(dose) if dose not in (None, "") else None
-        infusion = float(data.get("infusion_duration") or 0.0)
         min_points = int(data.get("min_lambda_z_points") or 3)
         loq = data.get("loq")
         loq = float(loq) if loq not in (None, "") else None
@@ -654,6 +650,15 @@ def nca_run(request):
             times = profile.get("time") or []
             concs = profile.get("conc") or []
             picked = chosen.get(name)
+
+            # 용량은 자료마다 다르다. 같은 연구 안에서도 계열마다 투여량과
+            # 경로가 갈리므로 전역 설정으로 둘 수 없다.
+            dose = profile.get("dose")
+            dose = float(dose) if dose not in (None, "") else None
+            administration = Administration(
+                profile.get("route") or Administration.EXTRAVASCULAR.value
+            )
+            infusion = float(profile.get("infusion_duration") or 0.0)
 
             # 어느 점이 정량한계 아래인지는 브라우저가 정한다. CSV 에 "BLQ"
             # 처럼 글자로 적힌 것까지 봐야 하는데, 그 글자는 숫자 배열로
@@ -694,7 +699,9 @@ def nca_units(request):
     """지금 입력 단위에서 각 항목을 어떤 단위로 보여 줄 수 있는지.
 
     환산 자체는 브라우저에서 곱셈 한 번이면 끝나지만, 어떤 선택지가 실제로
-    닿을 수 있는지는 분자량까지 걸린 문제라 여기서 판단한다.
+    닿을 수 있는지는 분자량과 체중까지 걸린 문제라 단위 셈을 아는 쪽이
+    답한다. 닿을 수 없는 것을 목록에 올려 놓고 고르는 순간 막으면, 막는다는
+    약속이 사용자 눈에는 그냥 고장으로 보인다.
     """
     from . import units as U
 
@@ -705,17 +712,20 @@ def nca_units(request):
         dose = U.parse_unit(data.get("dose") or "mg")
         mw = data.get("mw")
         mw = float(mw) if mw not in (None, "") else None
+        bw = data.get("bw")
+        bw = float(bw) if bw not in (None, "") else None
 
         out = {}
         for field in U.FIELD_UNITS:
             native = U.field_unit(field, conc, time, dose)
             if native is None:
                 continue
-            choices = U.display_options(field, native, mw)
+            choices = U.display_options(field, native, mw, bw)
             out[field] = {
                 "native": native.label,
                 "choices": [
-                    {"label": c, "factor": U.scale_factor(native, U.parse_unit(c), mw)}
+                    {"label": c,
+                     "factor": U.scale_factor(native, U.parse_unit(c), mw, bw)}
                     for c in choices
                 ],
             }

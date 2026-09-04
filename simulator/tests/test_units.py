@@ -161,6 +161,97 @@ class ComposedFields(unittest.TestCase):
         self.assertAlmostEqual(direct, stepped, delta=abs(direct) * 1e-9)
 
 
+class BodyWeight(unittest.TestCase):
+    """체중은 약물의 질량과 다른 양이다.
+
+    한 차원으로 묶으면 mg/kg 이 무차원이 되고, CL 이 L/h/kg 으로 나와야 할
+    자리에 L/h 가 나온다. 전임상에서 실제로 보고하는 형태가 체중당이므로
+    이게 어긋나면 값이 조용히 1000배쯤 틀린다.
+    """
+
+    def setUp(self):
+        self.C, self.T = P("ng/mL"), P("h")
+
+    def test_a_dose_per_kilogram_is_not_dimensionless(self):
+        self.assertFalse(P("mg/kg").dim.is_dimensionless)
+        # 분자의 kg 은 여전히 약물의 질량이다 — 1 kg 을 투여할 수도 있다.
+        self.assertEqual(P("kg").dim, P("mg").dim)
+        # 그리고 mg/kg 은 mg 과 같은 차원이 아니다.
+        self.assertNotEqual(P("mg/kg").dim, P("mg").dim)
+
+    def test_denominators_read_kg_as_body_weight(self):
+        # mg/kg 는 질량/체중이라 남는 차원이 있다.
+        self.assertEqual(P("mg/kg").dim.mass, 1)
+        self.assertEqual(P("mg/kg").dim.bw, -1)
+
+    def test_clearance_comes_out_per_kilogram(self):
+        cl = field_unit("cl", self.C, self.T, P("mg/kg"))
+        self.assertEqual(cl.dim.volume, 1)
+        self.assertEqual(cl.dim.time, -1)
+        self.assertEqual(cl.dim.bw, -1)
+
+    def test_hand_computed_per_kilogram_clearance(self):
+        # 100 mg/kg 에 AUC 25 ng/mL·h 이면 CL 은 4 (mg/kg)/((ng/mL)·h).
+        # AUC 를 0.025 mg/L·h 로 고쳐 적으면 CL = 100/0.025 = 4000 L/h/kg.
+        native = field_unit("cl", self.C, self.T, P("mg/kg"))
+        self.assertAlmostEqual(convert(4.0, native, P("L/h/kg")), 4000.0, places=6)
+        # 4000 L/h/kg = 4e6 mL/h/kg = 66666.7 mL/min/kg
+        self.assertAlmostEqual(convert(4.0, native, P("mL/min/kg")),
+                               4000.0 * 1000.0 / 60.0, places=3)
+
+    def test_volume_comes_out_per_kilogram(self):
+        native = field_unit("vz", self.C, self.T, P("mg/kg"))
+        self.assertAlmostEqual(convert(32.0, native, P("L/kg")), 32000.0, places=6)
+
+    def test_absolute_and_per_weight_do_not_mix(self):
+        absolute = field_unit("cl", self.C, self.T, P("mg"))
+        per_kilo = field_unit("cl", self.C, self.T, P("mg/kg"))
+        with self.assertRaises(UnitError):
+            scale_factor(absolute, per_kilo)
+        with self.assertRaises(UnitError):
+            convert(1.0, per_kilo, P("L/h"))
+
+    def test_only_the_reachable_family_is_offered(self):
+        # 고를 수 없는 것을 내놓고 고르는 순간 막으면 고장으로 보인다.
+        absolute = display_options("cl", field_unit("cl", self.C, self.T, P("mg")))
+        per_kilo = display_options("cl", field_unit("cl", self.C, self.T, P("mg/kg")))
+        self.assertIn("L/h", absolute)
+        self.assertNotIn("L/h/kg", absolute)
+        self.assertIn("L/h/kg", per_kilo)
+        self.assertNotIn("L/h", per_kilo)
+
+    def test_a_body_weight_bridges_the_two_families(self):
+        per_kilo = field_unit("cl", self.C, self.T, P("mg/kg"))
+        # 4 (mg/kg)/((ng/mL)·h) = 4000 L/h/kg. 25 kg 짜리면 100000 L/h.
+        self.assertAlmostEqual(convert(4.0, per_kilo, P("L/h/kg")), 4000.0, places=6)
+        self.assertAlmostEqual(convert(4.0, per_kilo, P("L/h"), bw=25.0),
+                               100000.0, places=3)
+        # 반대 방향도 같은 다리를 쓴다.
+        absolute = field_unit("cl", self.C, self.T, P("mg"))
+        self.assertAlmostEqual(convert(4.0, absolute, P("L/h/kg"), bw=25.0),
+                               4000.0 / 25.0, places=6)
+
+    def test_the_bridge_opens_the_other_family_in_the_menu(self):
+        per_kilo = field_unit("cl", self.C, self.T, P("mg/kg"))
+        without = display_options("cl", per_kilo)
+        with_bw = display_options("cl", per_kilo, bw=25.0)
+        self.assertNotIn("L/h", without)
+        self.assertIn("L/h", with_bw)
+        self.assertIn("L/h/kg", with_bw)
+
+    def test_a_zero_or_missing_weight_is_not_taken_as_a_number(self):
+        per_kilo = field_unit("cl", self.C, self.T, P("mg/kg"))
+        for bad in (None, 0.0, -3.0):
+            with self.assertRaises(UnitError):
+                convert(1.0, per_kilo, P("L/h"), bw=bad)
+
+    def test_concentration_and_time_are_untouched(self):
+        # 체중 차원을 더했다고 기존 단위가 달라지면 안 된다.
+        self.assertAlmostEqual(convert(1.0, P("mg/L"), P("ug/mL")), 1.0, places=12)
+        self.assertAlmostEqual(convert(1.0, P("h"), P("min")), 60.0, places=12)
+        self.assertAlmostEqual(convert(1.0, P("mL/min"), P("L/h")), 0.06, places=12)
+
+
 class DisplayChoices(unittest.TestCase):
     def test_clearance_and_volume_get_readable_names(self):
         # 조합한 이름이 mg/((ng/mL)·h) 라서, 고를 때는 익숙한 쪽을 내놓는다.
