@@ -408,7 +408,9 @@ function plotProfile() {
   }
 
   const layout = {
-    margin: { l: 62, r: 18, t: 12, b: 48 },
+    // 아래 여백은 축 제목과 범례가 함께 들어갈 만큼 둔다 — 좁게 잡으면
+    // "Time (h)" 위에 범례가 겹쳐 앉는다.
+    margin: { l: 62, r: 18, t: 12, b: 78 },
     height: 380,
     xaxis: { title: `Time (${spec.time})`, zeroline: false },
     yaxis: {
@@ -416,7 +418,7 @@ function plotProfile() {
       type: logScale ? 'log' : 'linear',
       zeroline: false,
     },
-    legend: { orientation: 'h', y: -0.22 },
+    legend: { orientation: 'h', y: -0.28, yanchor: 'top' },
     hovermode: 'closest',
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
@@ -501,7 +503,10 @@ function unitCell(row, field) {
     .filter((label, i, all) => all.indexOf(label) === i)
     .map((label) => `<option value="${escapeAttr(label)}"${label === chosen ? ' selected' : ''}>${escapeAttr(label)}</option>`)
     .join('');
-  return `<select class="form-select form-select-sm nca-unit-select" data-field="${escapeAttr(field)}">${options}</select>`;
+  // 고른 이름을 글자로도 함께 낸다. select 는 종이에 빈 상자로 찍히는데,
+  // 단위가 없는 PK 표는 아무 뜻이 없다.
+  return `<select class="form-select form-select-sm nca-unit-select" data-field="${escapeAttr(field)}">${options}</select>`
+    + `<span class="nca-unit-static print-only">${escapeAttr(chosen)}</span>`;
 }
 
 /** 표시 단위로 옮긴 값. 고른 단위가 없으면 계산된 그대로다. */
@@ -583,6 +588,40 @@ function renderTerminalBar() {
     `<span class="nca-stat">t½ <b>${formatValue(displayed('half_life', values.half_life))}</b></span>`,
     values.lambda_z_manual ? '<span class="nca-stat">chosen by hand</span>' : '',
   ].join('');
+}
+
+/**
+ * 인쇄 직전에 리포트 머리말을 채운다.
+ *
+ * 메뉴가 아니라 Ctrl+P 로 인쇄해도 채워져야 하므로 beforeprint 에 건다.
+ * 무엇을 어떤 규칙으로 계산한 것인지 모르는 PDF 는 나중에 쓸모가 없다 —
+ * 특히 BLQ 규칙과 말기 구간은 값을 크게 바꾸므로 종이에 남아야 한다.
+ */
+function fillReportHead() {
+  const meta = $('nca-report-meta');
+  if (!meta) return;
+
+  const result = NcaState.results[NcaState.current];
+  const values = result ? result.values : null;
+  const spec = currentUnitSpec();
+  const dose = $('nca-dose').value;
+
+  const parts = [
+    new Date().toLocaleString(),
+    `profile: ${NcaState.current || '—'}`,
+    `units: ${spec.conc}, ${spec.time}`,
+    dose ? `dose: ${dose} ${spec.dose}` : 'no dose given',
+    `route: ${$('nca-route').selectedOptions[0].textContent.trim()}`,
+    `trapezoid: ${$('nca-method').selectedOptions[0].textContent.trim()}`,
+    `BLQ: before ${$('nca-blq-before').value}, between ${$('nca-blq-between').value}, after ${$('nca-blq-after').value}`,
+  ];
+  if (values && values.lambda_z_n_points) {
+    parts.push(
+      `terminal phase: ${values.lambda_z_t_first}–${values.lambda_z_t_last} `
+      + `(${values.lambda_z_n_points} points, ${values.lambda_z_manual ? 'chosen by hand' : 'best fit'})`
+    );
+  }
+  meta.textContent = parts.join('  ·  ');
 }
 
 function showMessage(text) {
@@ -828,6 +867,12 @@ function init() {
       filename: `nca_${NcaState.current}`,
     });
   });
+  $('nca-export-report-btn').addEventListener('click', () => {
+    if (!NcaState.current) { showMessage('Nothing to report yet.'); return; }
+    window.print();
+  });
+  window.addEventListener('beforeprint', fillReportHead);
+
   $('nca-clear-btn').addEventListener('click', () => window.location.reload());
 
   // 도움말 메뉴에서 고른 절로 스크롤한다.

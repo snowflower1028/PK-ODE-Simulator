@@ -2376,8 +2376,23 @@ body.is-resizing {
     .sens-switcher,
     #fit-apply-btn,
     #plot-placeholder,
-    #pk-summary-placeholder {
+    #pk-summary-placeholder,
+    /* NCA — 고르는 것들은 종이에 올릴 이유가 없다. 다만 무엇을 골랐는지는
+       남아야 하므로, 단위는 select 를 감추고 고른 이름을 글자로 내보낸다. */
+    .nca-lambda-controls,
+    .nca-plot-toggle,
+    .nca-unit-select,
+    #nca-plot-placeholder {
         display: none !important;
+    }
+
+    .nca-lambda-bar {
+        border: none !important;
+        background: none !important;
+        padding: 0 !important;
+    }
+    .nca-table tr {
+        break-inside: avoid;
     }
 
     /* 화면용 스크롤 상자를 풀어 내용 전체가 흘러나오게 한다. */

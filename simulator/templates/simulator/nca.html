@@ -34,6 +34,7 @@
           <li><h6 class="dropdown-header">Export</h6></li>
           <li><button type="button" id="nca-export-csv-btn" class="dropdown-item"><i class="bi bi-table"></i> Results &mdash; every profile <span class="app-menu-hint">.csv</span></button></li>
           <li><button type="button" id="nca-export-plot-btn" class="dropdown-item"><i class="bi bi-image"></i> Plot Image <span class="app-menu-hint">.png</span></button></li>
+          <li><button type="button" id="nca-export-report-btn" class="dropdown-item"><i class="bi bi-file-earmark-pdf"></i> Results Report <span class="app-menu-hint">.pdf</span></button></li>
         </ul>
       </div>
 
@@ -241,6 +242,11 @@
 
   <main class="main-content">
     <div class="main-scrollable-area">
+
+      <header class="report-head print-only" id="nca-report-head">
+        <h1>NCA Calculator &mdash; Report</h1>
+        <p class="report-meta" id="nca-report-meta"></p>
+      </header>
 
       <header class="workspace-header">
         <h2 class="workspace-title">NCA Result</h2>
