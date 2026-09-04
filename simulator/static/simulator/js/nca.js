@@ -807,6 +807,38 @@ function renderResults() {
   card.style.display = '';
 }
 
+/**
+ * 말기 구간의 양 끝을 고르는 목록을 채운다.
+ *
+ * 숫자 칸이 아니라 목록인 이유가 있다. 뜻이 있는 값은 실제 시료 시각뿐인데,
+ * 숫자 칸의 화살표는 1 씩 움직인다. 시료가 0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 24
+ * 처럼 불규칙하면 8 에서 한 칸 내린 7 은 잡히는 점이 8 과 똑같고, 그러면
+ * 결과의 시작 시각(8)이 칸에 다시 써져 7 이 8 로 튕겨 돌아온다. 화살표를
+ * 몇 번을 눌러도 8 에서 떠나지 못한다.
+ *
+ * 게다가 목록에는 고를 수 있는 것만 담는다. 세 점이 안 되는 구간은 아예
+ * 나타나지 않으므로, 고르고 나서 거절당하는 일이 없다.
+ */
+function fillRangePickers(values) {
+  const ds = currentDataset();
+  const points = (ds && ds._points) || { time: [], conc: [] };
+  const times = points.time.filter((t, i) => points.conc[i] > 0);
+
+  const from = values.lambda_z_t_first;
+  const to = values.lambda_z_t_last;
+  const count = (a, b) => times.filter((t) => t >= a && t <= b).length;
+
+  const options = (values, selected) => values
+    .map((t) => `<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`)
+    .join('');
+
+  // 끝을 고정한 채 시작을 고를 때, 세 점이 남는 시작만 내놓는다. 반대도 같다.
+  $('nca-lz-from').innerHTML = options(
+    times.filter((t) => to === null || (t <= to && count(t, to) >= 3)), from);
+  $('nca-lz-to').innerHTML = options(
+    times.filter((t) => from === null || (t >= from && count(from, t) >= 3)), to);
+}
+
 function renderTerminalBar() {
   const result = NcaState.results[NcaState.selected];
   const bar = $('nca-lambda-bar');
@@ -816,8 +848,7 @@ function renderTerminalBar() {
   bar.hidden = false;
   $('nca-lambda-hint').hidden = false;
 
-  $('nca-lz-from').value = values.lambda_z_t_first ?? '';
-  $('nca-lz-to').value = values.lambda_z_t_last ?? '';
+  fillRangePickers(values);
 
   const span = values.lambda_z_span;
   const weak = span !== null && span !== undefined && span < 2;

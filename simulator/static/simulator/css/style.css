@@ -2738,9 +2738,10 @@ body.is-resizing {
     gap: 0.45rem;
     flex-wrap: wrap;
 }
+/* 실제 시료 시각을 고르는 목록이다. 숫자 칸이 아니다 — 아래 renderTerminalBar
+   의 설명 참고. select 는 화살표 자리가 필요해 조금 넓게 잡는다. */
 .nca-lz-input {
-    width: 5.5rem;
-    text-align: right;
+    width: 6.5rem;
     font-variant-numeric: tabular-nums;
 }
 .nca-lambda-stats {
