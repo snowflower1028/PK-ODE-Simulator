@@ -12,6 +12,8 @@
        비용은 번들 크기뿐이라, 이 앱이 실제로 쓰는 것만 든 basic 배포판을
        쓴다: scatter + bar, 그리고 react/purge/downloadImage. 3.6MB → 1.0MB. -->
   <script src="https://cdn.plot.ly/plotly-basic-2.27.0.min.js"></script>
+  <script defer src="{% static 'simulator/js/tooltip.js' %}{{ asset_v }}"></script>
+  <script defer src="{% static 'simulator/js/resize.js' %}{{ asset_v }}"></script>
   <script defer src="{% static 'simulator/js/script.js' %}{{ asset_v }}"></script>
   <script defer src="{% static 'simulator/js/menubar.js' %}{{ asset_v }}"></script>
   <script defer src="{% static 'simulator/js/sensitivity.js' %}{{ asset_v }}"></script>
@@ -107,6 +109,8 @@
       </div>
 
     </nav>
+
+    {% include "simulator/_app_switcher.html" with current="simulator" %}
   </header>
 
   <div class="app-shell">

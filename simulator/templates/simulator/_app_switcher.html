@@ -1,0 +1,34 @@
+{% comment %}
+  도구 전환 메뉴. 메뉴바 오른쪽 끝에 붙는다.
+
+  두 페이지가 같은 목록을 보여야 하므로 한 곳에 둔다. 지금 보고 있는 도구는
+  aria-current 로 표시하고 링크 대신 죽은 항목으로 둔다 — 이미 여기 있는데
+  다시 눌러 새로고침하게 만들 이유가 없다.
+
+  쓰는 쪽에서 current 를 넘긴다:  {% include "simulator/_app_switcher.html" with current="nca" %}
+{% endcomment %}
+<div class="dropdown app-switcher">
+  <button class="app-switcher-btn" type="button" data-bs-toggle="dropdown"
+          aria-expanded="false" aria-label="Choose a tool" title="Choose a tool">
+    <i class="bi bi-list"></i>
+  </button>
+  <ul class="dropdown-menu app-menu dropdown-menu-end">
+    <li><h6 class="dropdown-header">Tools</h6></li>
+    <li>
+      <a class="dropdown-item{% if current == 'simulator' %} active{% endif %}"
+         href="{% url 'index' %}"
+         {% if current == 'simulator' %}aria-current="page"{% endif %}>
+        <i class="bi bi-graph-up"></i> ODE Simulator
+        <span class="app-menu-hint">simulate &amp; fit</span>
+      </a>
+    </li>
+    <li>
+      <a class="dropdown-item{% if current == 'nca' %} active{% endif %}"
+         href="{% url 'nca' %}"
+         {% if current == 'nca' %}aria-current="page"{% endif %}>
+        <i class="bi bi-calculator"></i> NCA Calculator
+        <span class="app-menu-hint">observed data</span>
+      </a>
+    </li>
+  </ul>
+</div>

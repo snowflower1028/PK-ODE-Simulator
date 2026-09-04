@@ -581,3 +581,149 @@ def _asset_version() -> str:
 def index(request):
     return render(request, "simulator/index.html", {"asset_v": _asset_version()})
 
+
+# ---------------------------------------------------------------------------
+# NCA 계산기
+# ---------------------------------------------------------------------------
+def nca_page(request):
+    return render(request, "simulator/nca.html", {"asset_v": _asset_version()})
+
+
+def _blq_policy(spec):
+    """요청에 실려 온 BLQ 규칙. 이름이 틀리면 거절한다 — 조용히 기본값으로
+    돌아가면 사용자는 자기가 고른 규칙으로 계산됐다고 믿는다."""
+    from .nca import BLQPolicy
+
+    spec = spec or {}
+    return BLQPolicy(
+        before=spec.get("before", "zero"),
+        between=spec.get("between", "missing"),
+        after=spec.get("after", "zero"),
+    ).validated()
+
+
+def _terminal_line(result, profile, method):
+    """플롯에 그릴 회귀선 두 점. 값이 없으면 None."""
+    if result.lambda_z is None or result.lambda_z_intercept is None:
+        return None
+    t0 = result.lambda_z_t_first
+    t1 = result.lambda_z_t_last
+    if t0 is None or t1 is None:
+        return None
+    import math
+
+    def at(t):
+        return math.exp(result.lambda_z_intercept - result.lambda_z * t)
+
+    return {"t": [t0, t1], "c": [at(t0), at(t1)]}
+
+
+@require_POST
+def nca_run(request):
+    """올라온 프로파일을 한꺼번에 계산한다.
+
+    화면은 하나씩 보여 주지만 계산은 전부 해 둔다. 프로파일을 바꿔 볼 때마다
+    왕복하면 느리고, 내보내기는 어차피 전부 필요하다.
+    """
+    from .nca import AUCMethod, Administration, nca as run_nca
+
+    try:
+        data = json.loads(request.body)
+        profiles = data.get("profiles") or []
+        if not profiles:
+            return JsonResponse(
+                {"status": "error", "message": "No profiles were sent."}, status=400
+            )
+
+        method = AUCMethod(data.get("method") or AUCMethod.LINEAR_LOG.value)
+        administration = Administration(data.get("route") or Administration.EXTRAVASCULAR.value)
+        dose = data.get("dose")
+        dose = float(dose) if dose not in (None, "") else None
+        infusion = float(data.get("infusion_duration") or 0.0)
+        min_points = int(data.get("min_lambda_z_points") or 3)
+        loq = data.get("loq")
+        loq = float(loq) if loq not in (None, "") else None
+        policy = _blq_policy(data.get("blq"))
+        partial_times = [float(x) for x in (data.get("partial_times") or [])]
+        #: 프로파일 이름 -> 사람이 고른 말기 구간의 시각들
+        chosen = data.get("lambda_z_times") or {}
+
+        rows = []
+        for profile in profiles:
+            name = str(profile.get("id") or "profile")
+            times = profile.get("time") or []
+            concs = profile.get("conc") or []
+            picked = chosen.get(name)
+
+            # 어느 점이 정량한계 아래인지는 브라우저가 정한다. CSV 에 "BLQ"
+            # 처럼 글자로 적힌 것까지 봐야 하는데, 그 글자는 숫자 배열로
+            # 바뀌면서 사라지기 때문이다. 마스크가 오면 loq 는 쓰지 않는다.
+            mask = profile.get("blq")
+
+            result = run_nca(
+                times, concs,
+                dose=dose,
+                method=method,
+                administration=administration,
+                infusion_duration=infusion,
+                min_lambda_z_points=min_points,
+                partial_times=partial_times,
+                blq=mask,
+                loq=None if mask is not None else loq,
+                blq_policy=policy,
+                lambda_z_times=picked,
+            )
+            rows.append({
+                "id": name,
+                "values": result.as_dict(),
+                "terminal_line": _terminal_line(result, profile, method),
+            })
+
+        return JsonResponse({"status": "ok", "profiles": rows})
+
+    except ValueError as exc:
+        # 알 수 없는 단위·규칙·투여방식은 사용자가 고칠 수 있는 잘못이다.
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
+    except Exception as exc:
+        traceback.print_exc()
+        return JsonResponse({"status": "error", "message": str(exc)}, status=500)
+
+
+@require_POST
+def nca_units(request):
+    """지금 입력 단위에서 각 항목을 어떤 단위로 보여 줄 수 있는지.
+
+    환산 자체는 브라우저에서 곱셈 한 번이면 끝나지만, 어떤 선택지가 실제로
+    닿을 수 있는지는 분자량까지 걸린 문제라 여기서 판단한다.
+    """
+    from . import units as U
+
+    try:
+        data = json.loads(request.body)
+        conc = U.parse_unit(data.get("conc") or "ng/mL")
+        time = U.parse_unit(data.get("time") or "h")
+        dose = U.parse_unit(data.get("dose") or "mg")
+        mw = data.get("mw")
+        mw = float(mw) if mw not in (None, "") else None
+
+        out = {}
+        for field in U.FIELD_UNITS:
+            native = U.field_unit(field, conc, time, dose)
+            if native is None:
+                continue
+            choices = U.display_options(field, native, mw)
+            out[field] = {
+                "native": native.label,
+                "choices": [
+                    {"label": c, "factor": U.scale_factor(native, U.parse_unit(c), mw)}
+                    for c in choices
+                ],
+            }
+        return JsonResponse({"status": "ok", "units": out})
+
+    except U.UnitError as exc:
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
+    except Exception as exc:
+        traceback.print_exc()
+        return JsonResponse({"status": "error", "message": str(exc)}, status=500)
+

@@ -44,6 +44,7 @@ __all__ = [
     "apply_blq",
     "partial_auc",
     "best_fit_lambda_z",
+    "lambda_z_at_times",
     "nca",
     "clip_interval",
     "SteadyStateResult",
@@ -423,6 +424,48 @@ def best_fit_lambda_z(
     return best or LambdaZ()
 
 
+def lambda_z_at_times(
+    time: Sequence[float], conc: Sequence[float], times: Sequence[float]
+) -> LambdaZ:
+    """정해진 시각의 점들만으로 말기 기울기를 세운다.
+
+    사람이 플롯에서 직접 고른 구간을 그대로 받기 위한 것이다. 자동 선택이
+    쓰는 규칙(Tmax 제외, 뒤에서부터 넓혀 가며 조정 R² 비교)을 여기서는 적용
+    하지 않는다 — 고르는 사람이 이미 판단을 내렸기 때문이다. 다만 기울기가
+    양수로 나오면 말기가 아니므로 거절한다.
+    """
+    t, c = _clean(time, conc)
+    wanted = np.asarray(list(times), dtype=float)
+    if t.size == 0 or wanted.size < 3:
+        return LambdaZ()
+
+    # 부동소수 비교라 정확히 같기를 기대하지 않는다.
+    sel = [
+        i for i in range(t.size)
+        if c[i] > 0 and np.any(np.isclose(wanted, t[i], rtol=0, atol=1e-9))
+    ]
+    if len(sel) < 3:
+        return LambdaZ()
+
+    ts, cs = t[sel], c[sel]
+    slope, intercept, r2 = _ols_log_linear(ts, cs)
+    if not np.isfinite(slope) or slope >= 0 or not np.isfinite(r2):
+        return LambdaZ()
+
+    n = len(sel)
+    adj = 1.0 - (1.0 - r2) * (n - 1) / (n - 2)
+    return LambdaZ(
+        value=-slope,
+        intercept=intercept,
+        n_points=n,
+        t_first=float(ts[0]),
+        t_last=float(ts[-1]),
+        r_squared=r2,
+        adj_r_squared=adj,
+        corr_xy=float(-np.sqrt(r2)) if r2 >= 0 else None,
+    )
+
+
 def back_extrapolate_c0(
     time: Sequence[float], conc: Sequence[float]
 ) -> Optional[float]:
@@ -542,6 +585,8 @@ class NCAResult:
     #: 말기 구간이 반감기의 몇 배를 덮는가 (WinNonlin 의 Span).
     #: 2 보다 작으면 반감기 하나도 못 본 것이라 기울기를 믿기 어렵다.
     lambda_z_span: Optional[float] = None
+    #: 사람이 직접 고른 구간인지. 표에 그대로 드러내야 재현할 수 있다.
+    lambda_z_manual: bool = False
 
     # 노출량
     auc_last: Optional[float] = None
@@ -608,6 +653,7 @@ def nca(
     blq: Optional[Sequence[bool]] = None,
     loq: Optional[float] = None,
     blq_policy: Optional[BLQPolicy] = None,
+    lambda_z_times: Optional[Sequence[float]] = None,
 ) -> NCAResult:
     """시간-농도 프로파일 하나에 대한 비구획 분석.
 
@@ -657,7 +703,18 @@ def nca(
         res.t_last = _f(t[i_last])
 
     # --- 말기 구간 -------------------------------------------------------
-    lz = best_fit_lambda_z(t, c, min_points=min_lambda_z_points)
+    # 사람이 고른 구간이 있으면 그것을 쓴다. 자동 선택은 시작점일 뿐이고,
+    # 어디까지가 말기인지는 곡선을 보는 사람이 더 잘 안다.
+    if lambda_z_times is not None:
+        lz = lambda_z_at_times(t, c, lambda_z_times)
+        res.lambda_z_manual = True
+        if not lz.ok:
+            res.warnings.append(
+                "The chosen terminal points do not give a declining slope; "
+                "no terminal phase was fitted."
+            )
+    else:
+        lz = best_fit_lambda_z(t, c, min_points=min_lambda_z_points)
     if lz.ok:
         res.lambda_z = _f(lz.value)
         res.half_life = _f(np.log(2.0) / lz.value)

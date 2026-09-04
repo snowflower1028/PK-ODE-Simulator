@@ -2322,7 +2322,8 @@ body.is-resizing {
    (ResizeObserver, script.js). */
 #plot,
 #fit-plot,
-#sensitivity-plot {
+#sensitivity-plot,
+#nca-plot {
     resize: vertical;
     overflow: hidden;
     /* min-height 는 "얼마나 작게 줄일 수 있는가" 이지 기본 높이가 아니다.
@@ -2579,3 +2580,234 @@ body.is-resizing {
     font-variant-numeric: tabular-nums;
 }
 
+
+
+/* ------------------------------------------------------------ */
+/* 32. 도구 전환 (햄버거)                                          */
+/* ------------------------------------------------------------ */
+/* 메뉴바 오른쪽 끝. margin-left:auto 로 밀어 둔다 — 메뉴가 몇 개든
+   항상 반대쪽 끝에 붙는다. */
+.app-switcher {
+    margin-left: auto;
+}
+.app-switcher-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--apple-text-secondary);
+    font-size: 1.05rem;
+    line-height: 1;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+.app-switcher-btn:hover,
+.app-switcher-btn[aria-expanded="true"] {
+    background-color: var(--apple-fill-quaternary, rgba(120, 120, 128, 0.12));
+    color: var(--apple-text-primary);
+}
+.app-switcher .dropdown-item.active {
+    /* 지금 보고 있는 도구. 눌러도 갈 곳이 없으므로 눌리지 않게 둔다. */
+    background-color: var(--apple-fill-quaternary, rgba(120, 120, 128, 0.12));
+    color: var(--apple-text-primary);
+    font-weight: 600;
+    pointer-events: none;
+}
+
+
+/* ------------------------------------------------------------ */
+/* 33. NCA 계산기                                                 */
+/* ------------------------------------------------------------ */
+/* 사이드바가 좁으므로 라벨을 왼쪽에 고정폭으로 세우고 나머지를 입력이
+   가져간다. 시뮬레이터의 .sim-field 는 가로로 늘어놓는 자리라 규칙이
+   다르지만, 라벨의 생김새(.sim-label)는 그대로 따른다. */
+.nca-field {
+    display: grid;
+    grid-template-columns: 6.25rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+/* 클래스를 겹쳐 적었다. 앱 전역에
+       p, label:not(.form-check-label), .form-label { font-size: 1rem }
+   가 있는데 그 선택자가 (0,1,1) 이라 클래스 하나로는 지고, 라벨이 본문
+   크기로 부풀어 옆 칸을 덮는다. 겹쳐 쓰면 (0,2,0) 이 되어 이긴다.
+   시뮬레이터의 .sim-label 이 이 문제를 겪지 않는 것은 그쪽이 span 이라
+   전역 규칙에 걸리지 않기 때문이다. 여기서는 label 을 쓴다 — for 로
+   묶여 있어야 라벨을 눌러 컨트롤로 초점이 간다. */
+.nca-label.nca-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    white-space: nowrap;
+    margin: 0;
+}
+
+/* 농도는 양/부피 두 칸으로 받는다. 한 칸에 'ng/mL' 을 적게 하면 오타가
+   바로 계산 실패가 된다. */
+.nca-unit-pair {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+}
+.nca-unit-pair > * {
+    min-width: 0;
+    flex: 1 1 0;
+}
+.nca-slash {
+    flex: 0 0 auto;
+    color: var(--apple-text-tertiary);
+    font-size: 0.875rem;
+}
+
+.nca-hint {
+    margin: 0.35rem 0 0.6rem;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--apple-text-tertiary);
+}
+.nca-rule {
+    margin: 0.85rem 0;
+    border-color: var(--apple-card-border);
+    opacity: 1;
+}
+.nca-subhead {
+    margin: 0.9rem 0 0.55rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-secondary);
+}
+
+/* 프로파일 고르기 — 결과 머리에 붙는다 */
+.nca-profile-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+.nca-profile-picker .form-select {
+    width: auto;
+    min-width: 9rem;
+}
+
+.nca-plot-toggle .form-check-label {
+    font-size: 0.75rem;
+    color: var(--apple-text-secondary);
+}
+
+/* 말기 구간 편집 막대 — 플롯 바로 아래 */
+.nca-lambda-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.25rem;
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.85rem;
+    border: 1px solid var(--apple-card-border);
+    border-radius: 8px;
+    background-color: var(--apple-background-secondary);
+}
+.nca-lambda-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+}
+.nca-lz-input {
+    width: 5.5rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.nca-lambda-stats {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    font-size: 0.75rem;
+    color: var(--apple-text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+.nca-stat b {
+    font-weight: 600;
+    color: var(--apple-text-primary);
+}
+/* Span 이 2 를 밑돌면 그 자리에서 보여야 한다. 표 아래 경고문까지
+   내려가서 읽으라고 하면 아무도 읽지 않는다. */
+.nca-stat.is-weak b {
+    color: var(--apple-red, #d70015);
+}
+
+.nca-help-code {
+    padding: 0.7rem 0.85rem;
+    border-radius: 8px;
+    background-color: var(--apple-background-secondary);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    overflow-x: auto;
+}
+
+/* 결과 표 — 프로파일 하나를 세로로 읽는다. 항목이 스물이 넘어 가로로
+   늘어놓으면 옆으로 스크롤해야 하고, 항목마다 단위를 고르게 하려면
+   세로 쪽에 자리가 있어야 한다. */
+.nca-table {
+    margin-bottom: 0;
+    font-size: 0.8125rem;
+}
+.nca-table th[scope="row"] {
+    width: 42%;
+    font-weight: 500;
+    color: var(--apple-text-secondary);
+    white-space: nowrap;
+}
+.nca-table td.nca-value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--apple-text-primary);
+    white-space: nowrap;
+}
+.nca-table td.nca-unit {
+    width: 30%;
+    padding-left: 0.75rem;
+}
+.nca-unit-select {
+    font-size: 0.75rem;
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
+}
+.nca-unit-static {
+    font-size: 0.75rem;
+    color: var(--apple-text-tertiary);
+}
+/* 구획 머리. 항목이 많아 어디가 어디인지 나뉘어 보여야 한다. */
+.nca-table tr.nca-group th {
+    padding-top: 1rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+    border-bottom-width: 1px;
+}
+.nca-table tr.nca-group:first-child th {
+    padding-top: 0.25rem;
+}
+
+.nca-warnings {
+    margin: 0 0 0.85rem;
+    padding-left: 1.1rem;
+    font-size: 0.78125rem;
+    line-height: 1.55;
+    color: var(--apple-text-secondary);
+}
+.nca-warnings li + li {
+    margin-top: 0.25rem;
+}

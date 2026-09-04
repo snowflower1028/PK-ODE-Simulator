@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% load static %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NCA Calculator</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-basic-2.27.0.min.js"></script>
+  <script defer src="{% static 'simulator/js/tooltip.js' %}{{ asset_v }}"></script>
+  <script defer src="{% static 'simulator/js/resize.js' %}{{ asset_v }}"></script>
+  <script defer src="{% static 'simulator/js/nca.js' %}{{ asset_v }}"></script>
+  <link rel="stylesheet" href="{% static 'simulator/css/style.css' %}{{ asset_v }}">
+</head>
+<body>
+
+  <form hidden>{% csrf_token %}</form>
+
+  <header class="app-menubar">
+    <div class="app-brand">
+      <span class="app-brand-mark" aria-hidden="true">📐</span>
+      <span class="app-brand-name">NCA Calculator</span>
+      <span class="app-brand-ver">v1.0</span>
+    </div>
+
+    <nav class="app-menus" aria-label="Main menu">
+      <div class="dropdown">
+        <button class="app-menu-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">File</button>
+        <ul class="dropdown-menu app-menu">
+          <li><button type="button" id="nca-clear-btn" class="dropdown-item"><i class="bi bi-file-earmark"></i> Clear Everything</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><h6 class="dropdown-header">Export</h6></li>
+          <li><button type="button" id="nca-export-csv-btn" class="dropdown-item"><i class="bi bi-table"></i> Results &mdash; every profile <span class="app-menu-hint">.csv</span></button></li>
+          <li><button type="button" id="nca-export-plot-btn" class="dropdown-item"><i class="bi bi-image"></i> Plot Image <span class="app-menu-hint">.png</span></button></li>
+        </ul>
+      </div>
+
+      <div class="dropdown">
+        <button class="app-menu-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">Help</button>
+        <ul class="dropdown-menu app-menu dropdown-menu-end">
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#ncaHelpModal" data-help-tab="#nca-help-csv"><i class="bi bi-filetype-csv"></i> Data Format</button></li>
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#ncaHelpModal" data-help-tab="#nca-help-lambdaz"><i class="bi bi-graph-down"></i> Choosing the Terminal Phase</button></li>
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#ncaHelpModal" data-help-tab="#nca-help-blq"><i class="bi bi-eye-slash"></i> Below the Limit</button></li>
+        </ul>
+      </div>
+    </nav>
+
+    {% include "simulator/_app_switcher.html" with current="nca" %}
+  </header>
+
+  <div class="app-shell">
+  <aside class="sidebar">
+
+    <!-- ── 관측값 ───────────────────────────────────────────── -->
+    <section class="sidebar-section">
+      <header class="sidebar-section-header">
+        <h2 class="sidebar-section-title">
+          <button class="sidebar-section-toggle" type="button" data-bs-toggle="collapse"
+                  data-bs-target="#nca-section-data" aria-expanded="true" aria-controls="nca-section-data">
+            <i class="bi bi-file-earmark-arrow-down"></i>
+            <span>Observed Data</span>
+          </button>
+        </h2>
+        <span class="sidebar-section-badge" id="nca-profile-count" hidden></span>
+        <button class="sidebar-section-chevron" type="button" data-bs-toggle="collapse"
+                data-bs-target="#nca-section-data" aria-expanded="true" aria-controls="nca-section-data"
+                tabindex="-1" aria-hidden="true">
+          <i class="bi bi-chevron-down"></i>
+        </button>
+      </header>
+      <div class="collapse show sidebar-section-body" id="nca-section-data">
+
+        <input type="file" id="nca-file-input" class="form-control form-control-sm mb-2" accept=".csv,.txt">
+        <p class="nca-hint" id="nca-file-hint">
+          A CSV with one row per sample. A profile column is optional &mdash; without it
+          the whole file is one profile.
+        </p>
+
+        <div id="nca-mapping" hidden>
+          <div class="nca-field">
+            <label class="nca-label" for="nca-col-id">Profile</label>
+            <select id="nca-col-id" class="form-select form-select-sm"></select>
+          </div>
+          <div class="nca-field">
+            <label class="nca-label" for="nca-col-time">Time</label>
+            <select id="nca-col-time" class="form-select form-select-sm"></select>
+          </div>
+          <div class="nca-field">
+            <label class="nca-label" for="nca-col-conc">Conc.</label>
+            <select id="nca-col-conc" class="form-select form-select-sm"></select>
+          </div>
+        </div>
+
+        <hr class="nca-rule">
+
+        <div class="nca-field">
+          <label class="nca-label" for="nca-conc-amount">Conc. unit</label>
+          <div class="nca-unit-pair">
+            <select id="nca-conc-amount" class="form-select form-select-sm" aria-label="Concentration amount unit"></select>
+            <span class="nca-slash" aria-hidden="true">/</span>
+            <select id="nca-conc-volume" class="form-select form-select-sm" aria-label="Concentration volume unit"></select>
+          </div>
+        </div>
+        <div class="nca-field">
+          <label class="nca-label" for="nca-time-unit">Time unit</label>
+          <select id="nca-time-unit" class="form-select form-select-sm"></select>
+        </div>
+        <div class="nca-field">
+          <label class="nca-label" for="nca-mw">Mol. weight</label>
+          <input type="number" id="nca-mw" class="form-control form-control-sm"
+                 placeholder="g/mol — optional" min="0" step="any">
+        </div>
+        <p class="nca-hint">
+          A molecular weight is only needed to move between mass and molar units.
+          Without one those choices stay hidden rather than giving a wrong number.
+        </p>
+      </div>
+    </section>
+
+    <!-- ── 용량 ─────────────────────────────────────────────── -->
+    <section class="sidebar-section">
+      <header class="sidebar-section-header">
+        <h2 class="sidebar-section-title">
+          <button class="sidebar-section-toggle" type="button" data-bs-toggle="collapse"
+                  data-bs-target="#nca-section-dose" aria-expanded="true" aria-controls="nca-section-dose">
+            <i class="bi bi-capsule"></i>
+            <span>Dose</span>
+          </button>
+        </h2>
+        <button class="sidebar-section-chevron" type="button" data-bs-toggle="collapse"
+                data-bs-target="#nca-section-dose" aria-expanded="true" aria-controls="nca-section-dose"
+                tabindex="-1" aria-hidden="true">
+          <i class="bi bi-chevron-down"></i>
+        </button>
+      </header>
+      <div class="collapse show sidebar-section-body" id="nca-section-dose">
+        <div class="nca-field">
+          <label class="nca-label" for="nca-dose">Amount</label>
+          <div class="nca-unit-pair">
+            <input type="number" id="nca-dose" class="form-control form-control-sm"
+                   placeholder="e.g. 100" min="0" step="any">
+            <select id="nca-dose-unit" class="form-select form-select-sm" aria-label="Dose unit"></select>
+          </div>
+        </div>
+        <div class="nca-field">
+          <label class="nca-label" for="nca-route">Route</label>
+          <select id="nca-route" class="form-select form-select-sm">
+            <option value="extravascular" selected>Extravascular</option>
+            <option value="iv_bolus">IV bolus</option>
+            <option value="iv_infusion">IV infusion</option>
+          </select>
+        </div>
+        <div class="nca-field" id="nca-infusion-field" hidden>
+          <label class="nca-label" for="nca-infusion">Duration</label>
+          <input type="number" id="nca-infusion" class="form-control form-control-sm"
+                 value="0" min="0" step="any">
+        </div>
+        <p class="nca-hint" id="nca-dose-hint">
+          Leave the amount blank to skip CL, Vz and Vss. Everything else is still
+          computed &mdash; they are the only values that need a dose.
+        </p>
+      </div>
+    </section>
+
+    <!-- ── 계산 규칙 ────────────────────────────────────────── -->
+    <section class="sidebar-section">
+      <header class="sidebar-section-header">
+        <h2 class="sidebar-section-title">
+          <button class="sidebar-section-toggle" type="button" data-bs-toggle="collapse"
+                  data-bs-target="#nca-section-options" aria-expanded="false" aria-controls="nca-section-options">
+            <i class="bi bi-sliders"></i>
+            <span>Analysis Options</span>
+          </button>
+        </h2>
+        <button class="sidebar-section-chevron" type="button" data-bs-toggle="collapse"
+                data-bs-target="#nca-section-options" aria-expanded="false" aria-controls="nca-section-options"
+                tabindex="-1" aria-hidden="true">
+          <i class="bi bi-chevron-down"></i>
+        </button>
+      </header>
+      <div class="collapse sidebar-section-body" id="nca-section-options">
+
+        <div class="nca-field">
+          <label class="nca-label" for="nca-method">Trapezoid</label>
+          <select id="nca-method" class="form-select form-select-sm">
+            <option value="linear-up-log-down" selected>Linear up / log down</option>
+            <option value="linear">Linear</option>
+          </select>
+        </div>
+        <div class="nca-field">
+          <label class="nca-label" for="nca-min-points">&lambda;z points</label>
+          <input type="number" id="nca-min-points" class="form-control form-control-sm"
+                 value="3" min="3" max="20" step="1">
+        </div>
+        <div class="nca-field">
+          <label class="nca-label" for="nca-partial">Partial AUC</label>
+          <input type="text" id="nca-partial" class="form-control form-control-sm"
+                 placeholder="e.g. 12, 24">
+        </div>
+
+        <h3 class="nca-subhead">Below the limit of quantification</h3>
+        <div class="nca-field">
+          <label class="nca-label" for="nca-loq">LOQ</label>
+          <input type="number" id="nca-loq" class="form-control form-control-sm"
+                 placeholder="optional — else 0 counts" min="0" step="any">
+        </div>
+        <div class="nca-field">
+          <label class="nca-label" for="nca-blq-before">Before first</label>
+          <select id="nca-blq-before" class="form-select form-select-sm">
+            <option value="zero" selected>Set to zero</option>
+            <option value="missing">Leave out</option>
+          </select>
+        </div>
+        <div class="nca-field">
+          <label class="nca-label" for="nca-blq-between">In between</label>
+          <select id="nca-blq-between" class="form-select form-select-sm">
+            <option value="missing" selected>Leave out</option>
+            <option value="zero">Set to zero</option>
+          </select>
+        </div>
+        <div class="nca-field">
+          <label class="nca-label" for="nca-blq-after">After last</label>
+          <select id="nca-blq-after" class="form-select form-select-sm">
+            <option value="zero" selected>Set to zero</option>
+            <option value="drop">Leave out</option>
+          </select>
+        </div>
+        <p class="nca-hint">
+          The middle one moves the answer most. A sample between two measurable
+          ones is not really zero &mdash; the drug is there, that draw just could not
+          measure it.
+        </p>
+      </div>
+    </section>
+  </aside>
+
+  <div class="sidebar-resizer" id="sidebar-resizer" role="separator"
+       aria-orientation="vertical" aria-label="Resize the sidebar" tabindex="0"></div>
+
+  <main class="main-content">
+    <div class="main-scrollable-area">
+
+      <header class="workspace-header">
+        <h2 class="workspace-title">NCA Result</h2>
+        <div class="workspace-actions">
+          <div class="nca-profile-picker" id="nca-profile-picker" hidden>
+            <label class="nca-label" for="nca-profile-select">Profile</label>
+            <select id="nca-profile-select" class="form-select form-select-sm"></select>
+          </div>
+          <button id="nca-run-btn" class="btn btn-primary" disabled>
+            <i class="bi bi-calculator"></i> Calculate
+          </button>
+        </div>
+      </header>
+
+      <!-- 프로파일 -->
+      <div class="card">
+        <div class="card-header sim-card-header">
+          <h5 class="card-title mb-0"><i class="bi bi-graph-down"></i> Profile</h5>
+          <span class="sens-caption" id="nca-plot-caption"></span>
+          <div class="nca-plot-toggle ms-auto">
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="nca-log-toggle" checked>
+              <label class="form-check-label" for="nca-log-toggle">Log scale</label>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="nca-plot-placeholder" class="text-center py-5 text-muted">
+            <i class="bi bi-graph-down" style="font-size:2rem;"></i><br>
+            Upload a CSV to see the profile.
+          </div>
+          <div id="nca-plot" style="display:none;"></div>
+
+          <!-- λz 편집 -->
+          <div class="nca-lambda-bar" id="nca-lambda-bar" hidden>
+            <div class="nca-lambda-controls">
+              <span class="nca-label">Terminal phase</span>
+              <input type="number" id="nca-lz-from" class="form-control form-control-sm nca-lz-input"
+                     step="any" aria-label="Terminal phase start time">
+              <span class="nca-slash" aria-hidden="true">&rarr;</span>
+              <input type="number" id="nca-lz-to" class="form-control form-control-sm nca-lz-input"
+                     step="any" aria-label="Terminal phase end time">
+              <button type="button" id="nca-lz-auto" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-magic"></i> Best fit
+              </button>
+            </div>
+            <div class="nca-lambda-stats" id="nca-lambda-stats"></div>
+          </div>
+          <p class="nca-hint" id="nca-lambda-hint" hidden>
+            Click a point to take it out of the fit, or put it back. Span counts how
+            many half-lives the fitted stretch covers &mdash; under 2 and the slope is
+            guesswork, however good R&sup2; looks.
+          </p>
+        </div>
+      </div>
+
+      <!-- 결과 표 -->
+      <div class="card" id="nca-results-card" style="display:none;">
+        <div class="card-header sim-card-header">
+          <h5 class="card-title mb-0"><i class="bi bi-card-list"></i> Parameters</h5>
+          <span class="sens-caption" id="nca-results-caption"></span>
+        </div>
+        <div class="card-body">
+          <div id="nca-warnings"></div>
+          <div id="nca-results"></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+  </div>
+
+  <!-- 도움말 -->
+  <div class="modal fade" id="ncaHelpModal" tabindex="-1" aria-labelledby="ncaHelpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="ncaHelpModalLabel">NCA Calculator</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <section id="nca-help-csv">
+            <h6>Data format</h6>
+            <p>One row per sample. Three columns matter: an optional profile
+               identifier, a time, and a concentration.</p>
+            <pre class="nca-help-code">Subject,Time,Conc
+S-01,0,0
+S-01,0.5,124.3
+S-01,1,180.7
+S-02,0,0
+S-02,0.5,98.1</pre>
+            <p>Without a profile column the whole file is treated as one profile.
+               Every profile is calculated at once; the picker at the top right
+               chooses which one you are looking at, and the CSV export carries
+               all of them.</p>
+          </section>
+          <section id="nca-help-lambdaz">
+            <h6>Choosing the terminal phase</h6>
+            <p>Best fit starts from the last three points and works backwards,
+               keeping whichever stretch has the best adjusted R&sup2;. Tmax is left
+               out, because a point taken before absorption finishes drags the
+               slope flat and makes the half-life look short.</p>
+            <p>Judge the result by Span rather than R&sup2;. Points crowded into a
+               short window line up nicely and give a high R&sup2; while barely
+               watching the drug leave.</p>
+          </section>
+          <section id="nca-help-blq">
+            <h6>Below the limit</h6>
+            <p>Where a below-limit sample sits changes what it means, so the three
+               places are set separately.</p>
+            <p>Between two measurable samples is the one that matters. Calling it
+               zero digs a notch that is not there &mdash; and the log-down rule falls
+               back to a straight line when it meets a zero, which deepens the
+               notch further. On a one-compartment bolus with a single such
+               sample, that alone moved AUC by 23%.</p>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
