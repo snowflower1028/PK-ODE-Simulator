@@ -27,6 +27,8 @@ from simulator.nca import (
     best_fit_lambda_z,
     clip_interval,
     partial_auc,
+    apply_blq,
+    BLQPolicy,
     nca,
     nca_steady_state,
 )
@@ -281,6 +283,87 @@ class MeanResidenceTime(unittest.TestCase):
                    infusion_duration=2.0)
         self.assertAlmostEqual(free.mrt - held.mrt, 1.0, places=9)
         self.assertAlmostEqual(free.mrt_last - held.mrt_last, 1.0, places=9)
+
+
+# ---------------------------------------------------------------------------
+# 정량한계 아래
+# ---------------------------------------------------------------------------
+class BlqRules(unittest.TestCase):
+    """어느 규칙을 고르는지가 AUC 를 실제로 바꾼다. 얼마나 바꾸는지 못박아 둔다."""
+
+    def setUp(self):
+        # 0, 1, 2, 4, 8, 12, 24 — 4시간 시료가 정량한계 아래로 보고됐다.
+        self.t = np.array([0, 1, 2, 4, 8, 12, 24], dtype=float)
+        self.c = iv_bolus(self.t)
+        self.blq = np.array([False, False, False, True, False, False, False])
+
+    def _auc(self, **rules):
+        res = nca(self.t, self.c, dose=DOSE,
+                  administration=Administration.IV_BOLUS,
+                  blq=self.blq, blq_policy=BLQPolicy(**rules))
+        return res.auc_last
+
+    def test_leaving_it_out_keeps_the_closed_form(self):
+        # 점을 빼고 2시간과 8시간을 바로 이으면 로그 사다리꼴이 단일지수를
+        # 정확히 재현하므로 해석해가 그대로 나온다.
+        want = (DOSE / V) / K * (1 - math.exp(-K * 24.0))
+        self.assertAlmostEqual(self._auc(between="missing"), want, places=6)
+
+    def test_calling_it_zero_digs_a_hole(self):
+        missing = self._auc(between="missing")
+        zero = self._auc(between="zero")
+        self.assertLess(zero, missing)
+        # 없는 골을 파는 것이라 오차가 작지 않다.
+        self.assertGreater(100 * (missing - zero) / missing, 5.0)
+
+    def test_before_the_first_measurable_point(self):
+        t = np.array([0, 1, 2, 4, 8, 12, 24], dtype=float)
+        c = oral(t)
+        blq = np.array([True, False, False, False, False, False, False])
+        as_zero = nca(t, c, dose=DOSE, administration=Administration.EXTRAVASCULAR,
+                      blq=blq, blq_policy=BLQPolicy(before="zero")).auc_last
+        as_missing = nca(t, c, dose=DOSE, administration=Administration.EXTRAVASCULAR,
+                         blq=blq, blq_policy=BLQPolicy(before="missing")).auc_last
+        # 점을 빼면 첫 사다리꼴이 통째로 사라진다.
+        self.assertLess(as_missing, as_zero)
+
+    def test_after_the_last_measurable_point_only_moves_auc_all(self):
+        t = np.append(self.t, 48.0)
+        c = np.append(iv_bolus(self.t), 0.0)
+        blq = np.array([False] * 7 + [True])
+        kept = nca(t, c, dose=DOSE, administration=Administration.IV_BOLUS,
+                   blq=blq, blq_policy=BLQPolicy(after="zero"))
+        dropped = nca(t, c, dose=DOSE, administration=Administration.IV_BOLUS,
+                      blq=blq, blq_policy=BLQPolicy(after="drop"))
+        # AUClast 와 CL 은 어느 쪽이든 같다 — 마지막 정량점에서 끊기기 때문.
+        self.assertAlmostEqual(kept.auc_last, dropped.auc_last, places=12)
+        self.assertAlmostEqual(kept.cl, dropped.cl, places=12)
+        # 갈리는 것은 AUCall 뿐이고, 버리면 AUClast 와 같아져 쓸모가 없어진다.
+        self.assertGreater(kept.auc_all, kept.auc_last)
+        self.assertAlmostEqual(dropped.auc_all, dropped.auc_last, places=12)
+
+    def test_a_threshold_can_mark_the_points(self):
+        out = apply_blq(self.t, self.c, loq=1.0)
+        # 1 ng/mL 아래로 내려간 뒤 시료가 몇 개인지
+        self.assertEqual(out.n_after, int((self.c < 1.0).sum()))
+
+    def test_unknown_rule_is_refused_by_name(self):
+        with self.assertRaises(ValueError) as caught:
+            apply_blq(self.t, self.c, policy=BLQPolicy(between="interpolate"))
+        self.assertIn("between", str(caught.exception))
+        self.assertIn("interpolate", str(caught.exception))
+
+    def test_a_profile_that_is_entirely_below_the_limit(self):
+        t = np.array([0, 1, 2, 4], dtype=float)
+        out = apply_blq(t, np.zeros_like(t))
+        self.assertEqual(out.n_total, 0)
+        self.assertTrue([n for n in out.notes if "Every sample" in n])
+
+    def test_nothing_changes_unless_blq_is_asked_for(self):
+        plain = nca(self.t, self.c, dose=DOSE, administration=Administration.IV_BOLUS)
+        asked = nca(self.t, self.c, dose=DOSE, administration=Administration.IV_BOLUS,
+                    blq=np.zeros(self.t.size, dtype=bool))
+        self.assertAlmostEqual(plain.auc_last, asked.auc_last, places=12)
 
 
 # ---------------------------------------------------------------------------

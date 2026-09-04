@@ -39,6 +39,9 @@ __all__ = [
     "auc",
     "aumc",
     "back_extrapolate_c0",
+    "BLQPolicy",
+    "BLQOutcome",
+    "apply_blq",
     "partial_auc",
     "best_fit_lambda_z",
     "nca",
@@ -159,6 +162,156 @@ def aumc(
         else:
             total += dt * (t0 * c0 + t1 * c1) / 2.0
     return float(total)
+
+
+# ---------------------------------------------------------------------------
+# 정량한계 아래 (BLQ)
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class BLQPolicy:
+    """정량한계 아래로 보고된 값을 어떻게 다룰지.
+
+    한 규칙으로 다 덮을 수 없어서 구간을 셋으로 나눈다. 같은 "측정 못 함"
+    이라도 자리에 따라 뜻이 다르기 때문이다.
+
+    before   첫 정량점 이전. 아직 약이 오지 않았다는 뜻이므로 0 이 맞다.
+             "missing" 으로 두면 첫 사다리꼴이 통째로 빠져 AUC 가 준다.
+
+    between  정량점 사이. 여기가 어려운 자리다. 약이 이미 몸에 있는데 그
+             시점만 못 잰 것이므로 진짜 0 은 아니다. "zero" 로 두면 곡선에
+             없는 골이 파여 AUC 가 과소평가되고 — 게다가 로그 사다리꼴은
+             0 을 만나면 선형으로 물러나므로 골이 더 깊어진다. 그래서
+             기본값은 "missing" 이다. 점을 빼고 양옆을 바로 잇는다.
+
+    after    Tlast 이후. 여기서는 AUClast 가 마지막 정량점에서 끊기고 λz 도
+             0 인 점을 거르므로 어느 쪽을 골라도 그 둘은 바뀌지 않는다.
+             갈리는 것은 AUCall 뿐이다. 그래서 기본값은 "zero" — 버리면
+             AUCall 이 AUClast 와 똑같아져 따로 낼 이유가 없어진다.
+    """
+
+    before: str = "zero"      #: "zero" | "missing"
+    between: str = "missing"  #: "missing" | "zero"
+    after: str = "zero"       #: "zero" | "drop"
+
+    def validated(self) -> "BLQPolicy":
+        allowed = {
+            "before": {"zero", "missing"},
+            "between": {"missing", "zero"},
+            "after": {"zero", "drop"},
+        }
+        for region, choices in allowed.items():
+            value = getattr(self, region)
+            if value not in choices:
+                raise ValueError(
+                    f"BLQ rule for {region!r} must be one of "
+                    f"{sorted(choices)}, got {value!r}"
+                )
+        return self
+
+
+@dataclass
+class BLQOutcome:
+    """BLQ 를 처리하고 난 프로파일과, 무엇을 했는지."""
+
+    time: np.ndarray
+    conc: np.ndarray
+    n_before: int = 0
+    n_between: int = 0
+    n_after: int = 0
+    notes: List[str] = field(default_factory=list)
+
+    @property
+    def n_total(self) -> int:
+        return self.n_before + self.n_between + self.n_after
+
+
+def apply_blq(
+    time: Sequence[float],
+    conc: Sequence[float],
+    blq: Optional[Sequence[bool]] = None,
+    loq: Optional[float] = None,
+    policy: Optional[BLQPolicy] = None,
+) -> BLQOutcome:
+    """정량한계 아래 값을 규칙대로 처리해 분석용 프로파일을 만든다.
+
+    어느 점이 BLQ 인지는 세 가지로 알 수 있다. blq 마스크를 직접 주거나,
+    loq 를 주어 그보다 작은 값을 찍게 하거나, 둘 다 없으면 0 이하를 BLQ 로
+    본다 — 실무에서 BLQ 는 대개 0 으로 기록되기 때문이다.
+    """
+    policy = (policy or BLQPolicy()).validated()
+
+    # _clean 을 그대로 쓰지 못한다. 정렬과 결측 제거를 마스크에도 똑같이
+    # 먹여야 어느 점이 BLQ 인지가 어긋나지 않기 때문에, 같은 일을 풀어서 한다.
+    t_raw = np.asarray(time, dtype=float)
+    c_raw = np.asarray(conc, dtype=float)
+    if t_raw.shape != c_raw.shape:
+        raise ValueError("time and conc must have the same length")
+
+    keep = np.isfinite(t_raw) & np.isfinite(c_raw)
+    order = np.argsort(t_raw[keep], kind="stable")
+    t, c = t_raw[keep][order], c_raw[keep][order]
+
+    out = BLQOutcome(time=t, conc=c)
+    if t.size == 0:
+        return out
+
+    if blq is not None:
+        mask = np.asarray(blq, dtype=bool)
+        if mask.shape != t_raw.shape:
+            raise ValueError("blq must have the same length as time and conc")
+        mask = mask[keep][order]
+    elif loq is not None:
+        mask = c < float(loq)
+    else:
+        mask = c <= 0.0
+
+    quantifiable = np.flatnonzero(~mask)
+    if quantifiable.size == 0:
+        out.notes.append("Every sample is below the limit of quantification.")
+        return out
+
+    first_q, last_q = int(quantifiable[0]), int(quantifiable[-1])
+    idx = np.arange(t.size)
+    before = mask & (idx < first_q)
+    after = mask & (idx > last_q)
+    between = mask & ~before & ~after
+
+    out.n_before = int(before.sum())
+    out.n_between = int(between.sum())
+    out.n_after = int(after.sum())
+
+    drop = np.zeros(t.size, dtype=bool)
+    c = c.astype(float, copy=True)
+
+    if policy.before == "zero":
+        c[before] = 0.0
+    else:
+        drop |= before
+
+    if policy.between == "zero":
+        c[between] = 0.0
+    else:
+        drop |= between
+
+    if policy.after == "zero":
+        c[after] = 0.0
+    else:
+        drop |= after
+
+    out.time, out.conc = t[~drop], c[~drop]
+
+    if out.n_between:
+        how = "set to zero" if policy.between == "zero" else "left out"
+        out.notes.append(
+            f"{out.n_between} sample(s) below the limit fall between measurable "
+            f"ones and were {how}."
+        )
+    if out.n_total:
+        out.notes.append(
+            f"{out.n_total} of {t.size} samples were below the limit of "
+            "quantification."
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -452,18 +605,29 @@ def nca(
     infusion_duration: float = 0.0,
     min_lambda_z_points: int = 3,
     partial_times: Sequence[float] = (),
+    blq: Optional[Sequence[bool]] = None,
+    loq: Optional[float] = None,
+    blq_policy: Optional[BLQPolicy] = None,
 ) -> NCAResult:
     """시간-농도 프로파일 하나에 대한 비구획 분석.
 
     dose 를 주지 않으면 용량이 필요한 항목(CL, Vz, Vss)은 None 으로 남고
     나머지는 모두 계산된다.
     """
-    t, c = _clean(time, conc)
     res = NCAResult(
         method=method.value,
         administration=administration.value,
         dose=_f(dose),
     )
+
+    # BLQ 처리는 부르는 쪽이 청할 때만 한다. 셋 다 비어 있으면 손대지 않는다 —
+    # 0 을 BLQ 로 넘겨짚으면 이미 돌아가던 계산의 뜻이 조용히 바뀐다.
+    if blq is not None or loq is not None or blq_policy is not None:
+        outcome = apply_blq(time, conc, blq=blq, loq=loq, policy=blq_policy)
+        t, c = outcome.time, outcome.conc
+        res.warnings.extend(outcome.notes)
+    else:
+        t, c = _clean(time, conc)
     if t.size < 2:
         res.warnings.append("Not enough points to analyse.")
         return res
