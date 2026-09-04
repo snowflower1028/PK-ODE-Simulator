@@ -19,6 +19,8 @@
   <form hidden>{% csrf_token %}</form>
 
   <header class="app-menubar">
+    {% include "simulator/_app_switcher.html" with current="nca" %}
+
     <div class="app-brand">
       <span class="app-brand-mark" aria-hidden="true">📐</span>
       <span class="app-brand-name">NCA Calculator</span>
@@ -47,8 +49,6 @@
         </ul>
       </div>
     </nav>
-
-    {% include "simulator/_app_switcher.html" with current="nca" %}
   </header>
 
   <div class="app-shell">
@@ -256,7 +256,7 @@
         <div class="card-body">
           <div id="nca-plot-placeholder" class="text-center py-5 text-muted">
             <i class="bi bi-graph-down" style="font-size:2rem;"></i><br>
-            Upload a CSV to see the profile.
+            Register a data series to see the profile.
           </div>
           <div id="nca-plot" style="display:none;"></div>
 

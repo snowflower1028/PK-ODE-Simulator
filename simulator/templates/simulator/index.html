@@ -23,6 +23,8 @@
 <body>
 
   <header class="app-menubar">
+    {% include "simulator/_app_switcher.html" with current="simulator" %}
+
     <div class="app-brand">
       <span class="app-brand-mark" aria-hidden="true">🧪</span>
       <span class="app-brand-name">PK ODE Simulator</span>
@@ -109,8 +111,6 @@
       </div>
 
     </nav>
-
-    {% include "simulator/_app_switcher.html" with current="simulator" %}
   </header>
 
   <div class="app-shell">
