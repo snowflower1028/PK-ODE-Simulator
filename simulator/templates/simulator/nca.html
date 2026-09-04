@@ -288,6 +288,16 @@
         <div class="card-header sim-card-header">
           <h5 class="card-title mb-0"><i class="bi bi-card-list"></i> Parameters</h5>
           <span class="sens-caption" id="nca-results-caption"></span>
+          <div class="nca-card-actions ms-auto">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="nca-units-btn"
+                    title="Choose the units this table is shown in">
+              <i class="bi bi-rulers"></i> Units
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="nca-export-one-btn"
+                    title="Export this series only">
+              <i class="bi bi-download"></i> Export
+            </button>
+          </div>
         </div>
         <div class="card-body">
           <div id="nca-warnings"></div>
@@ -391,6 +401,33 @@
         </div>
 
         <div class="modal-footer">
+          <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 표시 단위 -->
+  <div class="modal fade" id="ncaUnitsModal" tabindex="-1" aria-labelledby="ncaUnitsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="ncaUnitsModalLabel">Display Units</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="nca-hint mt-0">
+            This changes what the table shows, not what was calculated. Values are
+            converted by a single multiplication &mdash; nothing is recomputed, so the
+            terminal phase you chose stays exactly as it is.
+          </p>
+          <div id="nca-units-form"></div>
+          <p class="nca-hint" id="nca-units-follow"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="nca-units-reset">
+            Back to the entered units
+          </button>
           <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
         </div>
       </div>

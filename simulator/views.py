@@ -723,6 +723,18 @@ def nca_units(request):
             choices = U.display_options(field, native, mw, bw)
             out[field] = {
                 "native": native.label,
+                # 같은 종류끼리 묶어 한 번에 고르게 하려면 이름이 필요하다.
+                # 항목마다 따로 고르면 Cmax 는 ng/mL 인데 Clast 는 µg/mL 인
+                # 표가 나올 수 있고, 그걸 원하는 사람은 없다.
+                "group": U.unit_group(field),
+                # 농도·시간·용량을 몇 제곱씩 쓰는지. 스스로 고를 목록이 없는
+                # 항목(AUC, AUMC, λz, 용량정규화)은 브라우저가 이 지수로
+                # 단위와 배율을 조립한다.
+                "shape": {
+                    "conc": U.FIELD_UNITS[field].conc,
+                    "time": U.FIELD_UNITS[field].time,
+                    "dose": U.FIELD_UNITS[field].dose,
+                },
                 "choices": [
                     {"label": c,
                      "factor": U.scale_factor(native, U.parse_unit(c), mw, bw)}

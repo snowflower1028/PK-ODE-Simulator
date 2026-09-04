@@ -491,11 +491,13 @@ async function refreshUnits() {
   try {
     const body = await post('/nca/units/', currentUnitSpec());
     NcaState.units = body.units || {};
-    // 없어진 선택지를 붙들고 있지 않도록 정리한다.
-    Object.keys(NcaState.displayUnit).forEach((field) => {
-      const entry = NcaState.units[field];
-      const still = entry && entry.choices.some((c) => c.label === NcaState.displayUnit[field]);
-      if (!still) delete NcaState.displayUnit[field];
+    // 없어진 선택지를 붙들고 있지 않도록 정리한다. 분자량이나 체중을 지우면
+    // 몰 단위와 체중당 단위가 목록에서 사라지는데, 그때 고른 값을 그대로
+    // 들고 있으면 표가 없는 단위를 가리킨다.
+    Object.keys(NcaState.displayUnit).forEach((group) => {
+      const entry = Object.values(NcaState.units).find((e) => e.group === group);
+      const still = entry && entry.choices.some((c) => c.label === NcaState.displayUnit[group]);
+      if (!still) delete NcaState.displayUnit[group];
     });
   } catch (err) {
     NcaState.units = {};
@@ -643,30 +645,103 @@ function formatValue(value, digits = 5) {
   return value.toPrecision(digits);
 }
 
-function unitCell(row, field) {
-  const entry = NcaState.units[field];
-  if (!entry) return '';
-  const chosen = NcaState.displayUnit[field] || entry.native;
-  if (!entry.choices.length) return `<span class="nca-unit-static">${escapeAttr(entry.native)}</span>`;
+/* ------------------------------------------------------------ */
+/* 표시 단위                                                       */
+/* ------------------------------------------------------------ */
+/**
+ * 고르는 것은 다섯뿐이다 — 농도, 시간, 용량, 청소율, 부피.
+ *
+ * 나머지는 따라 나온다. AUC 는 C·T 고 AUMC 는 C·T² 고 λz 는 1/T 이므로,
+ * 농도와 시간을 고르면 그 값들의 단위도 정해진다. 따로 고르게 두면 Cmax 를
+ * µg/mL 로 보면서 AUC 만 ng/mL·h 로 남는 표가 나온다.
+ *
+ * 청소율과 부피만 예외로 스스로 고른다. 조립한 이름이 mg/((ng/mL)·h) 라서
+ * 읽을 수가 없고, 사람들이 실제로 쓰는 이름은 L/h 와 L 이기 때문이다.
+ */
+const BASE_GROUPS = ['concentration', 'time', 'dose'];
 
-  const options = [entry.native, ...entry.choices.map((c) => c.label)]
-    .filter((label, i, all) => all.indexOf(label) === i)
-    .map((label) => `<option value="${escapeAttr(label)}"${label === chosen ? ' selected' : ''}>${escapeAttr(label)}</option>`)
-    .join('');
-  // 고른 이름을 글자로도 함께 낸다. select 는 종이에 빈 상자로 찍히는데,
-  // 단위가 없는 PK 표는 아무 뜻이 없다.
-  return `<select class="form-select form-select-sm nca-unit-select" data-field="${escapeAttr(field)}">${options}</select>`
-    + `<span class="nca-unit-static print-only">${escapeAttr(chosen)}</span>`;
+/** 한 종류의 기준 단위 대비 배율. 고른 것이 없으면 1 이다. */
+function groupFactor(group) {
+  const chosen = NcaState.displayUnit[group];
+  if (!chosen) return 1;
+  const entry = Object.values(NcaState.units).find((e) => e.group === group);
+  if (!entry) return 1;
+  const choice = entry.choices.find((c) => c.label === chosen);
+  return choice ? choice.factor : 1;
 }
 
-/** 표시 단위로 옮긴 값. 고른 단위가 없으면 계산된 그대로다. */
+function groupLabel(group) {
+  const entry = Object.values(NcaState.units).find((e) => e.group === group);
+  if (!entry) return '';
+  return NcaState.displayUnit[group] || entry.native;
+}
+
+/** 이 항목에 대해 사람이 직접 고른 단위가 있으면 그 선택. */
+function chosenFor(entry) {
+  if (!entry || !entry.group || !entry.choices.length) return null;
+  const label = NcaState.displayUnit[entry.group];
+  if (!label) return null;
+  return entry.choices.find((c) => c.label === label) || null;
+}
+
+/**
+ * 표시 단위로 옮긴 값.
+ *
+ * 고른 것이 있으면 그것을 쓰고, 없으면 기본 셋에서 조립한다. 조립이 기본인
+ * 것이 중요하다 — 청소율은 스스로 고를 목록이 있지만, 아무것도 고르지 않은
+ * 채로 시간 단위만 분으로 바꾸면 t½ 은 분인데 CL 은 시간당인 표가 된다.
+ */
 function displayed(field, value) {
   if (typeof value !== 'number') return value;
   const entry = NcaState.units[field];
-  const chosen = NcaState.displayUnit[field];
-  if (!entry || !chosen || chosen === entry.native) return value;
-  const choice = entry.choices.find((c) => c.label === chosen);
-  return choice ? value * choice.factor : value;
+  if (!entry) return value;
+
+  const choice = chosenFor(entry);
+  if (choice) return value * choice.factor;
+
+  const shape = entry.shape || { conc: 0, time: 0, dose: 0 };
+  return value
+    * Math.pow(groupFactor('concentration'), shape.conc)
+    * Math.pow(groupFactor('time'), shape.time)
+    * Math.pow(groupFactor('dose'), shape.dose);
+}
+
+/**
+ * 이 항목을 지금 어떤 단위로 보여 주고 있는가.
+ *
+ * 조립 규칙은 units.py 의 _label 과 같다. 두 곳에 적힌 셈이지만, 서버에
+ * 물으러 다녀오면 단위를 바꿀 때마다 왕복이 생긴다 — 곱셈 하나로 끝나는
+ * 일에 그럴 이유가 없다.
+ */
+function unitLabel(field) {
+  const entry = NcaState.units[field];
+  if (!entry) return '';
+
+  const choice = chosenFor(entry);
+  if (choice) return choice.label;
+
+  const shape = entry.shape;
+  if (!shape) return entry.native;
+
+  const parts = [['dose', shape.dose], ['concentration', shape.conc], ['time', shape.time]]
+    .filter(([, power]) => power);
+  // 조립할 조각이 없거나 아직 단위를 못 받았으면 서버가 준 이름을 쓴다.
+  if (!parts.length || parts.some(([group]) => !groupLabel(group))) return entry.native;
+
+  const top = [];
+  const bottom = [];
+  parts.forEach(([group, power]) => {
+    let piece = groupLabel(group);
+    if (Math.abs(power) !== 1) piece = `${piece}^${Math.abs(power)}`;
+    // 빗금이 든 단위는 다른 조각과 붙을 때만 괄호가 필요하다.
+    if (piece.includes('/') && parts.length > 1) piece = `(${piece})`;
+    (power > 0 ? top : bottom).push(piece);
+  });
+
+  const head = top.length ? top.join('·') : '1';
+  if (!bottom.length) return head;
+  const tail = bottom.length > 1 ? `(${bottom.join('·')})` : bottom[0];
+  return `${head}/${tail}`;
 }
 
 function renderResults() {
@@ -687,7 +762,7 @@ function renderResults() {
     html += `<tr>
       <th scope="row">${row.label} ${infoButton({ key: row.key, definition: row.definition, formula: row.formula, caveat: row.caveat })}</th>
       <td class="nca-value">${formatValue(displayed(row.key, raw), row.digits)}</td>
-      <td class="nca-unit">${unitCell(row, row.key)}</td>
+      <td class="nca-unit">${escapeAttr(unitLabel(row.key))}</td>
     </tr>`;
   });
 
@@ -699,7 +774,7 @@ function renderResults() {
       html += `<tr>
         <th scope="row">AUC<sub>${escapeAttr(label)}</sub></th>
         <td class="nca-value">${formatValue(displayed('auc_last', partial[label]))}</td>
-        <td class="nca-unit">${unitCell(null, 'auc_last')}</td>
+        <td class="nca-unit">${escapeAttr(unitLabel('auc_last'))}</td>
       </tr>`;
     });
   }
@@ -1149,6 +1224,167 @@ function exportCsv() {
 
 
 /* ------------------------------------------------------------ */
+/* 표시 단위 설정창                                                */
+/* ------------------------------------------------------------ */
+/**
+ * 드롭다운을 표 안에서 꺼내 여기로 옮겼다. 두 가지 이유다.
+ *
+ * 표를 다른 프로그램으로 복사하면 select 의 값은 따라가지 않는다. 단위 열이
+ * 통째로 비어 붙는데, 단위 없는 PK 표는 아무 뜻이 없다.
+ *
+ * 그리고 select 는 글자보다 훨씬 크고 폭도 제각각이라 행 높이가 들쑥날쑥해
+ * 진다. 숫자를 세로로 훑어 읽어야 하는 표에서 그건 그냥 방해다.
+ */
+const UNIT_GROUP_NAMES = {
+  concentration: 'Concentration',
+  time: 'Time',
+  dose: 'Dose',
+  clearance: 'Clearance',
+  volume: 'Volume',
+};
+
+function renderUnitsForm() {
+  const form = $('nca-units-form');
+  const follow = $('nca-units-follow');
+
+  const rows = Object.keys(UNIT_GROUP_NAMES).map((group) => {
+    const entry = Object.values(NcaState.units).find(
+      (e) => e.group === group && e.choices.length);
+    if (!entry) return '';
+
+    const chosen = NcaState.displayUnit[group] || entry.native;
+    const labels = [entry.native, ...entry.choices.map((c) => c.label)]
+      .filter((label, i, all) => all.indexOf(label) === i);
+    const options = labels.map((label) =>
+      `<option value="${escapeAttr(label)}"${label === chosen ? ' selected' : ''}>${escapeAttr(label)}</option>`
+    ).join('');
+
+    return `<div class="nca-field">
+      <label class="nca-label" for="nca-unit-${group}">${UNIT_GROUP_NAMES[group]}</label>
+      <select class="form-select form-select-sm nca-unit-pick" id="nca-unit-${group}"
+              data-group="${escapeAttr(group)}">${options}</select>
+    </div>`;
+  }).filter(Boolean);
+
+  form.innerHTML = rows.length ? rows.join('')
+    : '<p class="nca-hint mb-0">Register a series and calculate it first.</p>';
+
+  // 스스로 고르지 못하는 항목들이 지금 무엇으로 읽히는지 보여 준다. 목록이
+  // 없는 이유를 말로만 적어 두면 빠뜨린 것처럼 보인다.
+  follow.innerHTML = rows.length
+    ? 'AUC, AUMC and &lambda;<sub>z</sub> have no menu of their own &mdash; they are '
+      + 'built from the concentration and time you picked, so choosing them separately '
+      + 'would let the table disagree with itself. Right now they read '
+      + `<b>${escapeAttr(unitLabel('auc_last'))}</b>, `
+      + `<b>${escapeAttr(unitLabel('aumc_last'))}</b> and `
+      + `<b>${escapeAttr(unitLabel('lambda_z'))}</b>.`
+    : '';
+}
+
+function openUnitsModal() {
+  if (!NcaState.results[NcaState.selected]) {
+    showMessage('Calculate a series before choosing how to show it.');
+    return;
+  }
+  renderUnitsForm();
+  bootstrap.Modal.getOrCreateInstance($('ncaUnitsModal')).show();
+}
+
+
+/* ------------------------------------------------------------ */
+/* 한 계열만 내보내기                                              */
+/* ------------------------------------------------------------ */
+/** NCA_ROWS 의 이름표는 HTML 이다. 파일에는 글자만 넣는다. */
+function plainLabel(html) {
+  const box = document.createElement('div');
+  box.innerHTML = html;
+  return box.textContent.trim();
+}
+
+function csvCell(text) {
+  const value = text === null || text === undefined ? '' : String(text);
+  return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/**
+ * 보고 있는 계열 하나를 세로로 낸다.
+ *
+ * 전체 내보내기는 계열이 한 줄씩인 가로 표라 여러 개체를 견주기 좋고, 이쪽은
+ * 항목이 한 줄씩이라 하나를 자세히 읽거나 보고서에 붙이기 좋다. 같은 자료를
+ * 두 방향으로 내는 것이라 어느 쪽도 다른 쪽을 대신하지 못한다.
+ *
+ * 값 앞에 무엇을 어떤 규칙으로 계산한 것인지 적는다. 숫자만 든 파일은 몇 달
+ * 뒤에 열면 읽을 수가 없다 — 특히 BLQ 규칙과 말기 구간은 값을 크게 바꾼다.
+ */
+function exportCurrentCsv() {
+  const ds = currentDataset();
+  const result = ds && NcaState.results[ds.id];
+  if (!result) { showMessage('Nothing to export yet.'); return; }
+
+  const values = result.values;
+  const line = (...cells) => cells.map(csvCell).join(',');
+  const rows = [];
+
+  rows.push(line('Series', ds.name));
+  rows.push(line('Generated', new Date().toLocaleString()));
+  rows.push(line('Concentration unit', `${ds.units.concAmount}/${ds.units.concVolume}`));
+  rows.push(line('Time unit', ds.units.time));
+  if (ds.mw) rows.push(line('Molecular weight', `${ds.mw} g/mol`));
+  rows.push(line('Dose', ds.dose.amount === '' ? 'not given'
+    : `${ds.dose.amount} ${ds.dose.unit}`));
+  if (ds.dose.bw) rows.push(line('Body weight', `${ds.dose.bw} ${ds.dose.bwUnit}`));
+  rows.push(line('Route', $('nca-route').selectedOptions[0].textContent.trim()));
+  rows.push(line('Trapezoid', $('nca-method').selectedOptions[0].textContent.trim()));
+  rows.push(line('BLQ rule', `before ${$('nca-blq-before').value}, `
+    + `between ${$('nca-blq-between').value}, after ${$('nca-blq-after').value}`));
+  if (values.lambda_z_n_points) {
+    rows.push(line('Terminal phase',
+      `${values.lambda_z_t_first}-${values.lambda_z_t_last}`
+      + ` (${values.lambda_z_n_points} points, `
+      + `${values.lambda_z_manual ? 'chosen by hand' : 'best fit'})`));
+  }
+  (values.warnings || []).forEach((warning) => rows.push(line('Warning', warning)));
+
+  rows.push('');
+  rows.push(line('Parameter', 'Value', 'Unit'));
+
+  NCA_ROWS.forEach((row) => {
+    if (row.group) {
+      rows.push('');
+      rows.push(line(row.group));
+      return;
+    }
+    const raw = values[row.key];
+    if (raw === undefined) return;
+    const shown = displayed(row.key, raw);
+    rows.push(line(plainLabel(row.label),
+      shown === null || shown === undefined ? '' : shown,
+      unitLabel(row.key)));
+  });
+
+  const partial = values.partial_auc || {};
+  const windows = Object.keys(partial);
+  if (windows.length) {
+    rows.push('');
+    rows.push(line('Partial areas'));
+    windows.forEach((label) => {
+      const shown = displayed('auc_last', partial[label]);
+      rows.push(line(`AUC ${label}`,
+        shown === null || shown === undefined ? '' : shown,
+        unitLabel('auc_last')));
+    });
+  }
+
+  const blob = new Blob([rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `nca_${ds.name.replace(/[^\w.-]+/g, '_')}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+
+/* ------------------------------------------------------------ */
 /* 시작                                                          */
 /* ------------------------------------------------------------ */
 function bindManager() {
@@ -1358,14 +1594,24 @@ function init() {
     run();
   });
 
-  // 항목별 표시 단위
-  $('nca-results').addEventListener('change', (event) => {
-    const select = event.target.closest('.nca-unit-select');
+  // 표시 단위는 별도 창에서 고른다. 표 안에서는 글자만 보인다.
+  $('nca-units-btn').addEventListener('click', openUnitsModal);
+  $('nca-units-form').addEventListener('change', (event) => {
+    const select = event.target.closest('.nca-unit-pick');
     if (!select) return;
-    NcaState.displayUnit[select.dataset.field] = select.value;
+    NcaState.displayUnit[select.dataset.group] = select.value;
     renderResults();
     renderTerminalBar();
+    renderUnitsForm();
   });
+  $('nca-units-reset').addEventListener('click', () => {
+    NcaState.displayUnit = {};
+    renderResults();
+    renderTerminalBar();
+    renderUnitsForm();
+  });
+
+  $('nca-export-one-btn').addEventListener('click', exportCurrentCsv);
 
   $('nca-export-csv-btn').addEventListener('click', exportCsv);
   $('nca-export-plot-btn').addEventListener('click', () => {

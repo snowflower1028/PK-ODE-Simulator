@@ -16,6 +16,7 @@ from simulator.units import (
     field_unit,
     parse_unit,
     scale_factor,
+    unit_group,
 )
 
 
@@ -132,6 +133,13 @@ class ComposedFields(unittest.TestCase):
                          "1/h")
         self.assertEqual(field_unit("cl", self.C, self.T, self.D).label,
                          "mg/((ng/mL)·h)")
+
+    def test_a_lone_unit_carries_no_parentheses(self):
+        # 괄호는 다른 조각과 붙을 때만 필요하다. 혼자인데 씌우면 Cmax 의
+        # 단위가 (ng/mL) 로 나온다.
+        self.assertEqual(field_unit("c_max", self.C, self.T, self.D).label, "ng/mL")
+        self.assertEqual(field_unit("half_life", self.C, self.T, self.D).label, "h")
+        self.assertEqual(field_unit("dose", self.C, self.T, self.D).label, "mg")
 
     def test_an_unregistered_field_is_dimensionless(self):
         # 백분율과 개수는 단위가 없다.
@@ -250,6 +258,60 @@ class BodyWeight(unittest.TestCase):
         self.assertAlmostEqual(convert(1.0, P("mg/L"), P("ug/mL")), 1.0, places=12)
         self.assertAlmostEqual(convert(1.0, P("h"), P("min")), 60.0, places=12)
         self.assertAlmostEqual(convert(1.0, P("mL/min"), P("L/h")), 0.06, places=12)
+
+
+class Groups(unittest.TestCase):
+    """같은 종류끼리 묶어 한 번에 고르게 한다.
+
+    항목마다 따로 고르게 두면 Cmax 는 ng/mL 인데 Clast 는 µg/mL 인 표가
+    나올 수 있다. 묶는 기준은 단위 조합 그 자체다 — 조합이 같으면 고를 수
+    있는 것도 같기 때문이다.
+    """
+
+    def setUp(self):
+        self.C, self.T, self.D = P("ng/mL"), P("h"), P("mg")
+
+    def test_fields_of_a_kind_land_in_one_group(self):
+        for field in ("c_max", "c_last", "c_last_pred", "c0_back_extrapolated"):
+            self.assertEqual(unit_group(field), "concentration", msg=field)
+        for field in ("t_max", "t_last", "half_life", "mrt", "mrt_last"):
+            self.assertEqual(unit_group(field), "time", msg=field)
+        self.assertEqual(unit_group("cl"), "clearance")
+        self.assertEqual(unit_group("vz"), unit_group("vss"))
+
+    def test_a_group_shares_one_native_unit_and_one_menu(self):
+        # 이것이 무너지면 종류별로 고르게 하는 것이 성립하지 않는다.
+        for group in ("concentration", "time", "clearance", "volume"):
+            fields = [f for f in FIELD_UNITS if unit_group(f) == group]
+            natives = {field_unit(f, self.C, self.T, self.D).label for f in fields}
+            menus = {display_options(f, field_unit(f, self.C, self.T, self.D))
+                     for f in fields}
+            self.assertEqual(len(natives), 1, msg=f"{group}: {natives}")
+            self.assertEqual(len(menus), 1, msg=f"{group}: {menus}")
+
+    def test_dimensionless_fields_have_no_group(self):
+        for field in ("auc_extrap_pct", "lambda_z_span", "lambda_z_n_points"):
+            self.assertIsNone(unit_group(field), msg=field)
+
+
+class Rates(unittest.TestCase):
+    """λz 는 1/시간이다. 반감기를 분으로 보면서 λz 만 1/h 로 두면 어긋난다."""
+
+    def test_one_over_a_unit_parses(self):
+        self.assertEqual(P("1/h").dim, P("h").dim ** -1)
+        self.assertAlmostEqual(P("1/min").factor, 60.0, places=9)
+
+    def test_hand_computed_rate_conversion(self):
+        native = field_unit("lambda_z", P("ng/mL"), P("h"), P("mg"))
+        # 0.1233 1/h 는 분당 0.1233/60 이다.
+        self.assertAlmostEqual(convert(0.1233, native, P("1/min")),
+                               0.1233 / 60.0, places=12)
+        self.assertAlmostEqual(convert(0.1233, native, P("1/day")),
+                               0.1233 * 24.0, places=12)
+
+    def test_a_rate_is_not_a_time(self):
+        with self.assertRaises(UnitError):
+            convert(1.0, P("1/h"), P("h"))
 
 
 class DisplayChoices(unittest.TestCase):

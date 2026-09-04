@@ -47,6 +47,7 @@ __all__ = [
     "convert",
     "scale_factor",
     "display_options",
+    "unit_group",
     "UnitError",
 ]
 
@@ -213,7 +214,11 @@ def parse_unit(text: str) -> Unit:
 
     if "/" in key:
         pieces = [p for p in key.split("/")]
-        top = _simple(pieces[0])
+        # 1/h 처럼 분자가 없는 꼴. λz 가 이렇게 생겼다.
+        if pieces[0] == "1":
+            top = Unit("1", 1.0, Dimension())
+        else:
+            top = _simple(pieces[0])
         if top is None:
             raise UnitError(f"Unrecognised unit: {pieces[0]!r} in {text!r}")
 
@@ -314,13 +319,16 @@ def _compose(shape: Composed, conc: Unit, time: Unit, dose: Unit) -> Unit:
 
 
 def _label(shape: Composed, conc: Unit, time: Unit, dose: Unit) -> str:
+    parts = [(unit, power) for unit, power
+             in ((dose, shape.dose), (conc, shape.conc), (time, shape.time)) if power]
+
     top: List[str] = []
     bottom: List[str] = []
-    for unit, power in ((dose, shape.dose), (conc, shape.conc), (time, shape.time)):
-        if power == 0:
-            continue
+    for unit, power in parts:
         piece = unit.label if abs(power) == 1 else f"{unit.label}^{abs(power)}"
-        if "/" in piece:
+        # 빗금이 든 단위는 다른 조각과 붙을 때만 괄호가 필요하다. 혼자
+        # 있는데 씌우면 Cmax 의 단위가 (ng/mL) 로 나온다.
+        if "/" in piece and len(parts) > 1:
             piece = f"({piece})"
         (top if power > 0 else bottom).append(piece)
 
@@ -409,6 +417,33 @@ CLEARANCE_CHOICES: Tuple[str, ...] = (
     "L/h", "mL/h", "mL/min", "L/day",
     "L/h/kg", "mL/h/kg", "mL/min/kg", "L/day/kg",
 )
+#: λz. 시간 단위를 바꾸면 반감기와 함께 움직여야 뜻이 맞는다.
+RATE_CHOICES: Tuple[str, ...] = ("1/h", "1/min", "1/day", "1/s")
+
+
+#: 같은 종류끼리 묶는 이름. 항목마다 따로 고르게 하면 Cmax 는 ng/mL 인데
+#: Clast 는 µg/mL 인 표가 나올 수 있고, 그걸 원하는 사람은 없다. 묶는 기준은
+#: 단위 조합 그 자체다 — 조합이 같으면 고를 수 있는 것도 같기 때문이다.
+_GROUPS: Dict[Composed, str] = {
+    _C: "concentration",
+    _T: "time",
+    Composed(time=-1): "rate",
+    Composed(dose=1, conc=-1, time=-1): "clearance",
+    Composed(dose=1, conc=-1): "volume",
+    Composed(dose=1): "dose",
+    Composed(conc=1, time=1): "area",
+    Composed(conc=1, time=2): "moment",
+    Composed(conc=1, dose=-1): "concentration per dose",
+    Composed(conc=1, time=1, dose=-1): "area per dose",
+}
+
+
+def unit_group(field: str) -> Optional[str]:
+    """이 항목이 어느 종류에 드는가. 무차원이면 None."""
+    shape = FIELD_UNITS.get(field)
+    if shape is None or shape.is_dimensionless:
+        return None
+    return _GROUPS.get(shape)
 
 
 def _catalogue(field: str) -> Tuple[str, ...]:
@@ -430,6 +465,10 @@ def _catalogue(field: str) -> Tuple[str, ...]:
         return TIME_CHOICES
     if shape == Composed(dose=1):
         return DOSE_CHOICES
+    # λz 는 일부러 목록을 주지 않는다. 1/시간이므로 시간 단위를 고르면 따라
+    # 움직여야 뜻이 맞는다 — 반감기를 분으로 보면서 λz 만 1/h 로 남으면
+    # 둘이 서로 안 맞는 표가 된다. AUC·AUMC·용량정규화 값도 같은 이유로
+    # 비워 둔다. 조립은 쓰는 쪽이 지수를 보고 한다.
     return ()
 
 

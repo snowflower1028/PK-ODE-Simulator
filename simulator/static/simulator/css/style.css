@@ -2377,11 +2377,11 @@ body.is-resizing {
     #fit-apply-btn,
     #plot-placeholder,
     #pk-summary-placeholder,
-    /* NCA — 고르는 것들은 종이에 올릴 이유가 없다. 다만 무엇을 골랐는지는
-       남아야 하므로, 단위는 select 를 감추고 고른 이름을 글자로 내보낸다. */
+    /* NCA — 고르는 것들은 종이에 올릴 이유가 없다. 단위는 이제 표 안에서
+       글자로 나오므로 따로 손댈 것이 없다. */
     .nca-lambda-controls,
     .nca-plot-toggle,
-    .nca-unit-select,
+    .nca-card-actions,
     #nca-plot-placeholder {
         display: none !important;
     }
@@ -2789,18 +2789,29 @@ body.is-resizing {
     color: var(--apple-text-primary);
     white-space: nowrap;
 }
+/* 단위는 글자다. 예전에는 여기에 select 를 두었는데, 표를 복사하면 값이
+   따라가지 않아 단위 열이 통째로 비어 붙었고, 컨트롤이 글자보다 훨씬 커서
+   행 높이가 들쑥날쑥했다. 고르는 일은 별도 창으로 옮겼다. */
 .nca-table td.nca-unit {
-    width: 30%;
-    padding-left: 0.75rem;
-}
-.nca-unit-select {
+    width: 26%;
+    padding: 0.35rem 0.6rem 0.35rem 0.75rem;
+    color: var(--apple-text-tertiary);
     font-size: 0.75rem;
-    padding-top: 0.15rem;
-    padding-bottom: 0.15rem;
+    white-space: nowrap;
 }
 .nca-unit-static {
     font-size: 0.75rem;
     color: var(--apple-text-tertiary);
+}
+
+/* 결과 카드 머리의 버튼들 */
+.nca-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.nca-card-actions .btn {
+    white-space: nowrap;
 }
 /* 구획 머리. 항목이 많아 어디가 어디인지 나뉘어 보여야 한다. */
 .nca-table tr.nca-group th {
