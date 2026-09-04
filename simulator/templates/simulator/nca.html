@@ -31,7 +31,13 @@
       <div class="dropdown">
         <button class="app-menu-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">File</button>
         <ul class="dropdown-menu app-menu">
-          <li><button type="button" id="nca-clear-btn" class="dropdown-item"><i class="bi bi-file-earmark"></i> Clear Everything</button></li>
+          <li><button type="button" id="nca-clear-btn" class="dropdown-item"><i class="bi bi-file-earmark"></i> New Session</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li>
+            <label for="nca-open-session-input" class="dropdown-item"><i class="bi bi-box-arrow-in-up"></i> Open Session&hellip;</label>
+            <input type="file" id="nca-open-session-input" accept=".json" hidden>
+          </li>
+          <li><button type="button" id="nca-save-session-btn" class="dropdown-item"><i class="bi bi-box-arrow-down"></i> Save Session</button></li>
           <li><hr class="dropdown-divider"></li>
           <li><h6 class="dropdown-header">Export</h6></li>
           <li><button type="button" id="nca-export-csv-btn" class="dropdown-item"><i class="bi bi-table"></i> Results &mdash; every profile <span class="app-menu-hint">.csv</span></button></li>

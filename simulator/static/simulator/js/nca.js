@@ -948,6 +948,8 @@ async function run() {
   const usable = NcaState.datasets.filter((ds) => ds._points.time.length >= 2);
   if (!usable.length) {
     clearResults();
+    renderDataCards();
+    NcaSession.saveSoon();
     if (NcaState.datasets.length) {
       showMessage('No series has two usable points yet. Add times and concentrations.');
     }
@@ -971,6 +973,7 @@ async function run() {
     showMessage(err.message);
   } finally {
     button.disabled = false;
+    NcaSession.saveSoon();
   }
 }
 
@@ -1531,6 +1534,209 @@ function exportCurrentCsv() {
 
 
 /* ------------------------------------------------------------ */
+/* 세션                                                          */
+/* ------------------------------------------------------------ */
+/**
+ * 새로고침해도, 창을 닫았다 열어도 하던 일이 남아 있게 한다. 파일로 내보내면
+ * 다른 기계에서 그대로 이어서 할 수 있다.
+ *
+ * 결과는 담지 않는다. 담아 두면 입력과 결과가 어긋난 저장본이 생길 수 있는데
+ * — 저장 시점과 계산 시점이 다르면 그런 일이 실제로 생긴다 — NCA 는 다시
+ * 계산하는 데 요청 한 번이면 된다. 되살린 뒤 곧바로 돌리면 화면에 보이는
+ * 것이 반드시 지금 입력에서 나온 값이다.
+ *
+ * 담는 것은 사람이 넣거나 정한 것뿐이다. 자료의 행, 계열마다의 단위와 용량,
+ * 손으로 고른 말기 구간, 표시 단위, 계산 규칙. 특히 말기 구간을 빠뜨리면
+ * 다시 열었을 때 자동 선택으로 돌아가 버려, 사용자가 곡선을 보고 내린 판단이
+ * 소리 없이 사라진다.
+ */
+const NcaSession = {
+  KEY: 'pkNca.session',
+  //: 담는 모양이 바뀌면 올린다. 예전 모양은 복원하지 않고 버린다 —
+  //  반쯤 이해한 상태로 되살리면 화면이 조용히 어긋난다.
+  VERSION: 1,
+  _timer: null,
+  _restoring: false,
+
+  snapshot() {
+    return {
+      version: this.VERSION,
+      savedAt: new Date().toISOString(),
+      datasets: NcaState.datasets.map((ds) => ({
+        id: ds.id,
+        name: ds.name,
+        // 행은 문자열 그대로 담는다. 숫자로 바꿔 두면 "BLQ" 같은 표기가
+        // 사라지는데, 그것이야말로 정량한계 규칙이 봐야 할 정보다.
+        rows: ds.rows.map((row) => ({ time: row.time, conc: row.conc, use: row.use })),
+        units: { ...ds.units },
+        mw: ds.mw,
+        dose: { ...ds.dose },
+      })),
+      selected: NcaState.selected,
+      lambdaTimes: { ...NcaState.lambdaTimes },
+      displayUnit: { ...NcaState.displayUnit },
+      options: {
+        method: $('nca-method').value,
+        minPoints: $('nca-min-points').value,
+        partial: $('nca-partial').value,
+        loq: $('nca-loq').value,
+        blqBefore: $('nca-blq-before').value,
+        blqBetween: $('nca-blq-between').value,
+        blqAfter: $('nca-blq-after').value,
+      },
+      logScale: $('nca-log-toggle').checked,
+    };
+  },
+
+  /** 저장본에서 계열 하나를 세운다. 빠진 자리는 기본값으로 메운다 —
+   *  손으로 고친 파일이나 예전 저장본이 들어와도 넘어지지 않아야 한다. */
+  _hydrate(raw) {
+    const base = newDataset(raw && raw.name);
+    if (!raw || typeof raw !== 'object') return base;
+    return {
+      ...base,
+      id: raw.id || base.id,
+      name: raw.name || base.name,
+      rows: Array.isArray(raw.rows) ? raw.rows.map((row) => ({
+        time: row && row.time != null ? String(row.time) : '',
+        conc: row && row.conc != null ? String(row.conc) : '',
+        use: row ? row.use !== false : true,
+      })) : [],
+      units: { ...base.units, ...(raw.units || {}) },
+      mw: raw.mw != null ? raw.mw : base.mw,
+      dose: { ...base.dose, ...(raw.dose || {}) },
+    };
+  },
+
+  async restore(data) {
+    if (!data || !Array.isArray(data.datasets) || !data.datasets.length) return false;
+
+    // 되돌리는 동안의 change 는 저장을 부르지 않는다. 절반만 채워진 상태를
+    // 덮어써 버리면 원본이 사라진다.
+    this._restoring = true;
+    try {
+      NcaState.datasets = data.datasets.map((raw) => this._hydrate(raw));
+
+      // 새 계열의 id 가 되살린 것과 부딪히지 않도록 번호를 뒤로 민다.
+      const highest = NcaState.datasets.reduce((top, ds) => {
+        const n = parseInt(String(ds.id).replace(/^\D+/, ''), 10);
+        return Number.isFinite(n) && n > top ? n : top;
+      }, 0);
+      NcaState._seq = Math.max(NcaState._seq, highest);
+
+      const known = new Set(NcaState.datasets.map((ds) => ds.id));
+      NcaState.selected = known.has(data.selected) ? data.selected : NcaState.datasets[0].id;
+      NcaState.editing = NcaState.selected;
+
+      // 사라진 계열의 구간은 버린다. 남겨 두면 어느 자료의 것인지 알 수 없는
+      // 설정이 저장본에 계속 얹힌다.
+      NcaState.lambdaTimes = {};
+      Object.entries(data.lambdaTimes || {}).forEach(([id, times]) => {
+        if (known.has(id) && Array.isArray(times) && times.length >= 3) {
+          NcaState.lambdaTimes[id] = times.map(Number).filter(Number.isFinite);
+        }
+      });
+      NcaState.displayUnit = { ...(data.displayUnit || {}) };
+
+      const options = data.options || {};
+      const put = (id, value) => { if (value !== undefined && value !== null) $(id).value = value; };
+      put('nca-method', options.method);
+      put('nca-min-points', options.minPoints);
+      put('nca-partial', options.partial);
+      put('nca-loq', options.loq);
+      put('nca-blq-before', options.blqBefore);
+      put('nca-blq-between', options.blqBetween);
+      put('nca-blq-after', options.blqAfter);
+      if (typeof data.logScale === 'boolean') $('nca-log-toggle').checked = data.logScale;
+
+      renderDataCards();
+    } finally {
+      this._restoring = false;
+    }
+
+    await run();
+    return true;
+  },
+
+  save() {
+    if (this._restoring) return;
+    try {
+      window.localStorage.setItem(this.KEY, JSON.stringify(this.snapshot()));
+    } catch (error) {
+      // 자리가 모자라면 지운다. 반쯤 쓰다 만 저장본을 남기면 다음에 열 때
+      // 그것을 되살리려다 넘어진다.
+      this.clear();
+    }
+  },
+
+  /** 표에 값을 칠 때마다 저장하지 않도록 잠깐 모았다 쓴다. */
+  saveSoon() {
+    window.clearTimeout(this._timer);
+    this._timer = window.setTimeout(() => this.save(), 400);
+  },
+
+  load() {
+    try {
+      const raw = window.localStorage.getItem(this.KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      return (data && data.version === this.VERSION) ? data : null;
+    } catch (error) {
+      return null;
+    }
+  },
+
+  clear() {
+    try { window.localStorage.removeItem(this.KEY); } catch (error) { /* 사생활 보호 모드 등 */ }
+  },
+};
+
+
+function exportSession() {
+  const text = JSON.stringify(NcaSession.snapshot(), null, 2);
+  const blob = new Blob([text], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `nca-session-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+async function importSession(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  try {
+    const ok = await NcaSession.restore(JSON.parse(await file.text()));
+    if (!ok) throw new Error('The file does not hold any observed data.');
+    NcaSession.save();
+  } catch (error) {
+    showMessage(`That session file could not be opened: ${error.message}`);
+  } finally {
+    // 같은 파일을 다시 고를 수 있도록 비운다.
+    event.target.value = '';
+  }
+}
+
+/**
+ * 새로고침해도 하던 일이 남아 있게 한다.
+ *
+ * 되살리다 실패하면 저장본을 버린다. 깨진 저장본을 그대로 두면 새로고침할
+ * 때마다 같은 자리에서 넘어져 앱을 열 수 없게 된다 — 한 번은 잃더라도 다음
+ * 새로고침은 되게 하는 편이 낫다.
+ */
+async function restoreSession() {
+  const saved = NcaSession.load();
+  if (!saved) return;
+  try {
+    await NcaSession.restore(saved);
+  } catch (error) {
+    console.error('Could not restore the previous session:', error);
+    NcaSession.clear();
+  }
+}
+
+
+/* ------------------------------------------------------------ */
 /* 시작                                                          */
 /* ------------------------------------------------------------ */
 function bindManager() {
@@ -1555,7 +1761,8 @@ function bindManager() {
     ds.name = event.target.value;
     renderDataCards();
     renderManager();
-    // 이름은 계산에 들어가지 않는다. 다시 돌릴 이유가 없다.
+    // 이름은 계산에 들어가지 않는다. 다시 돌릴 이유가 없지만 남기기는 해야 한다.
+    NcaSession.saveSoon();
   });
   ['nca-edit-conc-amount', 'nca-edit-conc-volume', 'nca-edit-time-unit', 'nca-edit-mw']
     .forEach((id) => $(id).addEventListener('change', () => {
@@ -1567,6 +1774,7 @@ function bindManager() {
       ds.mw = $('nca-edit-mw').value;
       // 단위는 계산을 바꾸지 않는다 — 표시만 다시 세운다.
       refreshUnits().then(() => { renderResults(); renderTerminalBar(); plotProfile(); });
+      NcaSession.saveSoon();
     }));
 
   // 표
@@ -1717,7 +1925,10 @@ function init() {
    'nca-blq-before', 'nca-blq-between', 'nca-blq-after']
     .forEach((id) => $(id).addEventListener('change', run));
 
-  $('nca-log-toggle').addEventListener('change', plotProfile);
+  $('nca-log-toggle').addEventListener('change', () => {
+    plotProfile();
+    NcaSession.saveSoon();
+  });
 
   // 말기 구간을 범위로 고르기
   const applyRange = () => {
@@ -1761,12 +1972,14 @@ function init() {
     renderResults();
     renderTerminalBar();
     renderUnitsForm();
+    NcaSession.saveSoon();
   });
   $('nca-units-reset').addEventListener('click', () => {
     NcaState.displayUnit = {};
     renderResults();
     renderTerminalBar();
     renderUnitsForm();
+    NcaSession.saveSoon();
   });
 
   $('nca-export-one-btn').addEventListener('click', exportCurrentCsv);
@@ -1787,7 +2000,16 @@ function init() {
   });
   window.addEventListener('beforeprint', fillReportHead);
 
-  $('nca-clear-btn').addEventListener('click', () => window.location.reload());
+  // 저장본까지 지운다. 남겨 두면 새로고침이 방금 지운 것을 되살린다.
+  $('nca-clear-btn').addEventListener('click', () => {
+    NcaSession.clear();
+    window.location.reload();
+  });
+
+  $('nca-save-session-btn').addEventListener('click', exportSession);
+  $('nca-open-session-input').addEventListener('change', importSession);
+
+  restoreSession();
 
   // 도움말 메뉴에서 고른 절로 스크롤한다.
   document.querySelectorAll('[data-help-tab]').forEach((item) => {

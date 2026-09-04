@@ -3191,3 +3191,16 @@ body.is-resizing {
 .nca-rail-item .nca-card-meta {
     font-weight: 400;
 }
+
+/* 표가 넓어 값과 항목 이름이 멀다. 마우스가 얹힌 행을 통째로 물들여 눈이
+   가로로 미끄러지지 않게 한다. 구획 머리글은 값이 없으므로 뺀다. */
+.nca-table tbody tr:not(.nca-group):hover > * {
+    background-color: rgba(0, 122, 255, 0.07);
+}
+.nca-table tbody tr:not(.nca-group):hover th[scope="row"] {
+    color: var(--apple-text-primary);
+}
+/* 키보드로 ⓘ 를 훑을 때도 같은 행이 서야 한다. */
+.nca-table tbody tr:not(.nca-group):focus-within > * {
+    background-color: rgba(0, 122, 255, 0.07);
+}
