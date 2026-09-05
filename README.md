@@ -61,21 +61,13 @@ Both tools keep your work across a refresh and can save a session to a file.
 
 ## Screenshots
 
-<!-- To add these: drag each image into a GitHub issue or pull-request comment,
-     copy the https://github.com/user-attachments/... URL it produces, and paste
-     it in place of URL below — then delete the surrounding comment markers. -->
-
 ### ODE Simulator
 
-<!-- ![A two-compartment IV model: the parsed system and its parameters in the
-     sidebar, an observed dataset overlaid on the profile, and a PK summary that
-     puts the model-derived and NCA-derived parameters on adjacent rows](URL) -->
+![A two-compartment IV model: the parsed system and its parameters in the sidebar, an observed dataset overlaid on the profile, and a PK summary that puts the model-derived and NCA-derived parameters on adjacent rows](https://github.com/user-attachments/assets/5d7c74a7-3f20-4949-accb-bfbf49b6e271)
 
 ### NCA Calculator
 
-<!-- ![Two registered series, the selected one shown on a semi-log plot with the
-     terminal points picked out and the fitted slope drawn through them, and the
-     parameter table below with its units](URL) -->
+![Two registered series, the selected one shown on a semi-log plot with the terminal points picked out and the fitted slope drawn through them, and the parameter table below with its units](https://github.com/user-attachments/assets/d3f957bd-bbda-40cf-8804-3bae41a21d1f)
 
 ---
 
