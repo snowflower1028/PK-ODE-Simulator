@@ -316,7 +316,9 @@ class BlqRules(unittest.TestCase):
         # 없는 골을 파는 것이라 오차가 작지 않다.
         self.assertGreater(100 * (missing - zero) / missing, 5.0)
 
-    def test_before_the_first_measurable_point(self):
+    def test_a_below_limit_sample_at_time_zero_reads_the_same_either_way(self):
+        # 혈관외는 투여 전에 약이 없으므로 t=0 은 0 이다. 그 0 을 남기든 빼든
+        # 같은 프로파일이 된다 — 빼면 t=0 을 세워 넣는 쪽이 같은 자리를 메운다.
         t = np.array([0, 1, 2, 4, 8, 12, 24], dtype=float)
         c = oral(t)
         blq = np.array([True, False, False, False, False, False, False])
@@ -324,8 +326,20 @@ class BlqRules(unittest.TestCase):
                       blq=blq, blq_policy=BLQPolicy(before="zero")).auc_last
         as_missing = nca(t, c, dose=DOSE, administration=Administration.EXTRAVASCULAR,
                          blq=blq, blq_policy=BLQPolicy(before="missing")).auc_last
-        # 점을 빼면 첫 사다리꼴이 통째로 사라진다.
-        self.assertLess(as_missing, as_zero)
+        self.assertAlmostEqual(as_missing, as_zero, places=12)
+
+    def test_before_the_first_measurable_point(self):
+        # 한계 아래 시료가 0시점보다 뒤에 있으면 규칙이 갈린다. 0 으로 두면
+        # 곡선이 그 시각까지 바닥에 붙어 있고, 빼면 원점에서 첫 정량점까지
+        # 곧장 이으므로 넓이가 더 나온다.
+        t = np.array([0.25, 0.5, 1, 2, 4, 8, 12, 24], dtype=float)
+        c = oral(t)
+        blq = np.array([True] + [False] * 7)
+        as_zero = nca(t, c, dose=DOSE, administration=Administration.EXTRAVASCULAR,
+                      blq=blq, blq_policy=BLQPolicy(before="zero")).auc_last
+        as_missing = nca(t, c, dose=DOSE, administration=Administration.EXTRAVASCULAR,
+                         blq=blq, blq_policy=BLQPolicy(before="missing")).auc_last
+        self.assertGreater(as_missing, as_zero)
 
     def test_after_the_last_measurable_point_only_moves_auc_all(self):
         t = np.append(self.t, 48.0)
@@ -414,6 +428,135 @@ class PartialAuc(unittest.TestCase):
         full = nca(self.t, self.c, dose=DOSE,
                    administration=Administration.IV_BOLUS, partial_times=(48,))
         self.assertAlmostEqual(full.partial_auc["0-48"], full.auc_last, places=9)
+
+
+# ---------------------------------------------------------------------------
+# t=0 을 세우는 방식
+# ---------------------------------------------------------------------------
+class BuildingTheOrigin(unittest.TestCase):
+    """첫 조각의 넓이는 t=0 에 무엇을 놓느냐로 정해진다.
+
+    투여 방식마다 답이 다르다. 볼루스는 그 순간이 최고 농도라 되돌려 세워야
+    하고, 혈관외와 주입은 아직 약이 오지 않았으므로 0 이다. 세우지 않으면
+    첫 조각이 통째로 빠진다.
+    """
+
+    def test_a_bolus_recorded_as_zero_at_time_zero_is_back_extrapolated(self):
+        # 볼루스에서 t=0 의 0 은 측정이 아니라 "아직 재지 않았다" 는 뜻이다.
+        # 그대로 믿으면 첫 조각이 삼각형으로 깎인다.
+        t = np.array([0, 0.5, 1, 2, 4, 8], dtype=float)
+        c = np.array([0.0, *iv_bolus([0.5, 1, 2, 4, 8])])
+        res = nca(t, c, dose=DOSE, administration=Administration.IV_BOLUS)
+
+        self.assertIsNotNone(res.c0_back_extrapolated)
+        self.assertAlmostEqual(res.c0_back_extrapolated, DOSE / V, places=6)
+        # 되돌린 뒤에는 해석해를 되찾는다.
+        self.assertAlmostEqual(res.auc_inf_obs, DOSE / CL, places=4)
+
+    def test_the_back_extrapolated_value_never_becomes_cmax(self):
+        # Cmax 는 잰 값이다. 세워 넣은 C0 가 그 자리를 차지하면, 보고서에
+        # 측정한 적 없는 농도가 최고 농도로 올라간다.
+        t = np.array([0.25, 0.5, 1, 2, 4, 8], dtype=float)
+        c = iv_bolus(t)
+        res = nca(t, c, dose=DOSE, administration=Administration.IV_BOLUS)
+
+        self.assertGreater(res.c0_back_extrapolated, c.max())
+        self.assertAlmostEqual(res.c_max, float(c.max()), places=12)
+        self.assertAlmostEqual(res.t_max, 0.25, places=12)
+
+    def test_an_extravascular_profile_starts_at_zero(self):
+        t = np.array([0.5, 1, 2, 4, 8, 12, 24], dtype=float)
+        c = oral(t)
+        res = nca(t, c, dose=DOSE, administration=Administration.EXTRAVASCULAR)
+
+        self.assertTrue(res.origin_inserted)
+        # 세워 넣은 조각은 원점에서 첫 시료까지의 삼각형이다.
+        without = auc(t, c, AUCMethod.LINEAR)
+        wedge = 0.5 * t[0] * c[0]
+        plain = nca(t, c, dose=DOSE, administration=Administration.EXTRAVASCULAR,
+                    method=AUCMethod.LINEAR)
+        self.assertAlmostEqual(plain.auc_last - without, wedge, places=9)
+
+    def test_a_late_first_sample_is_called_out(self):
+        # 첫 채혈이 늦을수록 그 삼각형은 잰 것이 아니라 가정한 것이고,
+        # 늦을수록 커진다. 조용히 넣지 않는다.
+        t = np.array([6, 8, 12, 24, 36], dtype=float)
+        c = oral(t)
+        res = nca(t, c, dose=DOSE, administration=Administration.EXTRAVASCULAR)
+        self.assertTrue(res.origin_inserted)
+        self.assertTrue([w for w in res.warnings if "time 0" in w],
+                        msg=f"warnings: {res.warnings}")
+
+    def test_a_bolus_measured_at_time_zero_is_left_alone(self):
+        t = np.array([0, 0.5, 1, 2, 4, 8], dtype=float)
+        c = iv_bolus(t)
+        res = nca(t, c, dose=DOSE, administration=Administration.IV_BOLUS)
+        self.assertIsNone(res.c0_back_extrapolated)
+        self.assertFalse(res.origin_inserted)
+
+
+# ---------------------------------------------------------------------------
+# Phoenix WinNonlin 출력과의 대조
+# ---------------------------------------------------------------------------
+class WinNonlinAgreement(unittest.TestCase):
+    """실제 WinNonlin 실행 결과를 그대로 못박아 둔다.
+
+    해석해 시험은 계산이 스스로 앞뒤가 맞는지를 보지만, 이 시험은 목적 그
+    자체를 본다 — 같은 자료를 같은 규칙으로 돌렸을 때 WinNonlin 과 같은
+    숫자가 나오는가.
+
+    두 실행 모두 선형 사다리꼴을 썼다. 보고된 값이 3-6 자리라 그 자리까지만
+    맞대 본다.
+    """
+
+    def _close(self, ours, expected, label):
+        self.assertIsNotNone(ours, msg=label)
+        self.assertAlmostEqual(ours, expected, delta=abs(expected) * 2e-5, msg=label)
+
+    def test_iv_bolus_one_milligram(self):
+        # 시각은 시간, 농도는 ng/mL. t=0 에 0 이 적혀 있는 정맥 볼루스라
+        # C0 를 되돌려 세워야 맞는다.
+        t = np.array([0, 0.0833, 0.1667, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 8, 14, 24, 48],
+                     dtype=float)
+        c = np.array([0, 8.12, 7.2, 5.24, 4.64, 2.96, 2.56, 2.16, 1.8, 1.44, 1.24,
+                      0.36, 0.16, 0, 0], dtype=float)
+        res = nca(t, c, dose=1e6, method=AUCMethod.LINEAR,
+                  administration=Administration.IV_BOLUS)
+
+        self._close(res.auc_inf_obs * 60.0, 954.219, "AUCINF_obs (min*ng/mL)")
+        self._close(res.aumc_inf * 3600.0, 222543.300, "AUMCINF_obs (min^2*ng/mL)")
+        self._close(res.c_max, 8.120, "Cmax (ng/mL)")
+        self._close(res.mrt * 60.0, 233.220, "MRTINF_obs (min)")
+        self._close(res.cl / 60.0, 1047.978, "CL (mL/min)")
+        self._close(res.vss, 244409.850, "Vss (mL)")
+
+    def test_oral_eighty_milligrams(self):
+        # 첫 채혈이 0.5h 라 원점을 세워 넣어야 맞는다.
+        t = np.array([0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 24], dtype=float)
+        c = np.array([19.649, 63.513, 81.188, 79.154, 70.309, 60.764, 42.634,
+                      29.074, 13.803, 4.356], dtype=float)
+        res = nca(t, c, dose=80e6, method=AUCMethod.LINEAR,
+                  administration=Administration.EXTRAVASCULAR)
+
+        self._close(res.auc_inf_obs * 60.0, 38652.037, "AUCINF_obs (min*ng/mL)")
+        self._close(res.aumc_inf * 3600.0, 17865444.0, "AUMCINF_obs (min^2*ng/mL)")
+        self._close(res.c_max, 81.188, "Cmax (ng/mL)")
+        self._close(res.mrt * 60.0, 462.21223, "MRTINF_obs (min)")
+        self._close(res.cl / 60.0, 2069.7486, "Cl_F_obs (mL/min)")
+        self._close(res.vz, 916708.27, "Vz_F_obs (mL)")
+        self._close(res.lambda_z / 60.0, 0.002257805, "Lambda_z (1/min)")
+
+    def test_the_terminal_phase_is_chosen_the_same_way(self):
+        # 경구 자료에서는 자동 선택이 WinNonlin 과 같은 점을 고른다:
+        # 2-24h, 7점. 이것이 어긋나면 위 시험의 AUCINF 도 함께 어긋난다.
+        t = np.array([0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 24], dtype=float)
+        c = np.array([19.649, 63.513, 81.188, 79.154, 70.309, 60.764, 42.634,
+                      29.074, 13.803, 4.356], dtype=float)
+        res = nca(t, c, dose=80e6, method=AUCMethod.LINEAR,
+                  administration=Administration.EXTRAVASCULAR)
+        self.assertEqual(res.lambda_z_n_points, 7)
+        self.assertAlmostEqual(res.lambda_z_t_first, 2.0, places=9)
+        self.assertAlmostEqual(res.lambda_z_t_last, 24.0, places=9)
 
 
 # ---------------------------------------------------------------------------

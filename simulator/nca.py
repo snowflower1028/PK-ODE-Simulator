@@ -472,18 +472,29 @@ def back_extrapolate_c0(
     """정맥 볼루스에서 t=0 농도를 역외삽한다.
 
     첫 채혈이 0시점이 아니면 그 앞의 넓이가 통째로 빠진다. 볼루스는 t=0 에
-    최고 농도를 갖는 것이 정의이므로, 감소하는 첫 두 점의 로그선형 기울기로
-    C0 를 되돌려 그 구간을 메운다. WinNonlin 도 같은 방식을 쓴다.
+    최고 농도를 갖는 것이 정의이므로, 감소하는 첫 두 정량점의 로그선형
+    기울기로 C0 를 되돌려 그 구간을 메운다. WinNonlin 도 같은 방식을 쓴다.
 
-    되돌릴 수 없으면(첫 두 점이 감소하지 않는 등) None.
+    0시점 채혈이 있더라도 그 값이 0 이면 마찬가지로 되돌린다. 볼루스에서
+    t=0 의 0 은 측정이 아니라 "아직 재지 않았다" 는 뜻이고, 그것을 그대로
+    믿으면 첫 조각이 삼각형으로 깎여 AUC 가 준다 — 실제 자료에서 2.4%
+    차이가 났다.
+
+    되돌릴 수 없으면(정량점이 둘 미만이거나 늘어나는 등) None.
     """
     t, c = _clean(time, conc)
-    if t.size < 2 or t[0] <= 0:
+    positive = np.flatnonzero(c > 0)
+    if positive.size < 2:
         return None
-    if not (c[0] > 0 and c[1] > 0 and c[1] < c[0]):
-        return None
-    k = (np.log(c[0]) - np.log(c[1])) / (t[1] - t[0])
-    return float(np.exp(np.log(c[0]) + k * t[0]))
+
+    i, j = int(positive[0]), int(positive[1])
+    if t[i] <= 0:
+        return None      # 0시점에 이미 양수 농도가 있다. 되돌릴 것이 없다.
+    if not (c[j] < c[i]):
+        return None      # 늘어나고 있으면 볼루스의 말기가 아니다.
+
+    k = (np.log(c[i]) - np.log(c[j])) / (t[j] - t[i])
+    return float(np.exp(np.log(c[i]) + k * t[i]))
 
 
 # ---------------------------------------------------------------------------
@@ -625,6 +636,9 @@ class NCAResult:
     dose: Optional[float] = None
     #: IV 볼루스에서 t=0 농도를 역외삽했다면 그 값
     c0_back_extrapolated: Optional[float] = None
+    #: 혈관외·주입에서 t=0 에 0 을 세워 넣었는지. 관측이 아니라 가정이므로
+    #: 결과에 드러내 둔다.
+    origin_inserted: bool = False
     #: 이 결과가 곡선 직접 적분인지(NCA 가정 없음) 표시
     direct_integration: bool = False
     warnings: List[str] = field(default_factory=list)
@@ -678,23 +692,43 @@ def nca(
         res.warnings.append("Not enough points to analyse.")
         return res
 
-    # --- 볼루스면 t=0 을 되살린다 -----------------------------------------
-    if administration is Administration.IV_BOLUS and t[0] > 0:
-        c0 = back_extrapolate_c0(t, c)
-        if c0 is not None:
-            res.c0_back_extrapolated = _f(c0)
-            t = np.concatenate(([0.0], t))
-            c = np.concatenate(([c0], c))
-        else:
-            res.warnings.append(
-                "No sample at time 0 and C0 could not be back-extrapolated; "
-                "AUC misses the interval before the first sample."
-            )
+    # 관측값 그 자체는 따로 붙들어 둔다. 아래에서 t=0 을 세워 넣는데, 그렇게
+    # 만든 값이 Cmax 로 새어 나가면 안 되기 때문이다 — Cmax 는 잰 값이다.
+    t_obs, c_obs = t, c
+
+    # --- t=0 을 세운다 -----------------------------------------------------
+    # 투여 방식마다 t=0 에 무엇이 있는지가 정해져 있다. 볼루스는 그 순간이
+    # 최고 농도이므로 되돌려 세우고, 나머지는 아직 약이 오지 않았으므로 0 이다.
+    # 어느 쪽이든 세워 두지 않으면 첫 조각의 넓이가 통째로 빠진다.
+    if administration is Administration.IV_BOLUS:
+        starts_at_zero = t[0] == 0.0
+        if not starts_at_zero or c[0] <= 0:
+            c0 = back_extrapolate_c0(t, c)
+            if c0 is not None:
+                res.c0_back_extrapolated = _f(c0)
+                if starts_at_zero:
+                    c = c.copy()
+                    c[0] = c0          # 자리에 있던 0 을 갈아 끼운다
+                else:
+                    t = np.concatenate(([0.0], t))
+                    c = np.concatenate(([c0], c))
+            elif not starts_at_zero:
+                res.warnings.append(
+                    "No sample at time 0 and C0 could not be back-extrapolated; "
+                    "AUC misses the interval before the first sample."
+                )
+    elif t[0] > 0:
+        # 혈관외와 주입은 투여 전에 약이 없다. t=0 에 0 을 놓는다.
+        t = np.concatenate(([0.0], t))
+        c = np.concatenate(([0.0], c))
+        res.origin_inserted = True
 
     # --- 관찰값에서 직접 -----------------------------------------------
-    i_max = int(np.argmax(c))
-    res.c_max = _f(c[i_max])
-    res.t_max = _f(t[i_max])
+    # Cmax 와 Tmax 는 잰 값에서만 고른다. 위에서 세운 t=0 값은 관측이 아니다 —
+    # WinNonlin 도 C0 를 따로 보고하고 Cmax 는 관측 최대값으로 둔다.
+    i_max = int(np.argmax(c_obs))
+    res.c_max = _f(c_obs[i_max])
+    res.t_max = _f(t_obs[i_max])
 
     positive = np.flatnonzero(c > 0)
     if positive.size:
@@ -778,6 +812,17 @@ def nca(
         if res.auc_inf_pred:
             res.auc_extrap_pct_pred = _f(
                 100.0 * (res.auc_inf_pred - res.auc_last) / res.auc_inf_pred
+            )
+
+    # 세워 넣은 첫 조각이 큰 몫을 차지하면 말해 준다. 첫 채혈이 늦을수록
+    # 그 삼각형은 잰 것이 아니라 가정한 것이고, 늦을수록 커진다.
+    if res.origin_inserted and res.auc_last:
+        wedge = 0.5 * t_obs[0] * c_obs[0]
+        share = 100.0 * wedge / res.auc_last
+        if share > 5.0:
+            res.warnings.append(
+                f"The first sample is at {t_obs[0]:g}; assuming zero at time 0 "
+                f"contributes {share:.0f}% of AUC(0-last) and is not measured."
             )
 
     # --- 평균 체류시간 -----------------------------------------------------

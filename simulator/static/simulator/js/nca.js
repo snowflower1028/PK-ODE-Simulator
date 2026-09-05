@@ -45,6 +45,12 @@ const NCA_ROWS = [
     caveat: 'Below-limit samples after this point do not count, whatever rule you chose for them — that choice only moves AUCall.',
   },
   {
+    key: 'c0_back_extrapolated', label: 'C<sub>0</sub>',
+    definition: 'For an IV bolus with no measurable concentration at time zero, the value back-extrapolated from the first two measurable points.',
+    formula: 'exp(ln C1 + k·t1),  k from the first two points',
+    caveat: 'Not a measurement. A bolus is at its peak the instant it is given, so leaving the profile to start at the first sample throws that area away — but the number itself rests on two points, and if the first of those is still in a distribution phase it comes out too low. Blank when the profile already has a measurable concentration at time zero.',
+  },
+  {
     key: 't_last', label: 'T<sub>last</sub>',
     definition: 'The time of the last measurable concentration.',
     formula: 't at Clast',

@@ -169,8 +169,8 @@ below the limit of quantification — it is not silently read as zero.
 ## How the numbers are checked
 
 PK software is easy to write and hard to trust, so the arithmetic is pinned by
-140 tests that compare against answers known in closed form rather than against
-values someone once eyeballed.
+149 tests that compare against answers known in closed form — or against Phoenix
+WinNonlin — rather than against values someone once eyeballed.
 
 ```bash
 python manage.py test simulator
@@ -183,6 +183,13 @@ python manage.py test simulator
 - **Unit algebra.** Every conversion round-trips, and the composed ones are
   checked by hand: 100 mg with an AUC of 25 ng/mL·h gives 4000 L/h; the same dose
   as 100 mg/kg gives 4000 L/h/kg, which is 66 667 mL/min/kg.
+- **Agreement with WinNonlin.** Two real runs are pinned as tests: a 1 mg IV
+  bolus and an 80 mg oral dose, checked on AUC(0–∞), AUMC(0–∞), Cmax, MRT, CL,
+  Vss/Vz and λz. Reproducing them turned up three places where this app differed
+  — a bolus recorded as zero at time 0 needs its C0 back-extrapolated, an
+  extravascular profile that starts late needs a zero placed at time 0, and
+  neither of those constructed values may become Cmax. All three are fixed, and
+  the two profiles now agree to the last digit WinNonlin reports.
 - **Regression tests for bugs that were actually found.** Two examples, both of
   which had been sitting in working code:
 
@@ -230,7 +237,7 @@ simulator/
 │       ├── tooltip.js       shared — the ⓘ explanations
 │       └── resize.js        shared — sidebar and plot sizing
 └── tests/
-    ├── test_nca.py          59
+    ├── test_nca.py          68
     ├── test_units.py        45
     ├── test_fitting.py      19
     └── test_metrics.py      17
