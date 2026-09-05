@@ -24,7 +24,11 @@ parameters for you and builds the inputs.
 - **Simulation** — time range, resolution, log axis, derived variables (`C1 = A1/V`)
 - **PK summary** — Cmax, Tmax, t½, AUC(0–last), AUC(0–∞), %Extrap, CL, Vz per
   compartment. Under repeat dosing the table switches to steady-state columns
-  (Cmax,ss, Ctrough, Cavg, AUCτ, %Fluctuation, Racc, CLss)
+  (Cmax,ss, Ctrough, Cavg, AUCτ, %Fluctuation, Racc, CLss). Rows are marked
+  `model` or `NCA`: the model rows integrate the solved curve directly, while an
+  uploaded dataset gets the same noncompartmental treatment the calculator gives
+  it, so you can read the two next to each other and see what the assumptions
+  cost
 - **Parameter fitting** — least squares or maximum likelihood with additive,
   proportional and combined error models; weighting schemes; per-group or shared
   parameters; bounds; standard errors from the Hessian
@@ -57,12 +61,21 @@ Both tools keep your work across a refresh and can save a session to a file.
 
 ## Screenshots
 
-<!-- Screenshot 1 — ODE Simulator: a parsed model in the sidebar, the profile
-     plot with an observed dataset overlaid, and the PK summary table below. -->
+<!-- To add these: drag each image into a GitHub issue or pull-request comment,
+     copy the https://github.com/user-attachments/... URL it produces, and paste
+     it in place of URL below — then delete the surrounding comment markers. -->
 
-<!-- Screenshot 2 — NCA Calculator: two or three registered series as cards, the
-     semi-log plot with the terminal points highlighted and the fitted slope, and
-     the parameter table. -->
+### ODE Simulator
+
+<!-- ![A two-compartment IV model: the parsed system and its parameters in the
+     sidebar, an observed dataset overlaid on the profile, and a PK summary that
+     puts the model-derived and NCA-derived parameters on adjacent rows](URL) -->
+
+### NCA Calculator
+
+<!-- ![Two registered series, the selected one shown on a semi-log plot with the
+     terminal points picked out and the fitted slope drawn through them, and the
+     parameter table below with its units](URL) -->
 
 ---
 
