@@ -1,205 +1,287 @@
-# 🧪 PK Simulator Web App
+# PK-ODE-Simulator
 
-A fully interactive web application for simulating pharmacokinetic (PK) profiles from custom ODE systems. Built with **Django + Bootstrap + JavaScript (Plotly)**. Designed for researchers, students, and pharmacometricians.
+**[Open the app →](https://pk-ode-simulator.onrender.com/)**
 
----
+Two pharmacokinetic tools that share one workspace: a simulator that solves
+whatever ODE system you type, and a noncompartmental analysis calculator that
+works from observed concentrations. Switch between them with the menu at the top
+left. Django on the server, plain JavaScript and Plotly in the browser.
 
-## 🔧 Features
-
-- ✍️ **Custom ODE System** input (e.g., `dCdt = -kel*C`)
-- ⚙️ Initial values & parameter definition (auto-detected from equations)
-- 💉 **Flexible Dosing** interface
-  - IV Bolus / Infusion
-  - Repeat dosing schedule
-- ⏱️ Simulation controls (time range, resolution)
-- 📊 **Interactive Plot** (Plotly-based)
-  - Y-axis log scale toggle
-  - Auto-highlight selected compartments
-- 📈 **PK Parameter Summary Table**
-  - `Cmax`, `Tmax`, `AUC` per compartment
-- 📂 **Observed Data Upload**
-  - CSV upload of external measurements
-  - Overlay as dots on simulation chart
+Built for researchers, students and pharmacometricians who want to see what a
+model does — and, just as often, to see where a number stops being a measurement
+and starts being an extrapolation.
 
 ---
 
-## 📁 File Structure
+## The two tools
 
-```
-simulator/
-├── templates/
-│   └── index.html         # Main HTML with Bootstrap UI
-├── static/
-│   └── simulator/js/
-│       └── dosing.js      # Full simulation logic and dynamic UI
-├── views.py               # Handles simulation request and returns results
-├── solver.py              # Equation parser and numerical solver
-```
+### ODE Simulator
+
+Type a system of differential equations; the app finds the compartments and
+parameters for you and builds the inputs.
+
+- **Dosing** — bolus, zero-order infusion, and repeat schedules, into any compartment
+- **Simulation** — time range, resolution, log axis, derived variables (`C1 = A1/V`)
+- **PK summary** — Cmax, Tmax, t½, AUC(0–last), AUC(0–∞), %Extrap, CL, Vz per
+  compartment. Under repeat dosing the table switches to steady-state columns
+  (Cmax,ss, Ctrough, Cavg, AUCτ, %Fluctuation, Racc, CLss)
+- **Parameter fitting** — least squares or maximum likelihood with additive,
+  proportional and combined error models; weighting schemes; per-group or shared
+  parameters; bounds; standard errors from the Hessian
+- **Sensitivity analysis** — sweep one value and watch the curve move, or nudge
+  every parameter and rank them in a tornado plot
+- **Observed vs Predicted** — AFE, AAFE, within-2-fold, worst point, RMSE
+
+### NCA Calculator
+
+Register time–concentration series and analyse them one at a time.
+
+- **Built-in spreadsheet** — type values in, paste two columns straight from Excel,
+  or import CSV/XLSX. A file with a subject column becomes one series per subject
+- **Per series** — its own name, concentration and time units, molecular weight,
+  dose, route and body weight. A study can mix them without one series quietly
+  taking on another's units
+- **Terminal phase by hand** — best-fit λz to start, then click points off the
+  plot or pick the range from the sample times. `n`, `R²adj` and **Span** update
+  as you go, so you can see what the choice costs
+- **Below the limit** — the three regions (before the first measurable sample,
+  between measurable ones, after the last) are set separately, because the same
+  "not detected" means different things in each
+- **Units** — clearance and volume are shown the way people write them
+  (`mL/min/kg`, `L/h`), not as the raw composition of what you entered. A dose in
+  mg/kg carries through to CL in mL/min/kg without needing a body weight
+
+Both tools keep your work across a refresh and can save a session to a file.
 
 ---
 
-## How to Run Locally
+## Screenshots
 
-This project uses Python and Django. A local setup requires a virtual environment and environment variables for security.
+<!-- Screenshot 1 — ODE Simulator: a parsed model in the sidebar, the profile
+     plot with an observed dataset overlaid, and the PK summary table below. -->
 
-### 1\. Clone the Repository
+<!-- Screenshot 2 — NCA Calculator: two or three registered series as cards, the
+     semi-log plot with the terminal points highlighted and the fitted slope, and
+     the parameter table. -->
+
+---
+
+## Running locally
+
+Python and Django. A virtual environment and one environment file.
+
+### 1. Clone
 
 ```bash
 git clone https://github.com/snowflower1028/PK-ODE-Simulator.git
 cd PK-ODE-Simulator
 ```
 
-### 2\. Set Up a Virtual Environment
-
-It's highly recommended to use a virtual environment to manage project dependencies.
+### 2. Create a virtual environment
 
 ```bash
-# Create a virtual environment
 python -m venv .venv
 
-# Activate the virtual environment
-# On Windows:
+# Windows
 .venv\Scripts\activate
-# On macOS/Linux:
+# macOS / Linux
 source .venv/bin/activate
 ```
 
-### 3\. Install Dependencies
-
-Install all required packages using the `requirements.txt` file.
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4\. Create an Environment Variable File (`.env`)
+### 4. Write a `.env`
 
-For security, sensitive settings like the `SECRET_KEY` are managed via environment variables. Create a `.env` file in the project's root directory.
+Secrets come from environment variables. Create `.env` in the project root:
+
+```
+DJANGO_DEBUG=True
+DJANGO_SECRET_KEY='your-own-secret-key'
+```
+
+Generate a key with the virtual environment active:
 
 ```bash
-# Create a .env file in the root directory
-# For example, using 'copy con .env' on Windows or 'touch .env' on macOS/Linux
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
 ```
 
-Add the following content to your `.env` file.
-
-**.env**
-
-```
-# For local development, set DEBUG to True
-DJANGO_DEBUG=True
-
-# Generate your own secret key. Do not use a key exposed on GitHub.
-DJANGO_SECRET_KEY='your-new-secret-key-goes-here'
-```
-
-> **Important**: To generate a new secret key, run the following command in your terminal with the virtual environment activated:
-> `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`
-> Copy the output and paste it as the value for `DJANGO_SECRET_KEY`.
-
-### 5\. Run Database Migrations
-
-Set up the initial database tables required by Django.
+### 5. Migrate and run
 
 ```bash
 python manage.py migrate
-```
-
-### 6\. Run the Development Server
-
-You are now ready to run the application.
-
-```bash
 python manage.py runserver
 ```
 
-Open your web browser and go to **[http://127.0.0.1:8000](https://www.google.com/search?q=http://127.0.0.1:8000)** to see the application running.
+The simulator is at <http://127.0.0.1:8000/> and the NCA calculator at
+<http://127.0.0.1:8000/nca/>.
 
 ---
 
-## 📌 How to Simulate
+## Data formats
 
-### 1. Define ODEs
-Input your differential equations using the format:
+### Simulator — observed data
+
+Wide format, one column per measured series. Upload from **Data → Observed
+Datasets**; several files at once become several datasets, and you map each
+column to a model variable after upload.
+
 ```
-dCdt = -kel * C
-```
-
-### 2. Set Initial Values & Parameters
-Auto-generated based on your ODEs.
-
-### 3. Add Dosing Regimens
-- Choose compartment
-- Bolus or infusion
-- Set amount, timing, and repeat pattern
-
-### 4. Adjust Simulation Settings
-Set time range, resolution, and compartments to plot.
-
-### 5. Upload Observed Data *(Optional)*
-Upload a `.csv` with columns:
-```
-Time,A1_obs,A2_obs,...
+Time,Plasma,Metabolite
+0,0,0
+0.5,72.4,1.1
+1,88.1,3.6
+2,77.3,7.9
+4,51.2,11.4
 ```
 
-### 6. Run Simulation
-Click 🚀 to generate plot and PK summary.
+A row whose field count does not match the header is skipped, as is a row with a
+non-numeric time. Any other non-numeric or empty cell is a **missing point, not a
+zero**.
 
----
-## 📌 How to Fit
+### NCA — observed data
 
-### 1. Define ODEs
-Input your differential equations using the format:
+Long format, one row per sample. The subject column is optional; without it the
+whole file is one series.
+
 ```
-dCdt = -kel * C
-```
-
-### 2. Set Initial Values & Parameters
-Auto-generated based on your ODEs.
-
-### 3. Adjust Simulation Settings
-Set time range, resolution, and compartments to plot.
-
-### 4. Upload Observed Data
-Upload a `.csv` with columns:
-```
-Time,A1_obs,A2_obs,...
+Subject,Time,Conc
+S-01,0,BLQ
+S-01,0.5,124.3
+S-01,1,180.7
+S-02,0,BLQ
+S-02,0.5,98.1
 ```
 
-### 5. Press Fit Parameter Button
-Click to set the fitting options.
-
-### 6. Set the fitting options.
-- Select parameters and boundary (optional) to fit.
-- Add dosing group.
-- Select the weighting scheme.
-
-### 7. Run fitting
-Fitting performed with least-square method.
----
-
-## 📷 Screenshots
-![image](https://github.com/user-attachments/assets/930d0871-a9f3-4595-b0a6-bf7bd43693b3)
-
+Text that is not a number (`BLQ`, `<LLOQ`) is kept as written and treated as
+below the limit of quantification — it is not silently read as zero.
 
 ---
 
-## 📌 TODO (Roadmap)
+## How the numbers are checked
 
-- Export simulation & PK summary as CSV
-- Add units for parameters (e.g., mg, h, L)
-- Apply advanced dosing schedule (multiple, infusion, etc..) to fitting. 
+PK software is easy to write and hard to trust, so the arithmetic is pinned by
+140 tests that compare against answers known in closed form rather than against
+values someone once eyeballed.
+
+```bash
+python manage.py test simulator
+```
+
+- **Closed-form agreement.** One-compartment IV bolus and first-order absorption
+  have analytic solutions, so AUC(0–∞), t½, CL, Vz, MRT, Vss and the accumulation
+  ratio are all checked against them. For an IV bolus AUCτ at steady state equals
+  Dose/CL exactly, and Racc equals 1/(1 − e^(−kτ)) exactly.
+- **Unit algebra.** Every conversion round-trips, and the composed ones are
+  checked by hand: 100 mg with an AUC of 25 ng/mL·h gives 4000 L/h; the same dose
+  as 100 mg/kg gives 4000 L/h/kg, which is 66 667 mL/min/kg.
+- **Regression tests for bugs that were actually found.** Two examples, both of
+  which had been sitting in working code:
+
+  | on a 1-compartment bolus | reported | correct |
+  |---|---|---|
+  | AUC(0–∞), with a below-limit sample after Tlast | 26.867 (+7.5 %) | 25.000 |
+  | CL, same profile | 3.722 | 4.000 |
+
+  The first came from counting the tail twice — once as a trapezoid down to zero,
+  again as `Clast/λz`. A separate test fixes what the below-limit rules are worth:
+  calling a single mid-profile sample zero instead of leaving it out moved
+  AUC(0–last) by **−23.3 %** and CL from 4.00 to 5.14.
+
+The point of the second group is that these are not hypothetical. They are the
+reason the calculator reports Span next to R², keeps `AUClast` and `AUCall`
+apart, and makes you choose the below-limit rules rather than burying them in a
+default.
 
 ---
 
-## 🧑‍💻 Author
+## Project layout
 
-**Minsoo Lee**  
-College of Pharmacy, Seoul National University  
-[Contact](mailto:minsoo.lee@snu.ac.kr)
+```
+simulator/
+├── parser.py            ODE text → compartments, parameters, equations
+├── solver.py            numerical integration (LSODA), dose events
+├── analyzer.py          PK summary tables, observed-vs-predicted
+├── fitting.py           least squares / MLE, error models, weighting
+├── nca.py               noncompartmental analysis — no Django, numpy only
+├── units.py             unit algebra — no Django, no numpy
+├── metrics.py           AFE, AAFE, within-2-fold, RMSE
+├── views.py             HTTP endpoints for both tools
+├── urls.py
+├── templates/simulator/
+│   ├── index.html           ODE Simulator
+│   ├── nca.html             NCA Calculator
+│   └── _app_switcher.html   the menu shared by both
+├── static/simulator/
+│   ├── css/style.css
+│   └── js/
+│       ├── script.js        simulator
+│       ├── sensitivity.js   parameter sweeps
+│       ├── menubar.js       menu behaviour
+│       ├── nca.js           NCA calculator
+│       ├── tooltip.js       shared — the ⓘ explanations
+│       └── resize.js        shared — sidebar and plot sizing
+└── tests/
+    ├── test_nca.py          59
+    ├── test_units.py        45
+    ├── test_fitting.py      19
+    └── test_metrics.py      17
+```
+
+`nca.py` and `units.py` deliberately import nothing from Django or from the rest
+of the project, so they can be used as plain libraries.
 
 ---
 
-## 📄 License
+## Deployment
 
-This project is licensed under the MIT License.
+Deployed on [Render](https://render.com) from `render.yaml`; pushing to `main`
+builds and releases. Set `DJANGO_SECRET_KEY` in the dashboard and leave
+`DJANGO_DEBUG` unset.
+
+Measured on the deployed instance (Singapore, network round trip subtracted):
+
+| what | server time |
+|---|---|
+| simulate, 1-compartment, 200 points | 36 ms |
+| 7-point sweep | 205 ms |
+| 40-point sweep (the cap) | 1.45 s |
+| peak throughput | 12.7 req/s at concurrency 4 |
+| 385 requests | 0 errors |
+
+Two gunicorn workers on the 512 MB plan. Each worker is about 171 MB — most of it
+numpy, scipy, sympy and pandas — so three would not fit. Two means a long sweep
+does not block everyone else.
+
+---
+
+## Built with
+
+Django 5.2 · NumPy · SciPy · SymPy · pandas · Bootstrap 5.3 · Plotly.js (basic
+build, MIT) · SheetJS, loaded only when someone opens an `.xlsx`
+
+---
+
+## Roadmap
+
+- Units in the ODE Simulator (the NCA calculator has them)
+- Warn when a fit returns a physically impossible value, such as a negative rate
+  constant
+- Sparse-sampling NCA (one profile from several animals)
+- A summary across series in the calculator — the table shows one at a time, and
+  comparing them means exporting
+
+---
+
+## Author
+
+**Minsoo Lee**
+College of Pharmacy, Seoul National University
+[minsoo.lee@snu.ac.kr](mailto:minsoo.lee@snu.ac.kr)
+
+## License
+
+MIT.
