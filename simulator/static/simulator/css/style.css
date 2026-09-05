@@ -3204,3 +3204,70 @@ body.is-resizing {
 .nca-table tbody tr:not(.nca-group):focus-within > * {
     background-color: rgba(0, 122, 255, 0.07);
 }
+
+/* 저장소 링크. 메뉴바 오른쪽 끝 — 도구 전환이 왼쪽으로 갔으므로 이 자리가
+   비어 있다. margin-left:auto 로 밀어 두면 메뉴가 몇 개든 끝에 붙는다. */
+.app-repo-link {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: auto;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    color: var(--apple-text-secondary);
+    font-size: 0.8125rem;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+.app-repo-link:hover {
+    background-color: var(--apple-fill-quaternary, rgba(120, 120, 128, 0.12));
+    color: var(--apple-text-primary);
+}
+.app-repo-link i {
+    font-size: 1rem;
+    line-height: 1;
+}
+/* 좁아지면 아이콘만 남긴다 — 링크가 메뉴를 밀어내면 안 된다. */
+@media (max-width: 767.98px) {
+    .app-repo-text { display: none; }
+}
+
+/* 알고리즘 설명. 항목 이름과 절차를 좌우로 나눠, 찾을 때는 왼쪽만 훑고
+   읽을 때는 오른쪽을 읽게 한다. */
+.nca-algo {
+    margin: 0 0 1.1rem;
+}
+.nca-algo dt {
+    margin-top: 0.7rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--apple-text-primary);
+}
+.nca-algo dd {
+    margin: 0.2rem 0 0;
+    font-size: 0.8125rem;
+    line-height: 1.65;
+    color: var(--apple-text-secondary);
+}
+.nca-algo code {
+    display: inline-block;
+    margin: 0.12rem 0;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    background-color: var(--apple-background-secondary);
+    color: var(--apple-text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: 0.78125rem;
+    white-space: nowrap;
+}
+.nca-algo-head {
+    margin-top: 1.5rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--apple-card-border);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-tertiary);
+}

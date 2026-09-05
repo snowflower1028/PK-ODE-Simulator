@@ -50,11 +50,14 @@
         <button class="app-menu-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">Help</button>
         <ul class="dropdown-menu app-menu dropdown-menu-end">
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#ncaHelpModal" data-help-tab="#nca-help-csv"><i class="bi bi-filetype-csv"></i> Data Format</button></li>
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#ncaHelpModal" data-help-tab="#nca-help-algorithm"><i class="bi bi-calculator"></i> How Each Value Is Computed</button></li>
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#ncaHelpModal" data-help-tab="#nca-help-lambdaz"><i class="bi bi-graph-down"></i> Choosing the Terminal Phase</button></li>
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#ncaHelpModal" data-help-tab="#nca-help-blq"><i class="bi bi-eye-slash"></i> Below the Limit</button></li>
         </ul>
       </div>
     </nav>
+
+    {% include "simulator/_repo_link.html" %}
   </header>
 
   <div class="app-shell">
@@ -470,6 +473,146 @@ S-02,0.5,98.1</pre>
                chooses which one you are looking at, and the CSV export carries
                all of them.</p>
           </section>
+          <section id="nca-help-algorithm">
+            <h6>How each value is computed</h6>
+            <p>Exactly what the calculator does, in the order it does it. Where a
+               choice exists it is named, so a number you disagree with can be
+               traced to the setting that produced it.</p>
+
+            <h6 class="nca-algo-head">1 &middot; Preparing the profile</h6>
+            <dl class="nca-algo">
+              <dt>Cleaning</dt>
+              <dd>Rows whose time or concentration is not a number are dropped;
+                  the rest are sorted by time. Rows you untick in the spreadsheet
+                  are removed before anything else happens.</dd>
+
+              <dt>Below the limit</dt>
+              <dd>Applied next, by the three rules under <em>Below the limit</em>
+                  &mdash; before the first measurable sample, between measurable
+                  ones, and after the last.</dd>
+
+              <dt>Building t = 0</dt>
+              <dd>The route decides what belongs at time zero.
+                  <br><strong>IV bolus.</strong> A bolus is at its peak the instant
+                  it is given, so a profile with no measurable concentration at
+                  t&nbsp;=&nbsp;0 (missing, or recorded as zero) gets one built from
+                  the first two measurable points:
+                  <code>k = (ln C₁ − ln C₂) / (t₂ − t₁)</code>,
+                  <code>C₀ = exp(ln C₁ + k·t₁)</code>. Requires C₂ &lt; C₁; if the
+                  profile is still rising there is nothing to extrapolate and the
+                  calculator says so instead.
+                  <br><strong>Extravascular and infusion.</strong> There is no drug
+                  before the dose, so <code>(0, 0)</code> is inserted when the
+                  first sample is later than t&nbsp;=&nbsp;0. If that wedge is more
+                  than 5&nbsp;% of AUC(0&ndash;last) you are told, because it is
+                  assumed rather than measured.</dd>
+            </dl>
+
+            <h6 class="nca-algo-head">2 &middot; Read straight off the samples</h6>
+            <dl class="nca-algo">
+              <dt>C<sub>max</sub>, T<sub>max</sub></dt>
+              <dd>The largest measured concentration and its time; ties go to the
+                  earlier time. Taken from the <em>measured</em> points only &mdash; a
+                  back-extrapolated C₀ or an inserted zero never becomes C<sub>max</sub>.</dd>
+              <dt>C<sub>last</sub>, T<sub>last</sub></dt>
+              <dd>The last point with C &gt; 0. Below-limit samples after it do not
+                  move these, whatever rule you chose for them.</dd>
+            </dl>
+
+            <h6 class="nca-algo-head">3 &middot; Terminal phase</h6>
+            <dl class="nca-algo">
+              <dt>Automatic selection</dt>
+              <dd>Candidates are the measured points after T<sub>max</sub> with
+                  C&nbsp;&gt;&nbsp;0. Starting from the last three and extending one
+                  point back at a time, each window is fitted by ordinary least
+                  squares as <code>ln C = a − λz·t</code>. Windows whose slope is not
+                  negative are discarded. The rest are scored by
+                  <code>R²adj = 1 − (1 − R²)(n − 1)/(n − 2)</code> and the best is
+                  kept; when two are within 1×10⁻⁴ the one with more points wins.</dd>
+              <dt>Choosing by hand</dt>
+              <dd>Exactly the points you pick, at least three, C&nbsp;&gt;&nbsp;0.
+                  T<sub>max</sub> is not excluded &mdash; that judgement is yours.
+                  A non-negative slope is still refused.</dd>
+              <dt>What is reported</dt>
+              <dd><code>λz = −slope</code>,
+                  <code>t½ = ln 2 / λz</code>,
+                  <code>Corr_XY = −√R²</code>,
+                  the intercept <code>a</code> (which draws the line), the number of
+                  points, the first and last fitted times, and
+                  <code>Span = (last − first) / t½</code>.</dd>
+            </dl>
+
+            <h6 class="nca-algo-head">4 &middot; Areas</h6>
+            <dl class="nca-algo">
+              <dt>Linear trapezoid</dt>
+              <dd>Every interval: <code>Δt·(C₀ + C₁)/2</code>. For the moment,
+                  <code>Δt·(t₀C₀ + t₁C₁)/2</code>.</dd>
+              <dt>Linear up / log down</dt>
+              <dd>On a falling interval with both ends above zero:
+                  <code>Δt·(C₀ − C₁) / ln(C₀/C₁)</code>. Rising intervals, and any
+                  interval touching zero, fall back to linear.
+                  <br>For the moment, with <code>k = ln(C₀/C₁)/Δt</code>:
+                  <code>t₀(C₀ − C₁)/k + (C₀ − C₁)/k² − C₁·Δt/k</code>. This is
+                  <code>∫ t·C dt</code> integrated directly over
+                  <code>C(t) = C₀·e^(−k(t − t₀))</code>; the form often quoted as
+                  <code>(t₀C₀ − t₁C₁)/ln(C₀/C₁)</code> comes out negative.</dd>
+              <dt>AUC<sub>0–last</sub> and AUC<sub>all</sub></dt>
+              <dd>AUC(0&ndash;last) runs to T<sub>last</sub>. AUC<sub>all</sub> runs
+                  over every sample, including below-limit zeros after it. Keeping
+                  them apart matters: adding that zero tail to AUC(0&ndash;last)
+                  would count the same area twice, once as a trapezoid down to zero
+                  and again as the extrapolated tail.</dd>
+              <dt>AUC to infinity</dt>
+              <dd><code>AUC∞,obs = AUC(0–last) + C_last/λz</code>
+                  <br><code>C_last,pred = exp(a − λz·T_last)</code>, and
+                  <code>AUC∞,pred = AUC(0–last) + C_last,pred/λz</code>
+                  <br><code>%Extrap = (AUC∞ − AUC(0–last)) / AUC∞ × 100</code>
+                  &mdash; flagged above roughly 20&nbsp;%.</dd>
+              <dt>AUMC to infinity</dt>
+              <dd><code>AUMC∞ = AUMC(0–last) + T_last·C_last/λz + C_last/λz²</code>.
+                  Its extrapolated share is almost always larger than the AUC one,
+                  because the tail is weighted by time.</dd>
+              <dt>Partial areas</dt>
+              <dd>A boundary that is not a sample time is interpolated with the
+                  same rule the trapezoid uses on that interval, so the pieces add
+                  back to the whole. Past the end of the profile it extrapolates
+                  from the last sample &mdash; <code>C_end·(1 − e^(−λz(t − t_end)))/λz</code>
+                  &mdash; and returns nothing at all when λz could not be fitted, or
+                  when that last sample is not above zero, rather than inventing a
+                  tail.</dd>
+            </dl>
+
+            <h6 class="nca-algo-head">5 &middot; Derived from the areas</h6>
+            <dl class="nca-algo">
+              <dt>MRT</dt>
+              <dd><code>MRT = AUMC∞ / AUC∞,obs</code> and
+                  <code>MRT_last = AUMC(0–last) / AUC(0–last)</code>. For an
+                  infusion both have half the infusion duration subtracted, because
+                  delivery itself takes time. Neither needs a dose &mdash; they are
+                  ratios of areas.</dd>
+              <dt>CL and V<sub>z</sub></dt>
+              <dd><code>CL = Dose / AUC∞,obs</code>,
+                  <code>Vz = Dose / (λz · AUC∞,obs)</code>. Reported as CL/F and
+                  Vz/F for extravascular dosing, since F is unknown and cannot be
+                  separated from either.</dd>
+              <dt>V<sub>ss</sub></dt>
+              <dd><code>Vss = CL · MRT</code>, intravenous routes only. Without F,
+                  neither the clearance nor the volume can be pinned down on its
+                  own.</dd>
+              <dt>Per unit dose</dt>
+              <dd><code>Cmax/D</code>, <code>AUC(0–last)/D</code> and
+                  <code>AUC∞/D</code> divide by the dose exactly as entered &mdash;
+                  a dose in mg/kg gives values per kilogram.</dd>
+            </dl>
+
+            <h6 class="nca-algo-head">Where the settings live</h6>
+            <p>The trapezoid rule, the minimum number of λz points, the partial-AUC
+               windows and the three below-limit rules are all in
+               <strong>Analysis Options</strong>. Units, dose, route and body weight
+               belong to the selected series, not to the analysis, so they sit with
+               the data.</p>
+          </section>
+
           <section id="nca-help-lambdaz">
             <h6>Choosing the terminal phase</h6>
             <p>Best fit starts from the last three points and works backwards,
