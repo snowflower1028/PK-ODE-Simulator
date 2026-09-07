@@ -188,6 +188,12 @@
           <input type="number" id="nca-min-points" class="form-control form-control-sm"
                  value="3" min="3" max="20" step="1">
         </div>
+        <div class="nca-field nca-field-check">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="nca-exclude-tmax">
+            <label class="form-check-label" for="nca-exclude-tmax">Keep T<sub>max</sub> out of &lambda;z</label>
+          </div>
+        </div>
         <div class="nca-field">
           <label class="nca-label" for="nca-partial">Partial AUC</label>
           <input type="text" id="nca-partial" class="form-control form-control-sm"
@@ -522,13 +528,18 @@ S-02,0.5,98.1</pre>
             <h6 class="nca-algo-head">3 &middot; Terminal phase</h6>
             <dl class="nca-algo">
               <dt>Automatic selection</dt>
-              <dd>Candidates are the measured points after T<sub>max</sub> with
+              <dd>Candidates are the measured points from T<sub>max</sub> onwards with
                   C&nbsp;&gt;&nbsp;0. Starting from the last three and extending one
                   point back at a time, each window is fitted by ordinary least
                   squares as <code>ln C = a − λz·t</code>. Windows whose slope is not
                   negative are discarded. The rest are scored by
                   <code>R²adj = 1 − (1 − R²)(n − 1)/(n − 2)</code> and the best is
-                  kept; when two are within 1×10⁻⁴ the one with more points wins.</dd>
+                  kept; when two are within 1×10⁻⁴ the one with more points wins.
+                  <br>T<sub>max</sub> itself is a candidate, which is what
+                  WinNonlin did on the runs this was checked against; it can only
+                  be taken if it raises the adjusted R² on its own. Runs differ
+                  on this, so <em>Keep T<sub>max</sub> out of λz</em> in Analysis
+                  Options drops it from the pool.</dd>
               <dt>Choosing by hand</dt>
               <dd>Exactly the points you pick, at least three, C&nbsp;&gt;&nbsp;0.
                   T<sub>max</sub> is not excluded &mdash; that judgement is yours.

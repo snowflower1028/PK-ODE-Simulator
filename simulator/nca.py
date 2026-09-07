@@ -370,7 +370,7 @@ def best_fit_lambda_z(
     time: Sequence[float],
     conc: Sequence[float],
     min_points: int = 3,
-    exclude_tmax: bool = True,
+    exclude_tmax: bool = False,
 ) -> LambdaZ:
     """말기 구간을 자동으로 골라 lambda_z 를 추정한다 (WinNonlin Best Fit).
 
@@ -378,8 +378,12 @@ def best_fit_lambda_z(
     가장 좋은 조합을 고른다. 동점에 가까우면(0.0001 이내) 점이 많은 쪽을
     택한다 — 같은 설명력이면 표본이 큰 쪽이 안정적이기 때문이다.
 
-    Tmax 는 기본적으로 제외한다. 흡수가 끝나기 전 지점이 말기 기울기에
-    섞이면 t½ 가 짧게 나온다.
+    후보는 Tmax 앞을 잘라내되 Tmax 자체는 남긴다. WinNonlin 이 그렇게 한다 —
+    에토포시드 마우스 38 프로파일로 맞춰 본 결과, Tmax 를 후보에서 빼면 그 중 8 개가
+    WinNonlin 과 다른 구간을 골랐고 남겨 두면 38 개 모두 같은 구간을 골랐다.
+    Tmax 가 들어오려면 조정 결정계수를 스스로 끌어올려야 하므로, 흡수가 덜 끝난
+    점이 섞여 드는 일은 규칙 자체가 막는다. exclude_tmax=True 로 옛 동작을
+    부를 수 있다.
     """
     t, c = _clean(time, conc)
     if t.size < min_points:
@@ -668,6 +672,7 @@ def nca(
     loq: Optional[float] = None,
     blq_policy: Optional[BLQPolicy] = None,
     lambda_z_times: Optional[Sequence[float]] = None,
+    exclude_tmax: bool = False,
 ) -> NCAResult:
     """시간-농도 프로파일 하나에 대한 비구획 분석.
 
@@ -748,7 +753,9 @@ def nca(
                 "no terminal phase was fitted."
             )
     else:
-        lz = best_fit_lambda_z(t, c, min_points=min_lambda_z_points)
+        lz = best_fit_lambda_z(
+            t, c, min_points=min_lambda_z_points, exclude_tmax=exclude_tmax
+        )
     if lz.ok:
         res.lambda_z = _f(lz.value)
         res.half_life = _f(np.log(2.0) / lz.value)

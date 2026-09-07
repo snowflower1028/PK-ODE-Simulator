@@ -637,6 +637,9 @@ def nca_run(request):
 
         method = AUCMethod(data.get("method") or AUCMethod.LINEAR_LOG.value)
         min_points = int(data.get("min_lambda_z_points") or 3)
+        # 말기 구간 후보에서 Tmax 를 뺄지. WinNonlin 실행마다 갈리는
+        # 자리라 켜고 끌 수 있게 열어 둔다.
+        exclude_tmax = bool(data.get("exclude_tmax"))
         loq = data.get("loq")
         loq = float(loq) if loq not in (None, "") else None
         policy = _blq_policy(data.get("blq"))
@@ -672,6 +675,7 @@ def nca_run(request):
                 administration=administration,
                 infusion_duration=infusion,
                 min_lambda_z_points=min_points,
+                exclude_tmax=exclude_tmax,
                 partial_times=partial_times,
                 blq=mask,
                 loq=None if mask is not None else loq,

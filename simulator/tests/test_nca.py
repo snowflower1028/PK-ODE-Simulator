@@ -117,19 +117,22 @@ class LambdaZSelection(unittest.TestCase):
         """설명력이 같으면 점이 많은 쪽이 안정적이다.
 
         완전한 로그선형이라 어느 구간을 골라도 adj R² 가 1 이다. 최소 3점이
-        아니라 쓸 수 있는 최대 구간을 잡아야 한다. 볼루스는 첫 점이 곧
-        Tmax 이고 Tmax 는 제외되므로, 여섯 점 중 다섯 점이 상한이다.
+        아니라 쓸 수 있는 최대 구간을 잡아야 한다.
         """
         t = np.array([4, 8, 12, 24, 36, 48], dtype=float)  # 완전한 로그선형
         lz = best_fit_lambda_z(t, iv_bolus(t))
-        self.assertEqual(lz.n_points, t.size - 1)
-        self.assertAlmostEqual(lz.t_first, 8.0)
-
-    def test_keeping_tmax_uses_every_point(self):
-        t = np.array([4, 8, 12, 24, 36, 48], dtype=float)
-        lz = best_fit_lambda_z(t, iv_bolus(t), exclude_tmax=False)
         self.assertEqual(lz.n_points, t.size)
         self.assertAlmostEqual(lz.value, K, places=6)
+
+    def test_dropping_tmax_gives_up_one_point(self):
+        """Tmax 를 빼 달라고 하면 후보가 한 점 줄어든다.
+
+        볼루스는 첫 점이 곧 Tmax 이므로 여섯 점 중 다섯 점이 상한이 된다.
+        """
+        t = np.array([4, 8, 12, 24, 36, 48], dtype=float)
+        lz = best_fit_lambda_z(t, iv_bolus(t), exclude_tmax=True)
+        self.assertEqual(lz.n_points, t.size - 1)
+        self.assertAlmostEqual(lz.t_first, 8.0)
 
     def test_returns_empty_when_there_are_too_few_points(self):
         lz = best_fit_lambda_z([1.0, 2.0], [5.0, 4.0])
@@ -535,8 +538,12 @@ class WinNonlinAgreement(unittest.TestCase):
         t = np.array([0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 24], dtype=float)
         c = np.array([19.649, 63.513, 81.188, 79.154, 70.309, 60.764, 42.634,
                       29.074, 13.803, 4.356], dtype=float)
+        # 이 실행은 Tmax 를 말기 후보에서 뺐다. Tmax(1.5h) 를 넣으면 8점
+        # 구간의 조정 결정계수가 더 높아 규칙상 그쪽이 뽑히는데, WinNonlin 은
+        # 7점을 보고했다 — 즉 후보에서 빠져 있었다는 뜻이다.
         res = nca(t, c, dose=80e6, method=AUCMethod.LINEAR,
-                  administration=Administration.EXTRAVASCULAR)
+                  administration=Administration.EXTRAVASCULAR,
+                  exclude_tmax=True)
 
         self._close(res.auc_inf_obs * 60.0, 38652.037, "AUCINF_obs (min*ng/mL)")
         self._close(res.aumc_inf * 3600.0, 17865444.0, "AUMCINF_obs (min^2*ng/mL)")
@@ -547,16 +554,104 @@ class WinNonlinAgreement(unittest.TestCase):
         self._close(res.lambda_z / 60.0, 0.002257805, "Lambda_z (1/min)")
 
     def test_the_terminal_phase_is_chosen_the_same_way(self):
-        # 경구 자료에서는 자동 선택이 WinNonlin 과 같은 점을 고른다:
-        # 2-24h, 7점. 이것이 어긋나면 위 시험의 AUCINF 도 함께 어긋난다.
+        # 같은 설정(Tmax 제외)으로 돌리면 자동 선택이 WinNonlin 과 같은 점을
+        # 고른다: 2-24h, 7점. 이것이 어긋나면 위 시험의 AUCINF 도 함께 어긋난다.
         t = np.array([0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 24], dtype=float)
         c = np.array([19.649, 63.513, 81.188, 79.154, 70.309, 60.764, 42.634,
                       29.074, 13.803, 4.356], dtype=float)
         res = nca(t, c, dose=80e6, method=AUCMethod.LINEAR,
-                  administration=Administration.EXTRAVASCULAR)
+                  administration=Administration.EXTRAVASCULAR,
+                  exclude_tmax=True)
         self.assertEqual(res.lambda_z_n_points, 7)
         self.assertAlmostEqual(res.lambda_z_t_first, 2.0, places=9)
         self.assertAlmostEqual(res.lambda_z_t_last, 24.0, places=9)
+
+
+# ---------------------------------------------------------------------------
+class EtoposideMouseStudy(unittest.TestCase):
+    """마우스 에토포시드 연구의 WinNonlin 출력을 못박아 둔다.
+
+    정맥 10 mg/kg 20 마리, 경구 20 mg/kg 18 마리 — 모두 38 프로파일을 맞대어
+    본 결과, 비교 가능한 990 개 값이 전부 WinNonlin 이 찍은 자릿수 안에서
+    일치했다. 여기에는 그 중 세 프로파일을 남긴다. 하나는 볼루스의 C0 역외삽,
+    둘은 말기 구간 후보에 Tmax 가 들어간 경우다.
+
+    용량은 ng/kg 로 넘긴다. 농도가 ng/mL 이므로 CL 이 mL/hr/kg 로 바로 나온다.
+    """
+
+    def _close(self, ours, expected, label):
+        self.assertIsNotNone(ours, msg=label)
+        # WinNonlin 이 소수 넷째 자리까지 찍으므로 그 반까지만 따진다.
+        self.assertAlmostEqual(ours, expected, delta=5e-5 + abs(expected) * 1e-9,
+                               msg=label)
+
+    def test_iv_bolus_control_mouse_one(self):
+        t = np.array([0.083, 0.25, 0.5, 1.0, 1.5, 3.0, 5.0, 7.0])
+        c = np.array([8800.0, 4980.0, 3880.0, 2240.0, 961.0, 428.0, 218.0, 76.9])
+        res = nca(t, c, dose=10e6, method=AUCMethod.LINEAR,
+                  administration=Administration.IV_BOLUS)
+
+        # 첫 채혈이 5 분이라 t=0 을 역외삽해 세운다. 그 값이 Cmax 로 새면 안 된다.
+        self._close(res.c0_back_extrapolated, 11678.0158, "C0")
+        self._close(res.c_max, 8800.0, "Cmax")
+        self.assertEqual(res.lambda_z_n_points, 4)
+        self._close(res.lambda_z_t_first, 1.5, "lambda_z lower")
+        self._close(res.lambda_z, 0.4450, "Lambda_z")
+        self._close(res.half_life, 1.5576, "HL_Lambda_z")
+        self._close(res.auc_last, 7420.8677, "AUClast")
+        self._close(res.auc_inf_obs, 7593.6683, "AUCINF_obs")
+        self._close(res.aumc_last, 8605.1825, "AUMClast")
+        self._close(res.aumc_inf, 10203.0838, "AUMCINF_obs")
+        self._close(res.mrt, 1.3436, "MRTINF_obs")
+        self._close(res.cl, 1316.8866, "Cl_obs")
+        self._close(res.vz, 2959.1521, "Vz_obs")
+        self._close(res.vss, 1769.4089, "Vss_obs")
+
+    def test_oral_abx_mouse_one_starts_the_slope_at_tmax(self):
+        # WinNonlin 이 1.5-9 h 다섯 점을 썼다. 1.5 h 가 곧 Tmax 다 — Tmax 를
+        # 후보에서 빼면 세 점(5-9 h)짜리 다른 구간이 뽑힌다.
+        t = np.array([0.25, 0.5, 1.0, 1.5, 3.0, 5.0, 7.0, 9.0])
+        c = np.array([39.2, 550.0, 1785.0, 2025.0, 475.0, 347.5, 156.5, 22.35])
+        res = nca(t, c, dose=20e6, method=AUCMethod.LINEAR,
+                  administration=Administration.EXTRAVASCULAR)
+
+        self._close(res.t_max, 1.5, "Tmax")
+        self.assertEqual(res.lambda_z_n_points, 5)
+        self._close(res.lambda_z_t_first, 1.5, "lambda_z lower")
+        self._close(res.lambda_z, 0.5309, "Lambda_z")
+        self._close(res.lambda_z_adj_r_squared, 0.9102, "Rsq_adjusted")
+        self._close(res.auc_last, 4995.1500, "AUClast")
+        self._close(res.auc_inf_obs, 5037.2483, "AUCINF_obs")
+        self._close(res.auc_extrap_pct, 0.8357, "AUC_%Extrap_obs")
+        self._close(res.aumc_inf, 12854.6561, "AUMCINF_obs")
+        self._close(res.mrt, 2.5519, "MRTINF_obs")
+        self._close(res.cl, 3970.4217, "Cl_F_obs")
+        self._close(res.vz, 7478.6627, "Vz_F_obs")
+
+    def test_oral_control_mouse_four_uses_six_points_from_tmax(self):
+        t = np.array([0.25, 0.5, 1.0, 1.5, 3.0, 5.0, 7.0, 9.0])
+        c = np.array([40.55, 455.5, 735.0, 640.0, 490.0, 153.0, 127.0, 42.95])
+        res = nca(t, c, dose=20e6, method=AUCMethod.LINEAR,
+                  administration=Administration.EXTRAVASCULAR)
+
+        self.assertEqual(res.lambda_z_n_points, 6)
+        self._close(res.lambda_z_t_first, 1.0, "lambda_z lower")
+        self._close(res.lambda_z, 0.3483, "Lambda_z")
+        self._close(res.auc_last, 2648.9000, "AUClast")
+        self._close(res.auc_inf_obs, 2772.2042, "AUCINF_obs")
+        self._close(res.aumc_last, 7682.4906, "AUMClast")
+        self._close(res.mrt, 3.2993, "MRTINF_obs")
+        self._close(res.cl, 7214.4757, "Cl_F_obs")
+
+    def test_dropping_tmax_moves_the_window(self):
+        """설정이 실제로 듣는지. 같은 자료에 Tmax 를 빼면 구간이 달라진다."""
+        t = np.array([0.25, 0.5, 1.0, 1.5, 3.0, 5.0, 7.0, 9.0])
+        c = np.array([39.2, 550.0, 1785.0, 2025.0, 475.0, 347.5, 156.5, 22.35])
+        res = nca(t, c, dose=20e6, method=AUCMethod.LINEAR,
+                  administration=Administration.EXTRAVASCULAR,
+                  exclude_tmax=True)
+        self.assertEqual(res.lambda_z_n_points, 3)
+        self._close(res.lambda_z_t_first, 5.0, "lambda_z lower")
 
 
 # ---------------------------------------------------------------------------

@@ -911,7 +911,8 @@ function showMessage(text) {
 
 /* ------------------------------------------------------------ */
 /* 계산                                                          */
-/* ------------------------------------------------------------ */function analysisPayload() {
+/* ------------------------------------------------------------ */
+function analysisPayload() {
   const partial = $('nca-partial').value
     .split(',')
     .map((piece) => Number(piece.trim()))
@@ -936,6 +937,7 @@ function showMessage(text) {
     profiles,
     method: $('nca-method').value,
     min_lambda_z_points: $('nca-min-points').value,
+    exclude_tmax: $('nca-exclude-tmax').checked,
     partial_times: partial,
     blq: {
       before: $('nca-blq-before').value,
@@ -1584,6 +1586,7 @@ const NcaSession = {
       options: {
         method: $('nca-method').value,
         minPoints: $('nca-min-points').value,
+        excludeTmax: $('nca-exclude-tmax').checked,
         partial: $('nca-partial').value,
         loq: $('nca-loq').value,
         blqBefore: $('nca-blq-before').value,
@@ -1648,6 +1651,9 @@ const NcaSession = {
       const put = (id, value) => { if (value !== undefined && value !== null) $(id).value = value; };
       put('nca-method', options.method);
       put('nca-min-points', options.minPoints);
+      if (typeof options.excludeTmax === 'boolean') {
+        $('nca-exclude-tmax').checked = options.excludeTmax;
+      }
       put('nca-partial', options.partial);
       put('nca-loq', options.loq);
       put('nca-blq-before', options.blqBefore);
@@ -1927,7 +1933,7 @@ function init() {
     }));
 
   // 계산 규칙은 모든 계열에 함께 걸린다.
-  ['nca-method', 'nca-min-points', 'nca-partial', 'nca-loq',
+  ['nca-method', 'nca-min-points', 'nca-exclude-tmax', 'nca-partial', 'nca-loq',
    'nca-blq-before', 'nca-blq-between', 'nca-blq-after']
     .forEach((id) => $(id).addEventListener('change', run));
 
