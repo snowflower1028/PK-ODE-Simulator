@@ -18,6 +18,7 @@ from sympy import symbols, lambdify
 from .parser import parse_ode_input
 from .solver import solve_ode_system
 from .analyzer import analyze_observed, analyze_simulated, compare_observed, observed_times
+from .semantics import resolve_variable_semantics
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +119,12 @@ def sweep(request):
             "t_end": float(data.get("t_end", 48)),
             "t_steps": int(data.get("t_steps", 200)),
         }
+        try:
+            ctx["variable_semantics"] = resolve_variable_semantics(
+                parsed, data.get("variable_semantics")
+            )
+        except ValueError as exc:
+            return JsonResponse({"status": "error", "message": str(exc)}, status=400)
 
         # 그릴 변수 하나만 다룬다. 스윕은 값마다 곡선이 하나씩 늘어나므로
         # 변수까지 여러 개면 화면에서도 응답 크기에서도 감당이 안 된다.
@@ -148,7 +155,7 @@ def _run_once(ctx, initials, params, doses):
         return None, {}
     pk = analyze_simulated(
         df, [variable], doses,
-        concentration_vars=set(ctx["derived"].keys()),
+        variable_semantics=ctx["variable_semantics"],
         derived_expressions=ctx["derived"],
     )
     return df, pk.get(variable, {})
@@ -401,6 +408,13 @@ def simulate(request):
         if not all_compartments or not equations:
             return JsonResponse({"status": "error", "message": "Failed to parse compartments or equations from input."}, status=400)
 
+        try:
+            variable_semantics = resolve_variable_semantics(
+                parsed, data.get("variable_semantics")
+            )
+        except ValueError as exc:
+            return JsonResponse({"status": "error", "message": str(exc)}, status=400)
+
         # lambdify를 위한 심볼 및 표현식 준비
         comp_syms = symbols(all_compartments)
         param_syms = symbols(all_parameters)
@@ -459,16 +473,11 @@ def simulate(request):
         # 격자라 곡선을 그대로 적분하면 되고, 뒤는 채혈 시점이 드문드문해
         # 보간과 외삽 규칙(NCA)이 필요하다. 자세한 이유는 analyzer.py 참고.
         #
-        # CL·Vz·Vss 는 농도에만 뜻이 있다. 파생 변수(C = A/V 처럼 사용자가
-        # 식으로 정의한 것)를 농도로 보고, 상태 변수(구획 내 양)에는 계산하지
-        # 않는다. 양을 AUC 로 나눈 값은 청소율이 아니기 때문이다.
-        concentration_vars = set(derived_expressions.keys())
-
         pk_summary = analyze_simulated(
             df_full,
             valid_selected_vars,
             doses,
-            concentration_vars=concentration_vars,
+            variable_semantics=variable_semantics,
             derived_expressions=derived_expressions,
         )
 
@@ -476,6 +485,7 @@ def simulate(request):
         observed_summary = analyze_observed(
             observed_datasets,
             doses,
+            variable_semantics=variable_semantics,
             derived_expressions=derived_expressions,
         )
         pk_summary.update(observed_summary)
@@ -495,7 +505,8 @@ def simulate(request):
             "data": {
                 "profile": df_filtered.to_dict(orient="list"),
                 "pk": pk_summary,
-                "comparison": comparison
+                "comparison": comparison,
+                "variable_semantics": variable_semantics,
             }
         })
 
@@ -522,6 +533,7 @@ def parse_ode_view(request):
         # JSON 응답을 위해 Sympy Expr 객체를 문자열로 변환
         response_data = {k: v for k, v in parsed.items() if k != 'equations'}
         response_data['equations'] = {k: str(v) for k, v in parsed.get('equations', {}).items()}
+        response_data['variable_semantics'] = resolve_variable_semantics(parsed)
 
         return JsonResponse({
             "status": "ok",

@@ -242,7 +242,7 @@ def analyze_simulated(
     df: pd.DataFrame,
     variables: Iterable[str],
     doses: Sequence[Dict],
-    concentration_vars: Optional[Iterable[str]] = None,
+    variable_semantics: Optional[Dict[str, Dict[str, str]]] = None,
     derived_expressions: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Dict[str, object]]:
     """시뮬레이션 곡선의 요약.
@@ -250,10 +250,11 @@ def analyze_simulated(
     격자가 촘촘하므로 선형 사다리꼴이 곧 직접 적분이다. 보간 방식을
     고를 일이 없고, 0 시점부터 시작하므로 역외삽도 필요 없다.
 
-    concentration_vars 에 없는 변수(구획 내 '양')는 용량이 필요한 항목
-    (CL, Vz, Vss)을 비워 둔다. 양을 AUC 로 나눈 값은 청소율이 아니다.
+    NCA는 사용자가 농도라고 명시하고 PK 범위를 지정한 변수에만 수행한다.
+    ``exposure``는 Cmax/AUC 같은 노출 지표만, ``systemic``은 용량 기반
+    CL/V까지 계산한다. 파생식이라는 사실만으로 농도로 취급하지 않는다.
     """
-    concentration_vars = set(concentration_vars or [])
+    variable_semantics = variable_semantics or {}
     derived_expressions = derived_expressions or {}
     time = df["Time"].to_numpy()
     regimen = dosing_regimen(doses)
@@ -262,21 +263,23 @@ def analyze_simulated(
     for var in variables:
         if var not in df.columns:
             continue
+        semantics = variable_semantics.get(var) or {}
+        if semantics.get("quantity_kind") != "concentration":
+            continue
+        pk_scope = semantics.get("pk_scope", "none")
+        if pk_scope not in {"exposure", "systemic"}:
+            continue
         conc = df[var].to_numpy()
 
-        is_conc = var in concentration_vars
+        use_dose = pk_scope == "systemic"
         result = nca(
             time,
             conc,
-            dose=dose_for(var, doses, derived_expressions) if is_conc else None,
+            dose=dose_for(var, doses, derived_expressions) if use_dose else None,
             method=AUCMethod.LINEAR,
             administration=infer_administration(var, doses, derived_expressions),
         )
         result.direct_integration = True
-        if not is_conc:
-            result.warnings.append(
-                "Amount, not concentration — clearance and volumes are left blank."
-            )
         row = _to_row(result)
         row["regimen"] = "single-dose"
 
@@ -286,7 +289,7 @@ def analyze_simulated(
             # 그저 마지막 투여의 봉우리다. 비우고 정상상태 값으로 갈아 끼운다.
             per_dose = (
                 dose_for(var, [dict(regimen.dose, repeat_every=None)], derived_expressions)
-                if is_conc else None
+                if use_dose else None
             )
             ss = _steady_state(
                 time, conc, regimen, var,
@@ -320,6 +323,7 @@ def analyze_simulated(
 def analyze_observed(
     datasets: Sequence[Dict],
     doses: Sequence[Dict],
+    variable_semantics: Optional[Dict[str, Dict[str, str]]] = None,
     derived_expressions: Optional[Dict[str, str]] = None,
     method: AUCMethod = AUCMethod.LINEAR_LOG,
 ) -> Dict[str, Dict[str, object]]:
@@ -336,6 +340,7 @@ def analyze_observed(
     것이라, 시뮬레이션 행과 나란히 놓아도 헷갈리지 않는다.
     """
     derived_expressions = derived_expressions or {}
+    variable_semantics = variable_semantics or {}
     results: Dict[str, Dict[str, object]] = {}
 
     for dataset in datasets or []:
@@ -352,9 +357,15 @@ def analyze_observed(
             if column == time_key:
                 continue
             variable = mappings.get(column) or column
+            semantics = variable_semantics.get(variable) or {}
+            if semantics.get("quantity_kind") != "concentration":
+                continue
+            pk_scope = semantics.get("pk_scope", "none")
+            if pk_scope not in {"exposure", "systemic"}:
+                continue
             conc = np.asarray([np.nan if v is None else v for v in values], dtype=float)
 
-            dose = dataset.get("dose")
+            dose = dataset.get("dose") if pk_scope == "systemic" else None
             dose = float(dose) if dose not in (None, "") else None
 
             result = nca(
@@ -364,7 +375,7 @@ def analyze_observed(
                 method=method,
                 administration=infer_administration(variable, doses, derived_expressions),
             )
-            if dose is None:
+            if dose is None and pk_scope == "systemic":
                 result.warnings.append(
                     "No dose given for this dataset — clearance and volumes need one."
                 )
@@ -492,4 +503,8 @@ def compare_observed(
 def analyze_pk(df: pd.DataFrame, compartments: list, total_dose: float) -> Dict[str, Dict[str, float]]:
     """예전 시그니처. 아직 이 함수를 부르는 코드가 있을 때를 위해 남겨 둔다."""
     doses = [{"compartment": c, "type": "bolus", "amount": total_dose} for c in compartments[:1]]
-    return analyze_simulated(df, compartments, doses, concentration_vars=compartments)
+    semantics = {
+        name: {"quantity_kind": "concentration", "pk_scope": "systemic"}
+        for name in compartments
+    }
+    return analyze_simulated(df, compartments, doses, variable_semantics=semantics)
