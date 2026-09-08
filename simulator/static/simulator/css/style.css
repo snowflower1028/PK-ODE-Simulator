@@ -3396,6 +3396,21 @@ body.is-resizing {
     }
 }
 
+/* 아래쪽 한 무리. 카드보다 확실히 조용해야 하지만 읽히기는 해야 한다.
+   본문이 아니라 서명이라, 화면이 좁아도 줄만 바뀌면 된다. */
+.home-footer {
+    flex: 0 0 auto;
+    padding: 0 1.25rem 1.5rem;
+    text-align: center;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: var(--apple-text-tertiary);
+}
+.home-footer p {
+    margin: 0;
+    font-size: inherit;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .home-card { transition: box-shadow 0.2s ease; }
     .home-card:hover { transform: none; }
