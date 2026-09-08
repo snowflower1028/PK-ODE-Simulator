@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PK ODE Simulator</title>
+  {% include "simulator/_favicon.html" %}
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
@@ -106,13 +107,13 @@
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#helpModal" data-help-tab="#help-csv"><i class="bi bi-filetype-csv"></i> Observed CSV Format</button></li>
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#helpModal" data-help-tab="#help-sensitivity"><i class="bi bi-sliders2"></i> Sensitivity Analysis</button></li>
           <li><hr class="dropdown-divider"></li>
-          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#aboutModal"><i class="bi bi-info-circle"></i> About PK ODE Simulator</button></li>
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#aboutAppModal"><i class="bi bi-info-circle"></i> About App</button></li>
         </ul>
       </div>
 
     </nav>
 
-    {% include "simulator/_repo_link.html" %}
+    {% include "simulator/_nav_right.html" with home=True %}
   </header>
 
   <div class="app-shell">
@@ -967,48 +968,7 @@ C     = A1/V</pre>
     </div>
   </div>
 
-  <div class="modal fade" id="aboutModal" tabindex="-1" aria-labelledby="aboutModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="aboutModalLabel"><i class="bi bi-info-circle"></i> About</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body about-body">
-          <div class="about-head">
-            <span class="about-mark" aria-hidden="true">🧪</span>
-            <div>
-              <h4 class="about-name">PK ODE Simulator</h4>
-              <p class="about-ver">Version 1.2</p>
-            </div>
-          </div>
-
-          <p class="about-desc">
-            An interactive web app for simulating pharmacokinetic profiles from a custom ODE system,
-            and for estimating parameters against observed data. Write your model as differential
-            equations, define dosing, run the simulation, and fit &mdash; all in the browser.
-          </p>
-
-          <dl class="about-meta">
-            <dt>Author</dt>
-            <dd>Minsoo Lee &middot; College of Pharmacy, Seoul National University</dd>
-            <dt>Contact</dt>
-            <dd><a href="mailto:minsoo.lee@snu.ac.kr">minsoo.lee@snu.ac.kr</a></dd>
-            <dt>Source</dt>
-            <dd><a href="https://github.com/snowflower1028/PK-ODE-Simulator" target="_blank" rel="noopener noreferrer">github.com/snowflower1028/PK-ODE-Simulator</a></dd>
-            <dt>License</dt>
-            <dd>MIT</dd>
-            <dt>Built with</dt>
-            <dd>Django &middot; SymPy &middot; SciPy &middot; Plotly</dd>
-          </dl>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#helpModal">Open Help</button>
-          <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  {% include "simulator/_about_modal.html" %}
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer></script>
 </body>

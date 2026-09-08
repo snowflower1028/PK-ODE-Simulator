@@ -578,6 +578,11 @@ def _asset_version() -> str:
     return f"?v={int(newest)}" if newest else ""
 
 
+def home(request):
+    """도구를 고르는 화면. 시뮬레이터와 계산기가 갈라지면서 필요해졌다."""
+    return render(request, "simulator/home.html", {"asset_v": _asset_version()})
+
+
 def index(request):
     return render(request, "simulator/index.html", {"asset_v": _asset_version()})
 

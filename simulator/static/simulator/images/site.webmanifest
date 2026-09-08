@@ -1,0 +1,12 @@
+{
+  "name": "PK Calculator",
+  "short_name": "PK Calc",
+  "icons": [
+    { "src": "/static/simulator/images/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/simulator/images/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#ffffff",
+  "background_color": "#f5f5f7",
+  "start_url": "/",
+  "display": "standalone"
+}

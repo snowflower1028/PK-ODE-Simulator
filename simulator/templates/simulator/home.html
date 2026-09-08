@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% load static %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PK Calculator</title>
+  {% include "simulator/_favicon.html" %}
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'simulator/css/style.css' %}{{ asset_v }}">
+</head>
+<body class="home-body">
+
+  <header class="app-menubar">
+    <div class="app-brand">
+      <img class="app-brand-img" src="{% static 'simulator/images/favicon-32x32.png' %}"
+           width="18" height="18" alt="" aria-hidden="true">
+      <span class="app-brand-name">PK Calculator</span>
+    </div>
+
+    {% comment %}
+      Docs 자리. 문서가 생기면 여기에 버튼 하나가 들어간다 — 지금은 비어
+      있지만 자리는 잡혀 있어서, 그때 배치가 다시 흔들리지 않는다.
+    {% endcomment %}
+    <nav class="app-menus" aria-label="Main menu">
+      <button class="app-menu-btn" type="button"
+              data-bs-toggle="modal" data-bs-target="#aboutAppModal">About</button>
+    </nav>
+
+    {% include "simulator/_nav_right.html" %}
+  </header>
+
+  <main class="home-main">
+    <nav class="home-tools" aria-label="Tools">
+
+      <a class="home-card home-card-sim" href="{% url 'index' %}">
+        <span class="home-card-plate" aria-hidden="true"><i class="bi bi-graph-up"></i></span>
+        <span class="home-card-name">ODE Simulator</span>
+        <span class="home-card-hint">simulate &amp; fit</span>
+      </a>
+
+      <a class="home-card home-card-nca" href="{% url 'nca' %}">
+        <span class="home-card-plate" aria-hidden="true"><i class="bi bi-calculator"></i></span>
+        <span class="home-card-name">NCA Calculator</span>
+        <span class="home-card-hint">observed data</span>
+      </a>
+
+    </nav>
+  </main>
+
+  {% include "simulator/_about_modal.html" %}
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

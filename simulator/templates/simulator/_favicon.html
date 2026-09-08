@@ -1,0 +1,10 @@
+{% comment %}
+  탭 아이콘. 세 페이지가 같은 것을 써야 하므로 한 곳에 둔다 — 도구를 오가는
+  동안 탭이 같은 얼굴이어야 한 앱으로 읽힌다.
+{% endcomment %}
+{% load static %}
+<link rel="icon" href="{% static 'simulator/images/favicon.ico' %}" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="{% static 'simulator/images/favicon-32x32.png' %}">
+<link rel="icon" type="image/png" sizes="16x16" href="{% static 'simulator/images/favicon-16x16.png' %}">
+<link rel="apple-touch-icon" sizes="180x180" href="{% static 'simulator/images/apple-touch-icon.png' %}">
+<link rel="manifest" href="{% static 'simulator/images/site.webmanifest' %}">

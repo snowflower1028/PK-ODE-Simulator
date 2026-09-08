@@ -1,0 +1,54 @@
+{% comment %}
+  앱 소개. 세 페이지가 같은 것을 보여야 하므로 한 곳에 둔다 — 랜딩은 메뉴바에서,
+  도구 페이지는 Help 메뉴에서 연다. 도구별 About 을 따로 두면 같은 물음에 두
+  가지 답이 생기므로, 여기 하나로 모은다.
+{% endcomment %}
+<div class="modal fade" id="aboutAppModal" tabindex="-1" aria-labelledby="aboutAppModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="aboutAppModalLabel"><i class="bi bi-info-circle"></i> About</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body about-body">
+        <div class="about-head">
+          <span class="about-mark" aria-hidden="true">🧮</span>
+          <div>
+            <h4 class="about-name">PK Calculator</h4>
+            <p class="about-ver">Two pharmacokinetic tools, one workspace</p>
+          </div>
+        </div>
+
+        <p class="about-desc">
+          The <strong>ODE Simulator</strong> solves whatever differential system you
+          type: dosing, parameter fitting, sensitivity. The <strong>NCA
+          Calculator</strong> works the other way, from observed concentrations, and
+          is checked against Phoenix WinNonlin run for run.
+        </p>
+
+        <dl class="about-meta">
+          <dt>Tools</dt>
+          <dd>ODE Simulator v1.2 &middot; NCA Calculator v1.0</dd>
+          <dt>Author</dt>
+          <dd>Minsoo Lee &middot; College of Pharmacy, Seoul National University</dd>
+          <dt>Contact</dt>
+          <dd><a href="mailto:minsoo.lee@snu.ac.kr">minsoo.lee@snu.ac.kr</a></dd>
+          <dt>Source</dt>
+          <dd><a href="https://github.com/snowflower1028/PK-ODE-Simulator" target="_blank" rel="noopener noreferrer">github.com/snowflower1028/PK-ODE-Simulator</a></dd>
+          <dt>License</dt>
+          <dd>MIT</dd>
+          <dt>Built with</dt>
+          <dd>Django &middot; NumPy &middot; SciPy &middot; SymPy &middot; Plotly</dd>
+        </dl>
+
+        <p class="about-note">
+          For research and teaching. Nothing here is validated for regulatory use
+          &mdash; check anything that matters against your own reference.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
