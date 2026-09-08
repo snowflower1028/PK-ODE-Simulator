@@ -3404,7 +3404,9 @@ body.is-resizing {
     text-align: center;
     font-size: 0.75rem;
     line-height: 1.6;
-    color: var(--apple-text-tertiary);
+    /* tertiary 보다 한 단 더 옅게. 서명이지 읽으라고 둔 글이 아니라서
+       카드와 다투지 않아야 한다. */
+    color: #9a9aa0;
 }
 .home-footer p {
     margin: 0;
