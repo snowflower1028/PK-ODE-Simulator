@@ -8,13 +8,14 @@ parser.py  ──  ODE 텍스트 → JSON-ready 파싱 결과
   processed_ode       : str                (파생 치환된 텍스트)
   equations           : Dict[str,Expr]     (SymPy 수치식)
 """
+import ast
 import re
 from collections import defaultdict, deque
 from typing import Dict, List, Set, Tuple, Any
 
 from sympy import (
     symbols, sqrt, sin, cos, tan, exp, log, Abs,
-    asin, acos, atan, sinh, cosh, tanh, parse_expr, Expr
+    asin, acos, atan, sinh, cosh, tanh, Expr, Float, Integer
 )
 
 # ───────────────────────────────────────────────
@@ -28,15 +29,44 @@ _BUILTIN = {
 }
 ODE_PAT   = re.compile(r"^d([A-Za-z_][\w]*)dt$")
 PNAME_PAT = re.compile(r"^[A-Za-z_][\w]*$")
+_RESERVED = {"t", "Time"}
+_MAX_TEXT_LENGTH = 50_000
+_MAX_EXPR_NODES = 1_000
+_UNICODE_TRANSLATION = str.maketrans({
+    "−": "-",  # mathematical minus
+    "–": "-",  # en dash copied in place of minus
+    "—": "-",  # em dash copied in place of minus
+    "×": "*",
+    "÷": "/",
+})
 
 # ───────────────────────────────────────────────
 # 1. 전처리 & 행 분류
 # ───────────────────────────────────────────────
 def _preprocess(text: str) -> List[str]:
-    """^→**, 비 ASCII 제거, 빈 줄 제거"""
+    """수식에서 흔한 유니코드 연산자를 정규화하고 빈 줄을 제거한다.
+
+    예전 구현은 모든 비 ASCII 문자를 삭제했다. 그러면 U+2212 minus가
+    사라져 ``-k*A``가 ``k*A``로 바뀐다. 모르는 문자는 의미를 추측하지
+    않고 오류로 돌려주는 편이 계산기에서는 안전하다.
+    """
+    if not isinstance(text, str):
+        raise ValueError("ODE input must be text.")
+    if len(text) > _MAX_TEXT_LENGTH:
+        raise ValueError(f"ODE input is too long (maximum {_MAX_TEXT_LENGTH} characters).")
+
     clean = []
-    for ln in text.splitlines():
-        ln = re.sub(r"[^\x00-\x7F]+", "", ln)  # 비 ASCII 삭제
+    for line_no, raw in enumerate(text.splitlines(), start=1):
+        ln = raw.translate(_UNICODE_TRANSLATION)
+        unsupported = next((ch for ch in ln if ord(ch) > 127), None)
+        if unsupported is not None:
+            raise ValueError(
+                f"Unsupported character U+{ord(unsupported):04X} on line {line_no}; "
+                "use ASCII names and operators."
+            )
+        # 간단한 끝줄 주석은 허용한다. 문자열 리터럴은 수식 문법에서 허용하지
+        # 않으므로 '#' 뒤를 자르는 데 모호함이 없다.
+        ln = ln.split("#", 1)[0]
         ln = ln.strip()
         if ln:
             clean.append(ln.replace("^", "**"))
@@ -45,29 +75,142 @@ def _preprocess(text: str) -> List[str]:
 def _classify(lines: List[str]):
     """ODE 행·파라미터 정의 행 분리"""
     ode_rows, param_rows = [], {}
-    for ln in lines:
+    seen_compartments = set()
+    for line_no, ln in enumerate(lines, start=1):
         if "=" not in ln:
-            continue
+            raise ValueError(
+                f"Expected 'name = expression' or 'dNamedt = expression' on line {line_no}."
+            )
         lhs, rhs = map(str.strip, ln.split("=", 1))
+        if not rhs:
+            raise ValueError(f"Missing expression on line {line_no}.")
         if (m := ODE_PAT.match(lhs)):
-            ode_rows.append((m.group(1), rhs))
+            compartment = m.group(1)
+            if compartment in seen_compartments:
+                raise ValueError(f"Duplicate ODE for compartment '{compartment}'.")
+            seen_compartments.add(compartment)
+            ode_rows.append((compartment, rhs))
         elif PNAME_PAT.match(lhs):
+            if lhs in param_rows:
+                raise ValueError(f"Duplicate derived definition for '{lhs}'.")
             param_rows[lhs] = rhs
+        else:
+            raise ValueError(
+                f"Invalid left-hand side '{lhs}' on line {line_no}; expected a name or dNamedt."
+            )
+
+    compartments = set(seen_compartments)
+    defined = set(param_rows)
+    overlap = compartments & defined
+    if overlap:
+        name = sorted(overlap)[0]
+        raise ValueError(f"'{name}' cannot be both a compartment and a derived variable.")
+
+    for name in compartments | defined:
+        if name in _RESERVED:
+            raise ValueError(f"'{name}' is reserved and cannot be defined by the model.")
+        if name in _BUILTIN:
+            raise ValueError(f"'{name}' is a built-in function name and cannot be redefined.")
     return ode_rows, param_rows
+
+
+def _expression_tree(text: str) -> ast.Expression:
+    """Python expression AST를 만들되 크기를 제한한다."""
+    try:
+        tree = ast.parse(text, mode="eval")
+    except SyntaxError as exc:
+        raise ValueError(f"Invalid expression '{text}': {exc.msg}.") from exc
+    if sum(1 for _ in ast.walk(tree)) > _MAX_EXPR_NODES:
+        raise ValueError(f"Expression is too complex (maximum {_MAX_EXPR_NODES} syntax nodes).")
+    return tree
+
+
+def _expression_names(text: str) -> List[str]:
+    """식에 실제 AST Name으로 등장하는 이름을 첫 등장 순서로 돌려준다.
+
+    정규식과 달리 1e-3의 e를 이름으로 잘못 읽지 않는다.
+    """
+    tree = _expression_tree(text)
+    names: List[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id not in names:
+            names.append(node.id)
+    return names
+
+
+def _safe_parse_expr(text: str, symtbl: Dict[str, object]) -> Expr:
+    """허용한 수학 문법만 SymPy 식으로 옮긴다.
+
+    속성 접근·인덱싱·comprehension 등 Python 실행 문법은 받지 않는다.
+    ``parse_expr``가 내부적으로 ``eval``을 쓰는 문제를 피하기 위해 AST를
+    직접 순회한다.
+    """
+    tree = _expression_tree(text)
+
+    def convert(node):
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
+                raise ValueError("Only real numeric literals are allowed in ODE expressions.")
+            return Integer(node.value) if isinstance(node.value, int) else Float(repr(node.value))
+
+        if isinstance(node, ast.Name):
+            if node.id not in symtbl:
+                raise ValueError(f"Unknown symbol '{node.id}'.")
+            value = symtbl[node.id]
+            if value in _BUILTIN.values():
+                raise ValueError(f"Function '{node.id}' must be called with parentheses.")
+            return value
+
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = convert(node.operand)
+            return value if isinstance(node.op, ast.UAdd) else -value
+
+        if isinstance(node, ast.BinOp):
+            left, right = convert(node.left), convert(node.right)
+            if isinstance(node.op, ast.Add):
+                return left + right
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            if isinstance(node.op, ast.Div):
+                return left / right
+            if isinstance(node.op, ast.Pow):
+                if right.is_number:
+                    try:
+                        if abs(float(right)) > 10_000:
+                            raise ValueError("A numeric exponent is too large.")
+                    except TypeError:
+                        pass
+                return left ** right
+            raise ValueError(f"Operator '{type(node.op).__name__}' is not allowed.")
+
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name) or node.func.id not in _BUILTIN:
+                raise ValueError("Only the documented mathematical functions are allowed.")
+            if node.keywords:
+                raise ValueError("Keyword arguments are not allowed in ODE functions.")
+            try:
+                return _BUILTIN[node.func.id](*(convert(arg) for arg in node.args))
+            except Exception as exc:
+                raise ValueError(f"Invalid call to '{node.func.id}': {exc}") from exc
+
+        raise ValueError(f"Syntax '{type(node).__name__}' is not allowed in ODE expressions.")
+
+    return convert(tree.body)
 
 # ───────────────────────────────────────────────
 # 2. 심볼 테이블 초기 구축
 # ───────────────────────────────────────────────
 def _initial_symbols(ode_rows, param_rows):
     comps = {c for c, _ in ode_rows}
-    token_rx = re.compile(r"[A-Za-z_][\w]*")
     tokens: Set[str] = set()
     # 사용자가 적은 순서(첫 등장 순서)를 함께 기록해 둔다.
     # UI 에서 "ODE 입력 순서"로 정렬해 보여주기 위한 정보이며, 계산에는 쓰이지 않는다.
     token_order: List[str] = []
 
     def _scan(text: str):
-        for tok in token_rx.findall(text):
+        for tok in _expression_names(text):
             tokens.add(tok)
             if tok not in token_order:
                 token_order.append(tok)
@@ -77,9 +220,12 @@ def _initial_symbols(ode_rows, param_rows):
     for rhs in param_rows.values():
         _scan(rhs)
 
-    # 정의된 파라미터 심볼 포함
-    param_syms = tokens - comps - _BUILTIN.keys()
+    # 정의문의 LHS도 심볼이어야 의존성 그래프와 치환에 쓸 수 있다.
+    param_syms = (tokens | set(param_rows)) - comps - _BUILTIN.keys() - {"t"}
+    if "Time" in param_syms:
+        raise ValueError("'Time' is reserved for the output time column.")
     symtbl     = {s: symbols(s) for s in comps.union(param_syms)}
+    symtbl["t"] = symbols("t")
     symtbl.update(_BUILTIN)
     return comps, param_syms, symtbl, token_order
 
@@ -88,25 +234,20 @@ def _initial_symbols(ode_rows, param_rows):
 # ───────────────────────────────────────────────
 def _parse_param_defs(param_rows, symtbl):
     parsed, graph, rev = {}, defaultdict(set), defaultdict(set)
+    defined = set(param_rows)
     for p, expr in param_rows.items():
-        try:
-            pe = parse_expr(expr, local_dict=symtbl)
-            parsed[p] = pe
-            deps = {str(s) for s in pe.free_symbols if str(s) != "t"}
-            graph[p] = deps
-            for d in deps:
-                rev[d].add(p)
-        except Exception:
-            parsed[p] = None          # 파싱 실패 → 값 미정 (숫자 오류 등)
+        pe = _safe_parse_expr(expr, symtbl)
+        parsed[p] = pe
+        deps = {str(s) for s in pe.free_symbols if str(s) in defined}
+        graph[p] = deps
+        for dependency in deps:
+            rev[dependency].add(p)
     return parsed, graph, rev
 
 def _topo(graph, rev):
-    nodes = set(graph) | {d for deps in graph.values() for d in deps}
-    indeg = {n: 0 for n in nodes}
-    for deps in graph.values():
-        for d in deps:
-            indeg[d] += 1
-    q = deque([n for n in nodes if indeg[n] == 0])
+    nodes = list(graph)
+    indeg = {name: len(graph[name]) for name in nodes}
+    q = deque([name for name in nodes if indeg[name] == 0])
     order = []
     while q:
         n = q.popleft()
@@ -115,6 +256,9 @@ def _topo(graph, rev):
             indeg[nb] -= 1
             if indeg[nb] == 0:
                 q.append(nb)
+    if len(order) != len(nodes):
+        cyclic = sorted(name for name in nodes if indeg[name] > 0)
+        raise ValueError(f"Cyclic derived definition involving: {', '.join(cyclic)}.")
     return order
 
 # ───────────────────────────────────────────────
@@ -123,51 +267,31 @@ def _topo(graph, rev):
 def _categorize(param_rows, topo_order, parsed_defs,
                 symtbl, comps) -> Tuple[Set[str], Dict[str,str]]:
     defined_syms = set(param_rows)           # LHS 등장 → 파생으로 고정
-    derived: Dict[str,str] = {k: v for k, v in param_rows.items()}  # 일괄 등록
-    base: Set[str] = set()
-
-    # 위상 정렬 순서대로 정적 파생 수치 평가(원할 때)
-    for p in topo_order:
-        if p not in defined_syms:
-            continue
-        expr = parsed_defs.get(p)
-        if expr is None:
-            continue
-        fsyms = {str(s) for s in expr.free_symbols}
-        if fsyms <= symtbl.keys():
-            symtbl[p] = expr              # 정적 파생 값 갱신
+    # Python dict의 순서를 위상 순서로 맞춰 모든 실행 경로가 의존 항목부터
+    # 계산하도록 한다.
+    derived: Dict[str,str] = {name: param_rows[name] for name in topo_order}
 
     # 입력 파라미터 = 모든 심볼 후보 ─ 컴파트먼트 ─ 파생
-    all_syms = set(symtbl) - comps - _BUILTIN.keys()
+    all_syms = set(symtbl) - comps - _BUILTIN.keys() - {"t"}
     base = all_syms - defined_syms
     return base, derived
 
 # ───────────────────────────────────────────────
 # 5. ODE 치환 & SymPy 방정식
 # ───────────────────────────────────────────────
-def _substitute_odes(ode_rows, derived, symtbl):
+def _substitute_odes(ode_rows, parsed_defs, topo_order, symtbl):
+    """파생식을 dependency-first 순서로 한 번씩 치환한다."""
+    resolved = {}
+    for name in topo_order:
+        resolved[symtbl[name]] = parsed_defs[name].xreplace(resolved)
+
     out = []
-    # 1. 먼저 SymPy expr 로 파생 dict 구성
-    derived_sympy = {symbols(k): parse_expr(v, local_dict=symtbl)
-                     for k, v in derived.items()}
-
+    equations = {}
     for comp, rhs in ode_rows:
-        expr = parse_expr(rhs, local_dict=symtbl)
-        # 2. 재귀 치환: derived 기호가 없어질 때까지 반복
-        prev_free = None
-        while prev_free != expr.free_symbols & derived_sympy.keys():
-            prev_free = expr.free_symbols & derived_sympy.keys()
-            expr = expr.xreplace(derived_sympy)
+        expr = _safe_parse_expr(rhs, symtbl).xreplace(resolved)
+        equations[comp] = expr
         out.append(f"d{comp}dt = {expr}")
-    return out
-
-def _build_eq(proc_lines, symtbl):
-    eq = {}
-    for ln in proc_lines:
-        lhs, rhs = map(str.strip, ln.split("=", 1))
-        comp = ODE_PAT.match(lhs).group(1)
-        eq[comp] = parse_expr(rhs, local_dict=symtbl)
-    return eq
+    return out, equations
 
 # ───────────────────────────────────────────────
 # 6. 메인 엔트리
@@ -184,8 +308,9 @@ def parse_ode_input(text: str) -> Dict[str, Any]:
         param_rows, topo_order, parsed_defs, symtbl, comps
     )
 
-    proc_lines  = _substitute_odes(ode_rows, derived_exprs, symtbl)
-    equations   = _build_eq(proc_lines, symtbl)
+    proc_lines, equations = _substitute_odes(
+        ode_rows, parsed_defs, topo_order, symtbl
+    )
 
     # ── 표시 순서용 정보 ────────────────────────────
     # compartments/parameters 는 계산 경로가 의존하므로 기존대로 알파벳순을 유지하고,
