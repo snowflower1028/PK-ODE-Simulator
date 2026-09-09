@@ -17,6 +17,7 @@ from sympy import symbols, lambdify
 
 from .parser import parse_ode_input
 from .solver import solve_ode_system
+from .derived import attach_derived, describe_failures
 from .analyzer import analyze_observed, analyze_simulated, compare_observed, observed_times
 from .semantics import resolve_variable_semantics
 
@@ -75,13 +76,11 @@ def _solve_profile(parsed, rhs, init_values, param_values,
         doses=doses,
     )
 
-    available = {**df.to_dict(orient='series'), **param_values}
-    for new_col, expr_str in parsed.get("derived_expressions", {}).items():
-        try:
-            df[new_col] = pd.eval(expr_str, local_dict=available, engine='python')
-            available[new_col] = df[new_col]
-        except Exception as e:
-            print(f"Warning: could not evaluate '{new_col} = {expr_str}': {e}")
+    df, failures = attach_derived(
+        df, parsed.get("derived_expressions", {}), param_values
+    )
+    for line in describe_failures(failures):
+        print(f"Warning: could not evaluate '{line}'")
     return df
 
 
@@ -445,18 +444,13 @@ def simulate(request):
         # 4-2. 파생 변수(Derived Variable) 계산 로직
         derived_expressions = parsed.get("derived_expressions", {})
         
-        # 계산에 필요한 모든 변수와 파라미터를 하나의 사전으로 합칩니다.
-        # DataFrame의 컬럼들과 사용자가 입력한 파라미터 값을 모두 포함합니다.
-        available_vars = {**df_full.to_dict(orient='series'), **param_values}
-        
-        # 각 파생 표현식을 순회하며 계산하고, 결과를 DataFrame에 새 컬럼으로 추가합니다.
-        for new_col, expr_str in derived_expressions.items():
-            try:
-                # pandas.eval을 사용하여 안전하고 효율적으로 표현식을 계산합니다.
-                df_full[new_col] = pd.eval(expr_str, local_dict=available_vars, engine='python')
-            except Exception as e:
-                # 계산 중 오류가 발생하면 경고를 출력하고 넘어갑니다.
-                print(f"Warning: Could not evaluate derived expression '{new_col} = {expr_str}': {e}")
+        # 공용 평가기가 의존성 순서를 지켜 계산한다. 실패한 식은 삼키지 않고
+        # 응답에 실어 보낸다 — 예전에는 HTTP 200 과 함께 컬럼만 사라졌다.
+        df_full, derived_failures = attach_derived(
+            df_full, derived_expressions, param_values
+        )
+        for line in describe_failures(derived_failures):
+            print(f"Warning: could not evaluate derived expression '{line}'")
         
         # 5. 사용자가 선택한 플로팅 변수 목록 가져오기
         all_plottable_vars = all_compartments + list(derived_expressions.keys())
@@ -507,6 +501,8 @@ def simulate(request):
                 "pk": pk_summary,
                 "comparison": comparison,
                 "variable_semantics": variable_semantics,
+                # 계산하지 못한 파생 변수. 예전에는 컬럼만 조용히 사라졌다.
+                "derived_failures": derived_failures,
             }
         })
 

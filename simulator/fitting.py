@@ -11,6 +11,7 @@ import math
 
 from .solver import solve_ode_system
 from .parser import parse_ode_input
+from .derived import attach_derived
 
 
 def _unpack_x(x, fit_keys, param_scopes, error_model, n_groups):
@@ -92,13 +93,8 @@ def _predict_pairs(x, fit_keys, fixed_param, equations_callable, all_parameters,
             doses=group['doses']
         )
 
-        # 파생 변수(예: C2 = A2/V) 계산
-        available_vars = {**sim_df.to_dict(orient='series'), **current_param_values}
-        for new_col, expr_str in derived_expressions.items():
-            try:
-                sim_df[new_col] = pd.eval(expr_str, local_dict=available_vars, engine='python')
-            except Exception:
-                pass
+        # 파생 변수(예: C2 = A2/V) 계산. 연쇄 파생식도 풀리도록 공용 평가기를 쓴다.
+        sim_df, _ = attach_derived(sim_df, derived_expressions, current_param_values)
 
         mappings = group.get('mappings', {})
         for data_col, model_var in mappings.items():
@@ -176,12 +172,7 @@ def _fitted_curves(x, fit_keys, fixed_param, equations_callable, all_parameters,
         except Exception:
             continue
 
-        available_vars = {**sim_df.to_dict(orient='series'), **current_param_values}
-        for new_col, expr_str in derived_expressions.items():
-            try:
-                sim_df[new_col] = pd.eval(expr_str, local_dict=available_vars, engine='python')
-            except Exception:
-                pass
+        sim_df, _ = attach_derived(sim_df, derived_expressions, current_param_values)
 
         for data_col, model_var in (group.get('mappings') or {}).items():
             if data_col not in obs_df.columns or model_var not in sim_df.columns:
@@ -464,6 +455,33 @@ def fit(data: dict) -> dict:
                 error_model if objective == "mle" else weighting, derived_expressions)
     nll_args = (fit_keys, fixed_param, equations_callable, all_parameters, all_compartments,
                 initials, fitting_groups, param_scopes, error_model, derived_expressions)
+
+    # --- 3-b. 잔차가 하나라도 쌓이는지 먼저 확인한다 ---
+    # 관측 컬럼이 모델 변수로 해소되지 않으면(오타, 매핑 누락, 계산 실패한
+    # 파생 변수 등) _predict_pairs 가 빈 리스트를 돌려준다.  그러면 목적함수가
+    # 모든 x 에서 상수가 되어, 옵티마이저가 시작점에서 "수렴"을 보고하고
+    # 사용자는 자기가 넣은 초기값을 결과로 돌려받는다.  그건 실패로 알린다.
+    try:
+        initial_pairs = _predict_pairs(np.array(x0, dtype=float), *nll_args)
+    except Exception as e:
+        return {"status": "error", "message": f"Could not evaluate the model at the initial values: {e}"}
+
+    if not initial_pairs:
+        mapped = sorted({
+            var
+            for group in fitting_groups
+            for var in (group.get('mappings') or {}).values()
+        })
+        return {
+            "status": "error",
+            "message": (
+                "No observations could be matched to the model, so there is nothing "
+                "to fit.  Check that each observed column is mapped to a model "
+                "variable that the model actually produces"
+                + (f" (mapped to: {', '.join(mapped)})" if mapped else "")
+                + "."
+            ),
+        }
 
     # --- 4. 최적화 ---
     try:
