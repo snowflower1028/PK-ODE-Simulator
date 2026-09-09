@@ -3418,27 +3418,78 @@ body.is-resizing {
     .home-card:hover { transform: none; }
 }
 
-/* ── PK Variables (변수 의미 선언) ────────────────────────────
-   이름 / 단위 종류 / PK 범위 세 칸. 이름 칸은 고정폭이라 여러 행의
-   드롭다운이 세로로 맞고, 나머지는 사이드바 폭에 따라 함께 줄어든다. */
-.variable-semantics-row {
-  display: grid;
-  grid-template-columns: 70px minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.4rem;
+/* ── PK Variables (농도 선언 목록) ─────────────────────────
+   선언한 변수만 행이 된다. 예전에는 프로필이 있는 변수마다 드롭다운 두 개를
+   깔았고, 이름 칸이 70px 로 고정이라 Gut_amount·plasma_conc_free 같은
+   평범한 이름이 잘렸다. 이름은 식별자이므로 고정폭 글꼴로 두고 폭은 흐르게
+   둔다 — 잘린 이름은 버그다. */
+.pk-output-row {
+  display: flex;
   align-items: center;
+  gap: 0.5rem;
   margin-bottom: 0.4rem;
 }
 
-.variable-semantics-name {
+.pk-output-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
   font-weight: 600;
-  text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 농도가 아닌 변수의 PK 범위 칸. 사라지지 않고 흐려지기만 하는 편이,
-   왜 고를 수 없는지 읽히므로 낫다. */
-.variable-semantics-row select:disabled {
-  opacity: 0.55;
+.pk-scope-toggle { flex: 0 0 auto; }
+
+.pk-scope-toggle .btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--apple-control-border);
+  background-color: var(--apple-background-primary);
+  color: var(--apple-text-secondary);
+}
+
+.pk-scope-toggle .btn + .btn { border-left: 0; }
+
+.pk-scope-toggle .btn.active {
+  background-color: var(--apple-system-blue);
+  border-color: var(--apple-system-blue);
+  color: #fff;
+}
+
+.pk-output-remove {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--apple-text-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0.15rem 0.3rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.pk-output-remove:hover {
+  background-color: var(--apple-control-background);
+  color: var(--apple-text-primary);
+}
+
+/* 추가 컨트롤. 문구 자체가 선언 행위다 — 누르는 순간 "이 변수는 농도다"라고
+   말하는 것이므로, 라벨이 그렇게 읽혀야 한다. */
+.pk-output-add {
+  margin-top: 0.15rem;
+  color: var(--apple-system-blue);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pk-output-add option { color: var(--apple-text-primary); font-weight: 400; }
+
+.pk-output-note {
+  margin: 0 0 0.5rem;
+  font-size: 12px;
+  color: var(--apple-text-tertiary);
 }

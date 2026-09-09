@@ -550,65 +550,79 @@ const UI = {
   },
 
   /**
-   * 변수의 물리적 의미 선언표.
+   * PK 출력 선언 목록.
    *
-   * 프로필이 있는 변수 — 컴파트먼트와 derived output — 만 싣는다. 이차
-   * 파라미터(Q1 = fd1*QCO 처럼 시간에 따라 변하지 않는 값)는 곡선이 아니므로
-   * NCA 를 돌릴 대상이 아니다.
+   * 선언한 변수만 행이 된다. 모델이 13조직 PBPK 로 커져도 이 표의 길이는
+   * 선언 개수 그대로다 — 예전에는 프로필이 있는 변수마다 드롭다운 두 개를
+   * 깔아서, 26변수 모델에서 이 절 하나가 1007px 를 먹었다.
    *
-   * pk_scope 는 quantity_kind 가 concentration 일 때만 열린다. 서버도 같은
-   * 규칙으로 거절하므로(semantics.py), 화면에서 먼저 막아 왕복을 아낀다.
+   * 화면에서는 단위 종류를 묻지 않는다. 실제로 동작하는 값은
+   * `concentration` 하나뿐이고(analyzer 의 게이트), 나머지 다섯은 코드
+   * 어디에도 영향이 없다. 그래서 "농도로 선언한다"는 행위 자체를 추가
+   * 컨트롤의 문구에 담고, API 로는 종전대로 quantity_kind 를 실어 보낸다.
+   * 서버 계약(semantics.py)은 그대로다.
    */
   renderVariableSemantics() {
     const container = DOM.sidebar.variableSemanticsContainer;
     if (!container) return;
 
-    const names = Object.keys(State.structuralClasses).filter(
+    // 프로필이 있는 변수만 후보다. 이차 파라미터(Q1 = fd1*QCO 처럼 시간에
+    // 따라 변하지 않는 값)는 곡선이 아니므로 NCA 를 돌릴 대상이 아니다.
+    const candidates = Object.keys(State.structuralClasses).filter(
       name => State.structuralClasses[name] !== "secondary_parameter"
     );
-    // 표시 순서는 Value Settings 의 다른 표와 맞춘다.
-    const ordered = [
-      ...SymbolOrder.compartments().filter(n => names.includes(n)),
-      ...names.filter(n => !State.compartments.includes(n)),
-    ];
-
-    if (ordered.length === 0) {
+    if (candidates.length === 0) {
       container.innerHTML = `<div class="placeholder-text small">Parse ODEs to declare variables.</div>`;
       return;
     }
 
-    const KINDS = ["unknown", "concentration", "amount", "flow", "fraction", "other"];
-    const SCOPES = [
-      ["none", "None"],
-      ["exposure", "Exposure"],
-      ["systemic", "Systemic"],
+    const ordered = [
+      ...SymbolOrder.compartments().filter(n => candidates.includes(n)),
+      ...candidates.filter(n => !State.compartments.includes(n)),
     ];
+    const declared = ordered.filter(
+      n => (State.variableSemantics[n] || {}).pk_scope
+        && State.variableSemantics[n].pk_scope !== "none"
+    );
+    const remaining = ordered.filter(n => !declared.includes(n));
 
-    container.innerHTML = ordered.map(name => {
-      const chosen = State.variableSemantics[name] || {};
-      const kind = chosen.quantity_kind || "unknown";
-      const scope = chosen.pk_scope || "none";
-      const isConcentration = kind === "concentration";
-      const kindOptions = KINDS.map(
-        k => `<option value="${k}"${k === kind ? " selected" : ""}>${k}</option>`
-      ).join("");
-      const scopeOptions = SCOPES.map(
-        ([value, label]) =>
-          `<option value="${value}"${value === scope ? " selected" : ""}>${label}</option>`
-      ).join("");
+    const rows = declared.map(name => {
+      const scope = State.variableSemantics[name].pk_scope;
+      const scopeButtons = [
+        ["exposure", "Exposure", "Cmax, Tmax, AUC, half-life"],
+        ["systemic", "Systemic", "the same, plus CL and Vz from the dose"],
+      ].map(([value, label, hint]) => `
+        <button type="button" class="btn${scope === value ? " active" : ""}"
+                data-pk-scope="${name}" data-value="${value}"
+                aria-pressed="${scope === value}" title="${hint}">${label}</button>`).join("");
       return `
-        <div class="variable-semantics-row" data-variable="${name}">
-          <span class="variable-semantics-name" title="${State.structuralClasses[name]}">${name}</span>
-          <select class="form-select form-select-sm semantics-kind" aria-label="Quantity kind for ${name}">
-            ${kindOptions}
-          </select>
-          <select class="form-select form-select-sm semantics-scope" aria-label="PK scope for ${name}"
-                  ${isConcentration ? "" : "disabled"}
-                  title="${isConcentration ? "" : "Only a concentration can have a PK scope."}">
-            ${scopeOptions}
-          </select>
+        <div class="pk-output-row" data-variable="${name}">
+          <span class="pk-output-name" title="${name}">${name}</span>
+          <span class="btn-group btn-group-sm pk-scope-toggle" role="group"
+                aria-label="What to compute on ${name}">${scopeButtons}</span>
+          <button type="button" class="pk-output-remove" data-pk-remove="${name}"
+                  aria-label="Stop treating ${name} as a concentration">&times;</button>
         </div>`;
     }).join("");
+
+    // 후보를 구조로 나눠 보인다. 이건 파서가 아는 사실이지 이름에서 짐작한
+    // 것이 아니다 — 어느 쪽이 농도인지는 여전히 사용자만 말할 수 있다.
+    const group = (label, names) => names.length
+      ? `<optgroup label="${label}">${names.map(n => `<option value="${n}">${n}</option>`).join("")}</optgroup>`
+      : "";
+    const adder = remaining.length
+      ? `<select class="form-select form-select-sm pk-output-add" id="pk-output-add"
+                 aria-label="Declare a variable as a concentration">
+           <option value="" selected disabled>&#43; Declare a variable as a concentration&hellip;</option>
+           ${group("Compartments", remaining.filter(n => State.structuralClasses[n] === "compartment"))}
+           ${group("Derived outputs", remaining.filter(n => State.structuralClasses[n] !== "compartment"))}
+         </select>`
+      : `<p class="pk-output-note">Every variable with a profile is declared.</p>`;
+
+    container.innerHTML = (declared.length
+      ? rows
+      : `<p class="pk-output-note">Nothing is declared yet, so the PK Profile Summary stays empty.</p>`
+    ) + adder;
   },
 
   /**
@@ -930,9 +944,9 @@ const UI = {
         pkSummaryContainer.innerHTML = declared
           ? `<div class="placeholder-text">No PK summary data.</div>`
           : `<div class="placeholder-text">
-               Nothing is declared as a concentration yet, so there is nothing to run NCA on.
-               Open <strong>Value Settings &rarr; PK Variables</strong> and set the concentration
-               variable's quantity kind to <code>concentration</code>, then choose a PK scope.
+               No variable is declared as a concentration yet, so there is nothing to run NCA on.
+               Open <strong>Value Settings &rarr; PK Variables</strong> and declare the variables
+               that hold a concentration.
              </div>`;
         pkSummaryPlaceholder.style.display = "none";
         pkSummaryContainer.style.display = "block";
@@ -1800,15 +1814,17 @@ const Handlers = {
         // 서버가 준 것은 구조 분류와 기본값(전부 unknown/none)이다. 사용자가
         // 이미 선언해 둔 것이 있으면, 같은 이름이 여전히 있는 한 지켜 준다 —
         // ODE 를 조금 고칠 때마다 선언이 날아가면 아무도 쓰지 않는다.
+        // 서버가 준 것은 구조 분류다. 선언(무엇이 농도인가)은 사용자만 할 수 있으므로
+        // 이미 해 둔 것이 있으면 같은 이름이 남아 있는 한 지켜 준다 — ODE 를 조금
+        // 고칠 때마다 선언이 날아가면 아무도 쓰지 않는다.
         const semantics = response.data.variable_semantics || {};
         State.structuralClasses = {};
-        const kept = {};
         Object.entries(semantics).forEach(([name, info]) => {
           State.structuralClasses[name] = info.structural_class;
-          const previous = State.variableSemantics[name];
-          kept[name] = previous
-            ? { quantity_kind: previous.quantity_kind, pk_scope: previous.pk_scope }
-            : { quantity_kind: info.quantity_kind, pk_scope: info.pk_scope };
+        });
+        const kept = {};
+        Object.entries(State.variableSemantics).forEach(([name, info]) => {
+          if (semantics[name]) kept[name] = info;   // 사라진 변수의 선언은 버린다
         });
         State.variableSemantics = kept;
 
@@ -1828,30 +1844,35 @@ const Handlers = {
 
 
   /**
-   * PK Variables 표의 선택 변경. 표 전체에 위임해 둔다 — 행은 파싱할 때마다
-   * 다시 그려지므로 행마다 리스너를 붙이면 새 행에는 아무것도 붙지 않는다.
+   * PK 출력 목록의 조작. 목록 전체에 위임해 둔다 — 행은 파싱할 때마다 다시
+   * 그려지므로 행마다 리스너를 붙이면 새 행에는 아무것도 붙지 않는다.
    */
   handleVariableSemanticsChange(event) {
-    const select = event.target.closest(".semantics-kind, .semantics-scope");
-    if (!select) return;
-    const row = select.closest(".variable-semantics-row");
-    if (!row) return;
+    const adder = event.target.closest(".pk-output-add");
+    if (!adder || !adder.value) return;
+    // 이 클릭이 곧 "이 변수는 농도다" 라는 선언이다. 기본값은 exposure —
+    // systemic 은 "투여량 전부가 이 변수의 공간에 도달한다" 까지 주장하므로,
+    // 사용자가 명시적으로 올려야 한다.
+    Handlers._declarePkOutput(adder.value, "exposure");
+  },
 
-    const name = row.dataset.variable;
-    const current = State.variableSemantics[name] || { quantity_kind: "unknown", pk_scope: "none" };
+  handleVariableSemanticsClick(event) {
+    const scope = event.target.closest("[data-pk-scope]");
+    if (scope) return Handlers._declarePkOutput(scope.dataset.pkScope, scope.dataset.value);
 
-    if (select.classList.contains("semantics-kind")) {
-      current.quantity_kind = select.value;
-      // 농도가 아니면 PK 범위는 뜻이 없다. 서버도 같은 이유로 거절하므로
-      // 화면에서 먼저 되돌려 놓는다 — 잠긴 칸에 옛 선택이 남아 있으면
-      // 사용자는 그것이 아직 적용된다고 읽는다.
-      if (current.quantity_kind !== "concentration") current.pk_scope = "none";
-    } else {
-      current.pk_scope = select.value;
+    const remove = event.target.closest("[data-pk-remove]");
+    if (remove) {
+      delete State.variableSemantics[remove.dataset.pkRemove];
+      UI.renderVariableSemantics();
+      Session.saveSoon();
     }
+  },
 
-    State.variableSemantics[name] = current;
+  /** 선언은 한 곳에서만 쓴다 — 서버 계약(농도일 때만 PK 범위)을 여기서 지킨다. */
+  _declarePkOutput(name, scope) {
+    State.variableSemantics[name] = { quantity_kind: "concentration", pk_scope: scope };
     UI.renderVariableSemantics();
+    Session.saveSoon();
   },
 
   /**
@@ -2923,6 +2944,8 @@ const App = {
     if (DOM.sidebar.variableSemanticsContainer) {
       DOM.sidebar.variableSemanticsContainer.addEventListener(
         'change', Handlers.handleVariableSemanticsChange);
+      DOM.sidebar.variableSemanticsContainer.addEventListener(
+        'click', Handlers.handleVariableSemanticsClick);
     }
     
     // Dosing 폼의 'Repeat' 토글 스위치 이벤트
