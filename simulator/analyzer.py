@@ -34,6 +34,7 @@ SUMMARY_FIELDS = (
     "c_max", "t_max", "c_last", "t_last",
     "lambda_z", "half_life",
     "lambda_z_n_points", "lambda_z_t_first", "lambda_z_t_last", "lambda_z_adj_r_squared",
+    "lambda_z_span",
     "auc_last", "auc_inf_obs", "auc_inf_pred", "auc_extrap_pct",
     "aumc_last", "aumc_inf",
     "cl", "vz", "mrt", "vss",
@@ -52,6 +53,13 @@ SS_FIELDS = (
     "ss_accumulation_auc", "ss_accumulation_c_max",
     "ss_cl", "ss_vz",
     "ss_at_steady_state", "ss_interval_change_pct",
+)
+
+#: 반복 투여에서 종말상 기울기를 믿을 수 없을 때 함께 비우는 항목.
+#: lambda_z 자체가 못 쓸 값이면 그것으로 만든 것도 전부 못 쓴다.
+_LAMBDA_Z_DERIVED = (
+    "lambda_z", "half_life", "lambda_z_n_points", "lambda_z_t_first",
+    "lambda_z_t_last", "lambda_z_adj_r_squared", "lambda_z_span", "ss_vz",
 )
 
 #: 반복 투여에서는 뜻을 잃는 단회 항목. 비워서 내보낸다.
@@ -211,6 +219,40 @@ def infer_administration(
     return Administration.IV_BOLUS
 
 
+def infusion_duration_for(
+    variable: str,
+    doses: Sequence[Dict],
+    derived_expressions: Optional[Dict[str, str]] = None,
+) -> float:
+    """이 변수로 직접 들어가는 주입의 길이.
+
+    MRT 는 약이 몸에 머문 평균 시간인데, 주입은 투여 자체가 시간을 쓰므로
+    그 절반이 섞여 들어간다.  `nca()` 는 `infusion_duration` 을 받아 빼 줄
+    준비가 되어 있었지만 이 자리에서 넘겨주지 않아, 기본값 0 으로 보정이
+    한 번도 일어나지 않았다 — 2시간 주입에서 MRT 와 Vss 가 나란히 12.5%
+    높게 나왔다(측정: 9.000/36.00, 참값 8.000/32.00).
+
+    길이가 서로 다른 주입이 같은 구획에 겹쳐 있으면 뺄 값이 하나로 정해지지
+    않는다.  그럴 때는 0 을 돌려주고 보정하지 않는다 — 틀린 값을 빼느니
+    보정하지 않는 편이 낫다.
+    """
+    if not doses:
+        return 0.0
+
+    derived_expressions = derived_expressions or {}
+    expression = derived_expressions.get(variable, "")
+    sources = {variable} | set(_TOKEN.findall(expression))
+
+    durations = {
+        float(d.get("duration") or 0)
+        for d in doses
+        if d.get("compartment") in sources
+        and d.get("type") == "infusion"
+        and (d.get("duration") or 0) > 0
+    }
+    return durations.pop() if len(durations) == 1 else 0.0
+
+
 def dose_for(variable: str,
              doses: Sequence[Dict],
              derived_expressions: Optional[Dict[str, str]] = None) -> Optional[float]:
@@ -276,6 +318,7 @@ def analyze_simulated(
             dose=dose_for(var, doses, derived_expressions),
             method=AUCMethod.LINEAR,
             administration=infer_administration(var, doses, derived_expressions),
+            infusion_duration=infusion_duration_for(var, doses, derived_expressions),
         )
         result.direct_integration = True
         row = _to_row(result)
@@ -298,6 +341,36 @@ def analyze_simulated(
             for key in _SINGLE_DOSE_ONLY:
                 row[key] = None
             row.update(ss)
+
+            # 종말상 기울기는 마지막 투여 뒤의 세척 구간에서만 뜻이 있다.
+            # 그 구간이 없으면 탐색은 마지막 몇 점 — 아직 흡수가 끝나지도
+            # 않은 톱니의 한 조각 — 에 직선을 맞추고, 그 결과가 half-life
+            # 로 표에 실린다.  측정: 마지막 투여 2시간 뒤에 끝나는 12회
+            # 투여 모의에서 t½ 이 44.8시간(참값 5.545), Vz,ss 가 258.6
+            # (참값 32.0)으로 나왔다.  8배 틀린 값이 경고 한 줄과 함께
+            # 조용히 게시된 셈이다.
+            #
+            # 세척이 실제로 있으면 지금 탐색도 제자리를 찾는다(같은 모델을
+            # 마지막 투여 48시간 뒤까지 돌리면 t½ 5.557, Vz,ss 32.07).
+            # 그러니 값을 다시 맞출 일이 아니라, 근거가 없을 때 내보내지
+            # 않으면 된다.  근거는 두 가지다 — 창이 마지막 투여 뒤에
+            # 있는가, 그리고 반감기 하나만큼은 감쇠를 봤는가.
+            span = row.get("lambda_z_span")
+            window_start = row.get("lambda_z_t_first")
+            after_last_dose = (
+                window_start is not None
+                and window_start >= regimen.last_dose_time - 1e-9
+            )
+            if row.get("lambda_z") is not None and not (
+                after_last_dose and span is not None and span >= 1.0
+            ):
+                for key in _LAMBDA_Z_DERIVED:
+                    row[key] = None
+                warnings.append(
+                    "The terminal slope was not estimated: this run does not "
+                    "contain a washout after the last dose that is long enough "
+                    "to see the drug decline. Half-life and Vz,ss need one."
+                )
             row["regimen"] = "steady-state"
             row["dose"] = _round(per_dose)
             row["warnings"] = warnings
@@ -363,6 +436,7 @@ def analyze_observed(
                 dose=dose,
                 method=method,
                 administration=infer_administration(variable, doses, derived_expressions),
+                infusion_duration=infusion_duration_for(variable, doses, derived_expressions),
             )
             if dose is None:
                 result.warnings.append(
