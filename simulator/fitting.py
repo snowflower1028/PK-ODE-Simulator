@@ -484,19 +484,41 @@ def fit(data: dict) -> dict:
         }
 
     # --- 4. 최적화 ---
+    # L-BFGS-B 는 기울기를 유한차분으로 구하는데, 기본 스텝은 파라미터 크기와
+    # 무관한 절대값 eps=1e-8 이다.  V=20 같은 값에서 그건 상대변화 5e-10 이고,
+    # 목적함수는 rtol=1e-8 로 적분한 해에서 나오므로 그보다 작은 신호를 읽는
+    # 셈이 된다.  실제로 시작점에서 CL 과 V 의 기울기 부호가 뒤집혔고,
+    # 옵티마이저는 반대 방향을 보고 곧바로 "수렴" 을 선언했다.
+    #
+    # 그래서 파라미터를 시작값 기준으로 정규화해서 푼다.  모든 좌표가 1 근처가
+    # 되므로 스텝을 상대값으로 줄 수 있다.  eps=1e-6 은 측정으로 확인한 안정
+    # 구간(1e-6 ~ 1e-2 에서 기울기가 서로 일치) 안쪽이다.
+    x0_arr = np.array(x0, dtype=float)
+    scale = np.where(np.abs(x0_arr) > 0, np.abs(x0_arr), 1.0)
+
+    def _scaled_obj(z, *args):
+        return obj_func(z * scale, *args)
+
+    scaled_bounds = [
+        (None if lo is None or not np.isfinite(lo) else lo / si,
+         None if hi is None or not np.isfinite(hi) else hi / si)
+        for (lo, hi), si in zip(bounds, scale)
+    ]
+
     try:
         result = minimize(
-            obj_func,
-            np.array(x0, dtype=float),
+            _scaled_obj,
+            x0_arr / scale,
             args=obj_args,
             method='L-BFGS-B',
-            bounds=bounds,
-            options={'maxiter': 500}
+            bounds=scaled_bounds,
+            options={'maxiter': 500, 'eps': 1e-6},
         )
     except Exception as e:
         return {"status": "error", "message": f"Optimization failed: {e}"}
 
-    x_hat = np.asarray(result.x, dtype=float)
+    # 이후 단계(적합도 지표, Hessian 기반 표준오차)는 모두 원래 좌표에서 돈다.
+    x_hat = np.asarray(result.x, dtype=float) * scale
 
     # --- 5. 적합도 지표 (SSR, RMSE, AIC/BIC) ---
     try:
