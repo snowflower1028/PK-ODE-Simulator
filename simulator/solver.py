@@ -66,9 +66,13 @@ def solve_ode_system(
         doses = []
 
     # --- 1. 설정 및 변수 초기화 ---
-    p_values_arr = np.array([param_values.get(p_name, 0) for p_name in parameters])
+    # dtype 을 명시하지 않으면 numpy 가 입력에서 추론한다.  JSON 의 `0` 은 파이썬
+    # int 로 들어오므로 모든 값이 정수면 배열이 int64 가 되고, 그 뒤 `+= 0.25`
+    # 같은 소수 용량이 0 으로 잘려 투여가 통째로 사라진다.  예외도 경고도 없이
+    # 전 구간이 0 이 되므로, 항상 float 으로 고정한다.
+    p_values_arr = np.array([param_values.get(p_name, 0) for p_name in parameters], dtype=float)
     comp_map_idx = {name: i for i, name in enumerate(compartments)}
-    y_current = np.array([init_values.get(c, 0) for c in compartments])
+    y_current = np.array([init_values.get(c, 0) for c in compartments], dtype=float)
     t_current = t_span[0]
     
     # 현재 활성화된 infusion rate 저장 배열
@@ -224,7 +228,7 @@ def solve_ode_system_old(
     dydt = generate_rhs_function(equations, compartments, parameters)
 
     applied_bolus = set()
-    y0 = [init_values[c] for c in compartments]
+    y0 = np.array([init_values[c] for c in compartments], dtype=float)
     p_vals = [param_values[p] for p in parameters]
 
     def is_dose_time(t, start, every=None, until=None):
