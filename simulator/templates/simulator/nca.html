@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>NCA Calculator</title>
+  {% include "simulator/_favicon.html" %}
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
@@ -53,11 +54,13 @@
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#ncaHelpModal" data-help-tab="#nca-help-algorithm"><i class="bi bi-calculator"></i> How Each Value Is Computed</button></li>
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#ncaHelpModal" data-help-tab="#nca-help-lambdaz"><i class="bi bi-graph-down"></i> Choosing the Terminal Phase</button></li>
           <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#ncaHelpModal" data-help-tab="#nca-help-blq"><i class="bi bi-eye-slash"></i> Below the Limit</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#aboutAppModal"><i class="bi bi-info-circle"></i> About App</button></li>
         </ul>
       </div>
     </nav>
 
-    {% include "simulator/_repo_link.html" %}
+    {% include "simulator/_nav_right.html" with home=True %}
   </header>
 
   <div class="app-shell">
@@ -456,6 +459,8 @@
   </div>
 
   <!-- 도움말 -->
+  {% include "simulator/_about_modal.html" %}
+
   <div class="modal fade" id="ncaHelpModal" tabindex="-1" aria-labelledby="ncaHelpModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
       <div class="modal-content">

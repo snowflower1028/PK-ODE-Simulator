@@ -4,8 +4,9 @@
 
 Two pharmacokinetic tools that share one workspace: a simulator that solves
 whatever ODE system you type, and a noncompartmental analysis calculator that
-works from observed concentrations. Switch between them with the menu at the top
-left. Django on the server, plain JavaScript and Plotly in the browser.
+works from observed concentrations. The front page picks between them, and the
+menu at the top left switches without going back. Django on the server, plain
+JavaScript and Plotly in the browser.
 
 Built for researchers, students and pharmacometricians who want to see what a
 model does — and, just as often, to see where a number stops being a measurement
@@ -121,7 +122,8 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-The simulator is at <http://127.0.0.1:8000/> and the NCA calculator at
+The front page is at <http://127.0.0.1:8000/>, the simulator at
+<http://127.0.0.1:8000/simulator/> and the NCA calculator at
 <http://127.0.0.1:8000/nca/>.
 
 ---
@@ -231,9 +233,11 @@ simulator/
 ├── views.py             HTTP endpoints for both tools
 ├── urls.py
 ├── templates/simulator/
+│   ├── home.html            the front page — pick a tool
 │   ├── index.html           ODE Simulator
 │   ├── nca.html             NCA Calculator
-│   └── _app_switcher.html   the menu shared by both
+│   ├── _app_switcher.html   the tool menu, shared by both tools
+│   └── _nav_right.html      home and source links, shared by all three
 ├── static/simulator/
 │   ├── css/style.css
 │   └── js/
