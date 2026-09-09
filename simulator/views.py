@@ -19,7 +19,6 @@ from .parser import parse_ode_input
 from .solver import solve_ode_system
 from .derived import attach_derived, describe_failures
 from .analyzer import analyze_observed, analyze_simulated, compare_observed, observed_times
-from .semantics import resolve_variable_semantics
 
 
 # ---------------------------------------------------------------------------
@@ -118,13 +117,6 @@ def sweep(request):
             "t_end": float(data.get("t_end", 48)),
             "t_steps": int(data.get("t_steps", 200)),
         }
-        try:
-            ctx["variable_semantics"] = resolve_variable_semantics(
-                parsed, data.get("variable_semantics")
-            )
-        except ValueError as exc:
-            return JsonResponse({"status": "error", "message": str(exc)}, status=400)
-
         # 그릴 변수 하나만 다룬다. 스윕은 값마다 곡선이 하나씩 늘어나므로
         # 변수까지 여러 개면 화면에서도 응답 크기에서도 감당이 안 된다.
         plottable = list(parsed["compartments"]) + list(ctx["derived"].keys())
@@ -154,7 +146,6 @@ def _run_once(ctx, initials, params, doses):
         return None, {}
     pk = analyze_simulated(
         df, [variable], doses,
-        variable_semantics=ctx["variable_semantics"],
         derived_expressions=ctx["derived"],
     )
     return df, pk.get(variable, {})
@@ -407,13 +398,6 @@ def simulate(request):
         if not all_compartments or not equations:
             return JsonResponse({"status": "error", "message": "Failed to parse compartments or equations from input."}, status=400)
 
-        try:
-            variable_semantics = resolve_variable_semantics(
-                parsed, data.get("variable_semantics")
-            )
-        except ValueError as exc:
-            return JsonResponse({"status": "error", "message": str(exc)}, status=400)
-
         # lambdify를 위한 심볼 및 표현식 준비
         comp_syms = symbols(all_compartments)
         param_syms = symbols(all_parameters)
@@ -463,6 +447,12 @@ def simulate(request):
 
         # 6. PK 파라미터 계산
         #
+        # 그리기로 고른 변수에 대해 계산한다. 무엇이 농도인지 앱이 판단하지
+        # 않는다 — 출력이 늘 농도인 것도 아니고(양 추적도 정당한 목적이다),
+        # 양을 농도로 선언하는 것을 막을 방법도 없었다. CL·Vz 가 이 변수에
+        # 대해 뜻이 있는지는 연구자가 판단하고, 표의 정보 팝업이 무엇을
+        # 조심해야 하는지 말해 준다.
+        #
         # 시뮬레이션 곡선과 관찰 데이터를 다른 방식으로 다룬다. 앞은 촘촘한
         # 격자라 곡선을 그대로 적분하면 되고, 뒤는 채혈 시점이 드문드문해
         # 보간과 외삽 규칙(NCA)이 필요하다. 자세한 이유는 analyzer.py 참고.
@@ -471,7 +461,6 @@ def simulate(request):
             df_full,
             valid_selected_vars,
             doses,
-            variable_semantics=variable_semantics,
             derived_expressions=derived_expressions,
         )
 
@@ -479,7 +468,6 @@ def simulate(request):
         observed_summary = analyze_observed(
             observed_datasets,
             doses,
-            variable_semantics=variable_semantics,
             derived_expressions=derived_expressions,
         )
         pk_summary.update(observed_summary)
@@ -500,7 +488,6 @@ def simulate(request):
                 "profile": df_filtered.to_dict(orient="list"),
                 "pk": pk_summary,
                 "comparison": comparison,
-                "variable_semantics": variable_semantics,
                 # 계산하지 못한 파생 변수. 예전에는 컬럼만 조용히 사라졌다.
                 "derived_failures": derived_failures,
             }
@@ -534,7 +521,6 @@ def parse_ode_view(request):
         # JSON 응답을 위해 Sympy Expr 객체를 문자열로 변환
         response_data = {k: v for k, v in parsed.items() if k != 'equations'}
         response_data['equations'] = {k: str(v) for k, v in parsed.get('equations', {}).items()}
-        response_data['variable_semantics'] = resolve_variable_semantics(parsed)
 
         return JsonResponse({
             "status": "ok",

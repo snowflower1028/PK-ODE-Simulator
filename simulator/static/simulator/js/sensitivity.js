@@ -522,8 +522,6 @@
       t_start: +document.getElementById("sim-start-time").value,
       t_end: +document.getElementById("sim-end-time").value,
       t_steps: stepsInput ? +stepsInput.value : 200,
-      // 스윕도 같은 PK 요약을 계산한다. 선언을 빼먹으면 값마다 빈 표가 나온다.
-      variable_semantics: (window.pkVariableSemantics && window.pkVariableSemantics()) || {},
       sweep: sweep,
     };
   }

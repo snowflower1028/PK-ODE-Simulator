@@ -242,7 +242,6 @@ def analyze_simulated(
     df: pd.DataFrame,
     variables: Iterable[str],
     doses: Sequence[Dict],
-    variable_semantics: Optional[Dict[str, Dict[str, str]]] = None,
     derived_expressions: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Dict[str, object]]:
     """시뮬레이션 곡선의 요약.
@@ -250,12 +249,17 @@ def analyze_simulated(
     격자가 촘촘하므로 선형 사다리꼴이 곧 직접 적분이다. 보간 방식을
     고를 일이 없고, 0 시점부터 시작하므로 역외삽도 필요 없다.
 
-    NCA는 사용자가 농도라고 명시하고 PK 범위를 지정한 변수에만 수행한다.
-    ``exposure``는 용량 없이 낼 수 있는 것만(Cmax, Tmax, AUC, t½, MRT),
-    ``dose_normalized``는 용량까지 넘겨 CL, Vz, Vss 와 용량으로 나눈 값을
-    더한다.  이 둘이 가르는 것은 변수의 생리학적 지위가 아니라 출력 집합이다. 파생식이라는 사실만으로 농도로 취급하지 않는다.
+    ``variables`` 로 넘어온 것을 그대로 계산한다 — 화면에서 그리기로 고른
+    변수들이다.  한때 이 자리에 "농도라고 선언된 변수만" 이라는 관문이
+    있었지만 걷어냈다.  출력이 늘 농도인 것도 아니고(양을 추적하는 것도
+    정당한 목적이다), 이 앱이 하려는 일은 모든 경우에 들어맞는 PK 파라미터를
+    내주는 것이 아니라 ODE 시뮬레이션·피팅·민감도 분석을 PK 연구에 맞게
+    쉽게 해 주는 것이기 때문이다.  그 관문은 아무것도 막지 못하면서 — 양을
+    농도로 선언하는 것을 막을 방법은 없다 — 화면만 무겁게 만들었다.
+
+    CL 이나 Vz 가 이 변수에 대해 뜻이 있는 값인지는 연구자가 판단한다.
+    표의 각 열에 달린 정보 팝업이 무엇을 조심해야 하는지 말해 준다.
     """
-    variable_semantics = variable_semantics or {}
     derived_expressions = derived_expressions or {}
     time = df["Time"].to_numpy()
     regimen = dosing_regimen(doses)
@@ -264,19 +268,12 @@ def analyze_simulated(
     for var in variables:
         if var not in df.columns:
             continue
-        semantics = variable_semantics.get(var) or {}
-        if semantics.get("quantity_kind") != "concentration":
-            continue
-        pk_scope = semantics.get("pk_scope", "none")
-        if pk_scope not in {"exposure", "dose_normalized"}:
-            continue
         conc = df[var].to_numpy()
 
-        use_dose = pk_scope == "dose_normalized"
         result = nca(
             time,
             conc,
-            dose=dose_for(var, doses, derived_expressions) if use_dose else None,
+            dose=dose_for(var, doses, derived_expressions),
             method=AUCMethod.LINEAR,
             administration=infer_administration(var, doses, derived_expressions),
         )
@@ -288,9 +285,8 @@ def analyze_simulated(
             # 반복 투여에서는 단회 지표가 뜻을 잃는다. 전체를 적분한 AUC 는
             # 노출량이 아니라 시뮬레이션을 얼마나 오래 돌렸는지이고, Tmax 는
             # 그저 마지막 투여의 봉우리다. 비우고 정상상태 값으로 갈아 끼운다.
-            per_dose = (
-                dose_for(var, [dict(regimen.dose, repeat_every=None)], derived_expressions)
-                if use_dose else None
+            per_dose = dose_for(
+                var, [dict(regimen.dose, repeat_every=None)], derived_expressions
             )
             ss = _steady_state(
                 time, conc, regimen, var,
@@ -324,7 +320,6 @@ def analyze_simulated(
 def analyze_observed(
     datasets: Sequence[Dict],
     doses: Sequence[Dict],
-    variable_semantics: Optional[Dict[str, Dict[str, str]]] = None,
     derived_expressions: Optional[Dict[str, str]] = None,
     method: AUCMethod = AUCMethod.LINEAR_LOG,
 ) -> Dict[str, Dict[str, object]]:
@@ -341,7 +336,6 @@ def analyze_observed(
     것이라, 시뮬레이션 행과 나란히 놓아도 헷갈리지 않는다.
     """
     derived_expressions = derived_expressions or {}
-    variable_semantics = variable_semantics or {}
     results: Dict[str, Dict[str, object]] = {}
 
     for dataset in datasets or []:
@@ -358,15 +352,9 @@ def analyze_observed(
             if column == time_key:
                 continue
             variable = mappings.get(column) or column
-            semantics = variable_semantics.get(variable) or {}
-            if semantics.get("quantity_kind") != "concentration":
-                continue
-            pk_scope = semantics.get("pk_scope", "none")
-            if pk_scope not in {"exposure", "dose_normalized"}:
-                continue
             conc = np.asarray([np.nan if v is None else v for v in values], dtype=float)
 
-            dose = dataset.get("dose") if pk_scope == "dose_normalized" else None
+            dose = dataset.get("dose")
             dose = float(dose) if dose not in (None, "") else None
 
             result = nca(
@@ -376,7 +364,7 @@ def analyze_observed(
                 method=method,
                 administration=infer_administration(variable, doses, derived_expressions),
             )
-            if dose is None and pk_scope == "dose_normalized":
+            if dose is None:
                 result.warnings.append(
                     "No dose given for this dataset — clearance and volumes need one."
                 )
@@ -504,8 +492,4 @@ def compare_observed(
 def analyze_pk(df: pd.DataFrame, compartments: list, total_dose: float) -> Dict[str, Dict[str, float]]:
     """예전 시그니처. 아직 이 함수를 부르는 코드가 있을 때를 위해 남겨 둔다."""
     doses = [{"compartment": c, "type": "bolus", "amount": total_dose} for c in compartments[:1]]
-    semantics = {
-        name: {"quantity_kind": "concentration", "pk_scope": "dose_normalized"}
-        for name in compartments
-    }
-    return analyze_simulated(df, compartments, doses, variable_semantics=semantics)
+    return analyze_simulated(df, compartments, doses)

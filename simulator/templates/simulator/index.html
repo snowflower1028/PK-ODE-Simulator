@@ -188,18 +188,6 @@
               <div class="placeholder-text small">No derived variables found.</div>
           </div>
       </div>
-      <div class="variable-semantics-section mt-3">
-          <h3 class="subsection-title">
-            PK Variables
-            <button type="button" class="pk-info" tabindex="0" aria-label="About PK Variables"
-              data-tip-def="The variables you have declared to hold a concentration, and what the PK summary computes on each."
-              data-tip-formula="Exposure &rarr; Cmax, Tmax, AUC, half-life, MRT. &#43; CL, Vz &rarr; the same, plus CL, Vz and dose-normalized values."
-              data-tip-note="Nothing here is read from a variable&#39;s name or from how it is written &mdash; two variables written the same way, one a concentration and one a blood flow, look identical to the parser. CL is dose &divide; AUC, so it is a clearance only for the concentration in the space the dose reaches. Ask for it on a tissue concentration and you get the true CL divided by that tissue&#39;s partition coefficient; ask for it on an amount and you get a number that is not in volume units at all."></button>
-          </h3>
-          <div id="variable-semantics">
-              <div class="placeholder-text small">Parse ODEs to declare variables.</div>
-          </div>
-      </div>
       </div>
     </section>
 

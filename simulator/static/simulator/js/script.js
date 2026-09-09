@@ -15,14 +15,6 @@ const State = {
   symbolOrder: 'ode',       // 'ode' | 'alpha' — Value Settings 표시 순서
   processedODE: "",         // 기존 window._processedODE 대체
   derivedExpressions: {}, // 기존 window._derivedExpressions 대체
-  // 변수의 물리적 의미. 이름이나 문법으로는 알 수 없으므로 사용자가 선언한다 —
-  // Q1 과 C1 은 둘 다 파생식이지만 농도인 것은 C1 뿐이다. 서버는 여기서
-  // concentration 이라고 선언된 변수에만 NCA 를 돌린다.
-  //   { 변수이름: { quantity_kind, pk_scope } }
-  variableSemantics: {},
-  // 서버가 구조로 분류한 값 (compartment / derived_output / secondary_parameter).
-  // 표시 여부를 정하는 데만 쓴다 — 이것은 단위가 아니라 "값이 어디서 오는가"다.
-  structuralClasses: {},
 
   // 4. 피팅 프로세스 관련 상태
   fitTimer: null,             // 피팅 진행 시간 측정을 위한 타이머 ID
@@ -84,7 +76,6 @@ const DOM = {
     paramValuesContainer: document.getElementById("param-values"),
     symbolOrderRadios: document.querySelectorAll('input[name="symbolOrder"]'),
     derivedValuesContainer: document.getElementById("derived-values"),
-    variableSemanticsContainer: document.getElementById("variable-semantics"),
     doseForm: document.getElementById("dose-form"),
     doseListContainer: document.getElementById("dose-list"),
     doseTypeSelect: document.getElementById("type"),
@@ -293,13 +284,13 @@ const PK_TABLE_SINGLE = [
     key: 'cl', displayName: 'CL',
     definition: 'Clearance — the volume cleared of drug per unit time.',
     formula: 'Dose / AUC(0–∞)',
-    caveat: 'Reported as CL/F when the dose does not enter the observed compartment directly, because bioavailability is unknown. Left blank for amounts, since a dose divided by the AUC of an amount is not a clearance, and blank under repeat dosing, where the single-dose formula does not hold.',
+    caveat: 'Dose \u00f7 AUC, computed for whatever you plotted \u2014 the app does not judge whether that variable is a concentration. On an amount it is not a clearance at all; on a tissue concentration it comes out as the true CL divided by that tissue\u2019s partition coefficient. Reported as CL/F when the dose does not enter the observed compartment directly, because bioavailability is unknown, and left blank under repeat dosing, where the single-dose formula does not hold.',
   },
   {
     key: 'vz', displayName: 'V<sub>z</sub>',
     definition: 'Volume of distribution during the terminal phase.',
     formula: 'Dose / (λz · AUC(0–∞))',
-    caveat: 'Vz/F for extravascular dosing. It multiplies two uncertain quantities — λz and the extrapolated AUC — which makes it the least stable number in this table.',
+    caveat: 'Vz/F for extravascular dosing. It multiplies two uncertain quantities — λz and the extrapolated AUC — which makes it the least stable number in this table. Like CL it is computed for whatever you plotted, so it carries a volume meaning only when that variable is the concentration the dose reaches.',
   },
 ];
 
@@ -543,91 +534,10 @@ const UI = {
         derivedValuesContainer.innerHTML = `<div class="placeholder-text small">No derived variables found.</div>`;
     }
 
-    UI.renderVariableSemantics();
-
     // 뱃지 UI도 함께 업데이트
     UI.updateSelectedBadges();
   },
 
-  /**
-   * PK 출력 선언 목록.
-   *
-   * 선언한 변수만 행이 된다. 모델이 13조직 PBPK 로 커져도 이 표의 길이는
-   * 선언 개수 그대로다 — 예전에는 프로필이 있는 변수마다 드롭다운 두 개를
-   * 깔아서, 26변수 모델에서 이 절 하나가 1007px 를 먹었다.
-   *
-   * 화면에서는 단위 종류를 묻지 않는다. 실제로 동작하는 값은
-   * `concentration` 하나뿐이고(analyzer 의 게이트), 나머지 다섯은 코드
-   * 어디에도 영향이 없다. 그래서 "농도로 선언한다"는 행위 자체를 추가
-   * 컨트롤의 문구에 담고, API 로는 종전대로 quantity_kind 를 실어 보낸다.
-   * 서버 계약(semantics.py)은 그대로다.
-   */
-  renderVariableSemantics() {
-    const container = DOM.sidebar.variableSemanticsContainer;
-    if (!container) return;
-
-    // 프로필이 있는 변수만 후보다. 이차 파라미터(Q1 = fd1*QCO 처럼 시간에
-    // 따라 변하지 않는 값)는 곡선이 아니므로 NCA 를 돌릴 대상이 아니다.
-    const candidates = Object.keys(State.structuralClasses).filter(
-      name => State.structuralClasses[name] !== "secondary_parameter"
-    );
-    if (candidates.length === 0) {
-      container.innerHTML = `<div class="placeholder-text small">Parse ODEs to declare variables.</div>`;
-      return;
-    }
-
-    const ordered = [
-      ...SymbolOrder.compartments().filter(n => candidates.includes(n)),
-      ...candidates.filter(n => !State.compartments.includes(n)),
-    ];
-    const declared = ordered.filter(
-      n => (State.variableSemantics[n] || {}).pk_scope
-        && State.variableSemantics[n].pk_scope !== "none"
-    );
-    const remaining = ordered.filter(n => !declared.includes(n));
-
-    const rows = declared.map(name => {
-      const scope = State.variableSemantics[name].pk_scope;
-      // 라벨이 곧 출력 집합이다.  예전 짝("Exposure" 대 "Systemic")은 PK 어휘와
-      // 충돌했다 — systemic exposure 는 원래 Cmax/AUC 를 가리키는 한 낱말이라,
-      // 둘을 대립시키면 "이 변수가 전신 농도인가"를 묻는 것처럼 읽힌다.
-      // 실제로 가르는 것은 용량을 씌워 CL·Vz 까지 낼 것인가 하나뿐이다.
-      const scopeButtons = [
-        ["exposure", "Exposure", "Cmax, Tmax, AUC, half-life, MRT"],
-        ["dose_normalized", "+ CL, Vz", "the same, plus CL, Vz and dose-normalized values"],
-      ].map(([value, label, hint]) => `
-        <button type="button" class="btn${scope === value ? " active" : ""}"
-                data-pk-scope="${name}" data-value="${value}"
-                aria-pressed="${scope === value}" title="${hint}">${label}</button>`).join("");
-      return `
-        <div class="pk-output-row" data-variable="${name}">
-          <span class="pk-output-name" title="${name}">${name}</span>
-          <span class="btn-group btn-group-sm pk-scope-toggle" role="group"
-                aria-label="What to compute on ${name}">${scopeButtons}</span>
-          <button type="button" class="pk-output-remove" data-pk-remove="${name}"
-                  aria-label="Stop treating ${name} as a concentration">&times;</button>
-        </div>`;
-    }).join("");
-
-    // 후보를 구조로 나눠 보인다. 이건 파서가 아는 사실이지 이름에서 짐작한
-    // 것이 아니다 — 어느 쪽이 농도인지는 여전히 사용자만 말할 수 있다.
-    const group = (label, names) => names.length
-      ? `<optgroup label="${label}">${names.map(n => `<option value="${n}">${n}</option>`).join("")}</optgroup>`
-      : "";
-    const adder = remaining.length
-      ? `<select class="form-select form-select-sm pk-output-add" id="pk-output-add"
-                 aria-label="Declare a variable as a concentration">
-           <option value="" selected disabled>&#43; Declare a variable as a concentration&hellip;</option>
-           ${group("Compartments", remaining.filter(n => State.structuralClasses[n] === "compartment"))}
-           ${group("Derived outputs", remaining.filter(n => State.structuralClasses[n] !== "compartment"))}
-         </select>`
-      : `<p class="pk-output-note">Every variable with a profile is declared.</p>`;
-
-    container.innerHTML = (declared.length
-      ? rows
-      : `<p class="pk-output-note">Nothing is declared yet, so the PK Profile Summary stays empty.</p>`
-    ) + adder;
-  },
 
   /**
    * 심볼 역할 편집 모달의 내용을 렌더링합니다.
@@ -940,18 +850,9 @@ const UI = {
       const dataArray = Array.isArray(pkData) ? pkData : Object.entries(pkData).map(([comp, metrics]) => ({ compartment: comp, ...metrics }));
 
       if (dataArray.length === 0) {
-        // 여기 비어 있는 이유는 대개 하나다 — 어떤 변수가 농도인지 아직
-        // 아무도 말해 주지 않았다. 이름으로는 알 수 없으므로 추측하지 않고,
-        // 어디서 선언하는지만 알려 준다.
-        const declared = Object.values(State.variableSemantics)
-          .some(v => v && v.quantity_kind === "concentration" && v.pk_scope !== "none");
-        pkSummaryContainer.innerHTML = declared
-          ? `<div class="placeholder-text">No PK summary data.</div>`
-          : `<div class="placeholder-text">
-               No variable is declared as a concentration yet, so there is nothing to run NCA on.
-               Open <strong>Value Settings &rarr; PK Variables</strong> and declare the variables
-               that hold a concentration.
-             </div>`;
+        pkSummaryContainer.innerHTML = `<div class="placeholder-text">
+             Nothing to summarise. The summary covers the variables you chose to plot.
+           </div>`;
         pkSummaryPlaceholder.style.display = "none";
         pkSummaryContainer.style.display = "block";
         return;
@@ -1818,19 +1719,6 @@ const Handlers = {
         // 서버가 준 것은 구조 분류와 기본값(전부 unknown/none)이다. 사용자가
         // 이미 선언해 둔 것이 있으면, 같은 이름이 여전히 있는 한 지켜 준다 —
         // ODE 를 조금 고칠 때마다 선언이 날아가면 아무도 쓰지 않는다.
-        // 서버가 준 것은 구조 분류다. 선언(무엇이 농도인가)은 사용자만 할 수 있으므로
-        // 이미 해 둔 것이 있으면 같은 이름이 남아 있는 한 지켜 준다 — ODE 를 조금
-        // 고칠 때마다 선언이 날아가면 아무도 쓰지 않는다.
-        const semantics = response.data.variable_semantics || {};
-        State.structuralClasses = {};
-        Object.entries(semantics).forEach(([name, info]) => {
-          State.structuralClasses[name] = info.structural_class;
-        });
-        const kept = {};
-        Object.entries(State.variableSemantics).forEach(([name, info]) => {
-          if (semantics[name]) kept[name] = info;   // 사라진 변수의 선언은 버린다
-        });
-        State.variableSemantics = kept;
 
         // UI 업데이트 요청
         UI.renderSymbolInputs();
@@ -1847,38 +1735,6 @@ const Handlers = {
   },
 
 
-  /**
-   * PK 출력 목록의 조작. 목록 전체에 위임해 둔다 — 행은 파싱할 때마다 다시
-   * 그려지므로 행마다 리스너를 붙이면 새 행에는 아무것도 붙지 않는다.
-   */
-  handleVariableSemanticsChange(event) {
-    const adder = event.target.closest(".pk-output-add");
-    if (!adder || !adder.value) return;
-    // 이 클릭이 곧 "이 변수는 농도다" 라는 선언이다. 기본값은 exposure —
-    // 용량을 씌우는 쪽은 "이 농도가 용량이 도달하는 공간의 농도다" 까지
-    // 주장하는 것이므로, 사용자가 명시적으로 올려야 한다.  조직 농도에
-    // 씌우면 CL 이 참값의 1/Kp 로 나온다(측정: Kp=10 에서 0.2998 대 3.0).
-    Handlers._declarePkOutput(adder.value, "exposure");
-  },
-
-  handleVariableSemanticsClick(event) {
-    const scope = event.target.closest("[data-pk-scope]");
-    if (scope) return Handlers._declarePkOutput(scope.dataset.pkScope, scope.dataset.value);
-
-    const remove = event.target.closest("[data-pk-remove]");
-    if (remove) {
-      delete State.variableSemantics[remove.dataset.pkRemove];
-      UI.renderVariableSemantics();
-      Session.saveSoon();
-    }
-  },
-
-  /** 선언은 한 곳에서만 쓴다 — 서버 계약(농도일 때만 PK 범위)을 여기서 지킨다. */
-  _declarePkOutput(name, scope) {
-    State.variableSemantics[name] = { quantity_kind: "concentration", pk_scope: scope };
-    UI.renderVariableSemantics();
-    Session.saveSoon();
-  },
 
   /**
    * 심볼 편집 모달 내부의 클릭 이벤트를 처리합니다 (이벤트 위임).
@@ -2045,9 +1901,6 @@ const Handlers = {
         t_start: +DOM.toolbar.simStartTime.value,
         t_end: +DOM.toolbar.simEndTime.value,
         t_steps: stepsInput ? +stepsInput.value : 200, // 기본값 200
-        // 어느 변수가 농도인지. 이것이 없으면 서버는 전부 unknown 으로 보고
-        // NCA 를 한 줄도 돌리지 않는다 — PK 요약이 늘 비어 있던 이유다.
-        variable_semantics: State.variableSemantics,
         // 선택된 관찰 데이터도 함께 보내 같은 표에서 NCA 결과를 나란히 본다.
         // 매핑된 열만 의미가 있으므로 매핑과 용량을 함께 싣는다.
         observed: State.observations
@@ -2746,7 +2599,6 @@ const Session = {
       parameters: {},
       doses: State.doseList,
       observations: State.observations,
-      variableSemantics: State.variableSemantics,
       simulationSettings: {
         start: +DOM.toolbar.simStartTime.value,
         end: +DOM.toolbar.simEndTime.value,
@@ -2792,13 +2644,6 @@ const Session = {
       DOM.sidebar.odeInput.value = data.ode;
       // 파싱보다 먼저 넣어 둔다 — handleParseClick 은 같은 이름이 여전히
       // 있으면 기존 선언을 지켜 주므로, 이렇게 하면 한 번의 파싱으로 복원된다.
-      // 옛 이름을 들고 있는 세션이 있을 수 있다("systemic"). 서버도 받아 주지만
-      // 화면 토글이 어긋나 아무 버튼도 눌리지 않은 것처럼 보이므로 여기서 옮긴다.
-      const restored = data.variableSemantics || {};
-      Object.values(restored).forEach(v => {
-        if (v && v.pk_scope === "systemic") v.pk_scope = "dose_normalized";
-      });
-      State.variableSemantics = restored;
       await Handlers.handleParseClick();
 
       Object.entries(data.parameters || {}).forEach(([key, value]) => {
@@ -2900,10 +2745,6 @@ const Session = {
 
 
 
-// sensitivity.js 는 별도 IIFE 라 State 를 볼 수 없다. 스윕도 같은 PK 요약을
-// 쓰므로 선언을 함께 보내야 한다 — 창 하나로만 내보낸다.
-window.pkVariableSemantics = () => State.variableSemantics;
-
 const App = {
   /**
    * 애플리케이션을 초기화하는 메인 함수.
@@ -2952,12 +2793,6 @@ const App = {
     DOM.sidebar.doseForm.addEventListener('submit', Handlers.handleDoseFormSubmit);
     DOM.sidebar.doseTypeSelect.addEventListener('change', Handlers.handleDoseTypeChange);
     DOM.sidebar.doseListContainer.addEventListener('click', Handlers.handleDoseListClick);
-    if (DOM.sidebar.variableSemanticsContainer) {
-      DOM.sidebar.variableSemanticsContainer.addEventListener(
-        'change', Handlers.handleVariableSemanticsChange);
-      DOM.sidebar.variableSemanticsContainer.addEventListener(
-        'click', Handlers.handleVariableSemanticsClick);
-    }
     
     // Dosing 폼의 'Repeat' 토글 스위치 이벤트
     const repeatToggle = document.getElementById('repeat-dose-toggle');
