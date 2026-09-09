@@ -111,34 +111,62 @@ def solve_ode_system(
             else:
                 break
     
-    # 시간순으로 이벤트 정렬
+    # 시간순으로 정렬해 두고, 아래에서 포인터로 하나씩 소비한다.
     processed_dose_events.sort(key=lambda x: x["time"])
-    
+
+    # 시각 비교용 허용오차.  예전에는 np.isclose 를 썼는데 기본 rtol=1e-5 라
+    # t=1.0 과 t=1.000005 를 같은 시각으로 봤고, 두 구간 모두에서 두 이벤트가
+    # 다 발화해 10 mg 이 두 번 더해졌다.  시각은 상대오차로 비교할 값이 아니다.
+    time_tol = 1e-9 * max(1.0, abs(float(t_span[1])), abs(float(t_span[0])))
+
+    def _apply(event):
+        idx = event["comp_idx"]
+        if event["type"] == "bolus":
+            y_current[idx] += event["value"]
+        elif event["type"] == "infusion_start":
+            active_infusion_rates[idx] += event["value"]
+        elif event["type"] == "infusion_end":
+            active_infusion_rates[idx] = max(0.0, active_infusion_rates[idx] - event["value"])
+
     # --- 3. RHS 함수 정의 (Infusion 포함) ---
     def effective_rhs(t, y_arr):
         base_dy = equations_callable(t, y_arr, p_values_arr)
         return np.array(base_dy) + active_infusion_rates
 
     # --- 4. 이벤트 기반 시뮬레이션 루프 ---
-    all_solutions = [] # 각 구간의 solution 객체를 저장할 리스트
-    
-    while t_current < t_span[1]:
-        # 현재 시간에서 발생하는 모든 이벤트 적용
-        events_at_this_time = [e for e in processed_dose_events if np.isclose(e['time'], t_current)]
-        for event in events_at_this_time:
-            if event["type"] == "bolus":
-                y_current[event["comp_idx"]] += event["value"]
-            elif event["type"] == "infusion_start":
-                active_infusion_rates[event["comp_idx"]] += event["value"]
-            elif event["type"] == "infusion_end":
-                active_infusion_rates[event["comp_idx"]] -= event["value"]
-                active_infusion_rates[event["comp_idx"]] = max(0, active_infusion_rates[event["comp_idx"]])
+    t_start, t_end = float(t_span[0]), float(t_span[1])
+    cursor = 0
 
-        # 다음 이벤트 시간 찾기
-        upcoming_event_times = [event['time'] for event in processed_dose_events if event['time'] > t_current + 1e-9]
-        t_next_event = upcoming_event_times[0] if upcoming_event_times else t_span[1]
-        
-        # 현재 구간 [t_current, t_next_event]에 대해 시뮬레이션
+    # 관찰 창이 시작되기 *전에* 일어난 일을 반영한다.  창 이전에 시작해 아직
+    # 진행 중인 주입은 계속 흘러야 한다(예전에는 통째로 무시돼서, 정상상태
+    # 구간만 떼어 보면 유입이 0 이었다).  창 이전의 볼루스는 이미 초기값에
+    # 반영돼 있다고 보고 다시 더하지 않는다 — 더하면 이중 투여가 된다.
+    while cursor < len(processed_dose_events) and processed_dose_events[cursor]["time"] < t_start - time_tol:
+        event = processed_dose_events[cursor]
+        if event["type"] in ("infusion_start", "infusion_end"):
+            _apply(event)
+        cursor += 1
+
+    all_solutions = []   # 각 구간의 보간 함수
+    segment_spans = []   # 그 구간의 [t0, t1]
+
+    while True:
+        # 지금 시각에 걸린 이벤트를 소비한다.  포인터로 지우며 나아가므로
+        # 같은 이벤트가 두 구간에서 다시 발화하지 않는다.
+        while cursor < len(processed_dose_events) and processed_dose_events[cursor]["time"] <= t_current + time_tol:
+            _apply(processed_dose_events[cursor])
+            cursor += 1
+
+        if t_current >= t_end - time_tol:
+            break
+
+        if cursor < len(processed_dose_events):
+            t_next_event = min(processed_dose_events[cursor]["time"], t_end)
+        else:
+            t_next_event = t_end
+        if t_next_event <= t_current + time_tol:
+            t_next_event = t_end
+
         with _INTEGRATOR_LOCK:
             sol_segment = solve_ivp(
                 fun=effective_rhs,
@@ -155,32 +183,43 @@ def solve_ode_system(
                 rtol=1e-8,
                 atol=1e-11,
             )
-        
-        all_solutions.append(sol_segment.sol) # 보간 함수(dense output) 저장
-        
-        # 다음 루프를 위해 현재 상태 업데이트
-        t_current = sol_segment.t[-1]
+
+        all_solutions.append(sol_segment.sol)
+        segment_spans.append((t_current, float(sol_segment.t[-1])))
+
+        t_current = float(sol_segment.t[-1])
         y_current = sol_segment.y[:, -1].copy()
 
-        if sol_segment.status != 0 and sol_segment.status != 1: # 솔버 실패 시
+        if sol_segment.status != 0 and sol_segment.status != 1:  # 솔버 실패 시
             print(f"Warning: ODE solver failed at t={t_current}. Message: {sol_segment.message}")
             break
 
+    # 마지막 시각의 상태.  구간 끝에 놓인 투여는 어떤 적분 구간에도 담기지
+    # 않으므로(적분할 길이가 없다) 따로 들고 있어야 한다 — 예전에는 t_end 의
+    # 투여가 결과에서 사라졌다.
+    final_state = (t_current, y_current.copy())
+
     # --- 5. 최종 결과 생성 ---
-    # 요청된 t_eval 시간점들에 대한 값을 각 구간의 보간 함수를 사용하여 계산
     final_y_values = np.zeros((len(compartments), len(t_eval)))
 
     for i, t_point in enumerate(t_eval):
-        # t_point가 포함된 solution segment 찾기
-        found = False
-        for sol_func in all_solutions:
-            if sol_func.t_min - 1e-9 <= t_point <= sol_func.t_max + 1e-9:
+        t_point = float(t_point)
+
+        if t_point >= final_state[0] - time_tol:
+            final_y_values[:, i] = final_state[1]
+            continue
+
+        # 구간 경계에 정확히 놓인 시각은 *뒤* 구간의 값을 쓴다.  투여 시각에
+        # 채혈하면 투여 후 농도가 나와야 한다(우연속).  앞에서부터 찾으면
+        # 이전 구간이 먼저 걸려 투여 전 값이 나왔다.
+        placed = False
+        for (seg_t0, seg_t1), sol_func in zip(reversed(segment_spans), reversed(all_solutions)):
+            if seg_t0 - time_tol <= t_point <= seg_t1 + time_tol:
                 final_y_values[:, i] = sol_func(t_point)
-                found = True
+                placed = True
                 break
-        if not found and t_point > t_span[0]: # 모든 구간 이후의 시간점이라면 마지막 값 사용
-             if all_solutions:
-                 final_y_values[:, i] = all_solutions[-1](all_solutions[-1].t_max)
+        if not placed and all_solutions and t_point > t_start:
+            final_y_values[:, i] = all_solutions[-1](segment_spans[-1][1])
 
     # DataFrame으로 변환하여 반환
     df_output = pd.DataFrame(final_y_values.T, columns=compartments)
