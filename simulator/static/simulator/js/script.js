@@ -588,9 +588,13 @@ const UI = {
 
     const rows = declared.map(name => {
       const scope = State.variableSemantics[name].pk_scope;
+      // 라벨이 곧 출력 집합이다.  예전 짝("Exposure" 대 "Systemic")은 PK 어휘와
+      // 충돌했다 — systemic exposure 는 원래 Cmax/AUC 를 가리키는 한 낱말이라,
+      // 둘을 대립시키면 "이 변수가 전신 농도인가"를 묻는 것처럼 읽힌다.
+      // 실제로 가르는 것은 용량을 씌워 CL·Vz 까지 낼 것인가 하나뿐이다.
       const scopeButtons = [
-        ["exposure", "Exposure", "Cmax, Tmax, AUC, half-life"],
-        ["systemic", "Systemic", "the same, plus CL and Vz from the dose"],
+        ["exposure", "Exposure", "Cmax, Tmax, AUC, half-life, MRT"],
+        ["dose_normalized", "+ CL, Vz", "the same, plus CL, Vz and dose-normalized values"],
       ].map(([value, label, hint]) => `
         <button type="button" class="btn${scope === value ? " active" : ""}"
                 data-pk-scope="${name}" data-value="${value}"
@@ -1851,8 +1855,9 @@ const Handlers = {
     const adder = event.target.closest(".pk-output-add");
     if (!adder || !adder.value) return;
     // 이 클릭이 곧 "이 변수는 농도다" 라는 선언이다. 기본값은 exposure —
-    // systemic 은 "투여량 전부가 이 변수의 공간에 도달한다" 까지 주장하므로,
-    // 사용자가 명시적으로 올려야 한다.
+    // 용량을 씌우는 쪽은 "이 농도가 용량이 도달하는 공간의 농도다" 까지
+    // 주장하는 것이므로, 사용자가 명시적으로 올려야 한다.  조직 농도에
+    // 씌우면 CL 이 참값의 1/Kp 로 나온다(측정: Kp=10 에서 0.2998 대 3.0).
     Handlers._declarePkOutput(adder.value, "exposure");
   },
 
@@ -2787,7 +2792,13 @@ const Session = {
       DOM.sidebar.odeInput.value = data.ode;
       // 파싱보다 먼저 넣어 둔다 — handleParseClick 은 같은 이름이 여전히
       // 있으면 기존 선언을 지켜 주므로, 이렇게 하면 한 번의 파싱으로 복원된다.
-      State.variableSemantics = data.variableSemantics || {};
+      // 옛 이름을 들고 있는 세션이 있을 수 있다("systemic"). 서버도 받아 주지만
+      // 화면 토글이 어긋나 아무 버튼도 눌리지 않은 것처럼 보이므로 여기서 옮긴다.
+      const restored = data.variableSemantics || {};
+      Object.values(restored).forEach(v => {
+        if (v && v.pk_scope === "systemic") v.pk_scope = "dose_normalized";
+      });
+      State.variableSemantics = restored;
       await Handlers.handleParseClick();
 
       Object.entries(data.parameters || {}).forEach(([key, value]) => {

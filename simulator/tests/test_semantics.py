@@ -45,7 +45,7 @@ class StructuralClassificationTests(SimpleTestCase):
 
         with self.assertRaisesRegex(ValueError, "only when it is a concentration"):
             resolve_variable_semantics(
-                parsed, {"C": {"quantity_kind": "flow", "pk_scope": "systemic"}}
+                parsed, {"C": {"quantity_kind": "flow", "pk_scope": "dose_normalized"}}
             )
 
     def test_parse_api_returns_only_safe_structural_defaults(self):
@@ -74,12 +74,12 @@ class PkEligibilityTests(SimpleTestCase):
             }
         )
         self.semantics = {
-            "C1": {"quantity_kind": "concentration", "pk_scope": "systemic"},
+            "C1": {"quantity_kind": "concentration", "pk_scope": "dose_normalized"},
             "C2": {"quantity_kind": "concentration", "pk_scope": "exposure"},
             "Q1": {"quantity_kind": "flow", "pk_scope": "none"},
         }
 
-    def test_only_pk_concentrations_are_analyzed_and_only_systemic_uses_dose(self):
+    def test_only_declared_concentrations_are_analyzed_and_only_dose_normalized_uses_dose(self):
         result = analyze_simulated(
             self.df,
             ["C1", "C2", "Q1"],

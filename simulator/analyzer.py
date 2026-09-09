@@ -251,8 +251,9 @@ def analyze_simulated(
     고를 일이 없고, 0 시점부터 시작하므로 역외삽도 필요 없다.
 
     NCA는 사용자가 농도라고 명시하고 PK 범위를 지정한 변수에만 수행한다.
-    ``exposure``는 Cmax/AUC 같은 노출 지표만, ``systemic``은 용량 기반
-    CL/V까지 계산한다. 파생식이라는 사실만으로 농도로 취급하지 않는다.
+    ``exposure``는 용량 없이 낼 수 있는 것만(Cmax, Tmax, AUC, t½, MRT),
+    ``dose_normalized``는 용량까지 넘겨 CL, Vz, Vss 와 용량으로 나눈 값을
+    더한다.  이 둘이 가르는 것은 변수의 생리학적 지위가 아니라 출력 집합이다. 파생식이라는 사실만으로 농도로 취급하지 않는다.
     """
     variable_semantics = variable_semantics or {}
     derived_expressions = derived_expressions or {}
@@ -267,11 +268,11 @@ def analyze_simulated(
         if semantics.get("quantity_kind") != "concentration":
             continue
         pk_scope = semantics.get("pk_scope", "none")
-        if pk_scope not in {"exposure", "systemic"}:
+        if pk_scope not in {"exposure", "dose_normalized"}:
             continue
         conc = df[var].to_numpy()
 
-        use_dose = pk_scope == "systemic"
+        use_dose = pk_scope == "dose_normalized"
         result = nca(
             time,
             conc,
@@ -361,11 +362,11 @@ def analyze_observed(
             if semantics.get("quantity_kind") != "concentration":
                 continue
             pk_scope = semantics.get("pk_scope", "none")
-            if pk_scope not in {"exposure", "systemic"}:
+            if pk_scope not in {"exposure", "dose_normalized"}:
                 continue
             conc = np.asarray([np.nan if v is None else v for v in values], dtype=float)
 
-            dose = dataset.get("dose") if pk_scope == "systemic" else None
+            dose = dataset.get("dose") if pk_scope == "dose_normalized" else None
             dose = float(dose) if dose not in (None, "") else None
 
             result = nca(
@@ -375,7 +376,7 @@ def analyze_observed(
                 method=method,
                 administration=infer_administration(variable, doses, derived_expressions),
             )
-            if dose is None and pk_scope == "systemic":
+            if dose is None and pk_scope == "dose_normalized":
                 result.warnings.append(
                     "No dose given for this dataset — clearance and volumes need one."
                 )
@@ -504,7 +505,7 @@ def analyze_pk(df: pd.DataFrame, compartments: list, total_dose: float) -> Dict[
     """예전 시그니처. 아직 이 함수를 부르는 코드가 있을 때를 위해 남겨 둔다."""
     doses = [{"compartment": c, "type": "bolus", "amount": total_dose} for c in compartments[:1]]
     semantics = {
-        name: {"quantity_kind": "concentration", "pk_scope": "systemic"}
+        name: {"quantity_kind": "concentration", "pk_scope": "dose_normalized"}
         for name in compartments
     }
     return analyze_simulated(df, compartments, doses, variable_semantics=semantics)

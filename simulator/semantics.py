@@ -13,7 +13,14 @@ from typing import Dict, Mapping, Optional
 
 STRUCTURAL_CLASSES = {"compartment", "secondary_parameter", "derived_output"}
 QUANTITY_KINDS = {"unknown", "concentration", "amount", "flow", "fraction", "other"}
-PK_SCOPES = {"none", "exposure", "systemic"}
+PK_SCOPES = {"none", "exposure", "dose_normalized"}
+
+# 옛 이름.  "exposure" 와 "systemic" 을 나란히 놓으면 PK 어휘와 충돌한다 —
+# systemic exposure 는 원래 Cmax/AUC 를 가리키는 한 낱말이므로, 둘을 대립하는
+# 선택지로 쓰면 "이 변수가 전신 농도인가"를 묻는 것처럼 읽힌다.  실제로 이
+# 값이 가르는 것은 그게 아니라 "용량을 넘겨 CL·Vz 까지 낼 것인가" 하나다.
+# 이미 저장된 세션이 옛 이름을 보내올 수 있으므로 조용히 새 이름으로 옮긴다.
+_LEGACY_PK_SCOPES = {"systemic": "dose_normalized"}
 
 
 def _names(expression: str) -> set[str]:
@@ -84,6 +91,7 @@ def resolve_variable_semantics(
 
         quantity_kind = str(raw.get("quantity_kind") or "unknown")
         pk_scope = str(raw.get("pk_scope") or "none")
+        pk_scope = _LEGACY_PK_SCOPES.get(pk_scope, pk_scope)
         if quantity_kind not in QUANTITY_KINDS:
             raise ValueError(
                 f"Unknown quantity kind '{quantity_kind}' for '{name}'."
