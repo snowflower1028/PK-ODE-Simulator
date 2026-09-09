@@ -53,8 +53,12 @@ if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
 # HTTPS 로 서비스되는 호스트는 CSRF 신뢰 출처에도 등록해야 POST 요청이 통과한다.
+# 와일드카드는 옮기지 않는다 — DJANGO_ALLOWED_HOSTS=* 를 한 번 넣으면
+# 아무 Host 나 받는 앱이 되는 동시에 https://* 가 신뢰 출처가 되어, 실수 하나가
+# 두 가지 방어를 한꺼번에 없앤다. 신뢰 출처는 명시한 호스트만.
 CSRF_TRUSTED_ORIGINS = [
-    f'https://{h}' for h in ALLOWED_HOSTS if h not in ('127.0.0.1', 'localhost')
+    f'https://{h}' for h in ALLOWED_HOSTS
+    if h not in ('127.0.0.1', 'localhost') and '*' not in h
 ]
 
 

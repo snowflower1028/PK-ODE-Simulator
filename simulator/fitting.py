@@ -352,7 +352,7 @@ def fit(data: dict) -> dict:
     # --- 1. ODE 파싱 및 lambdify ---
     try:
         ode_text = data["equations"]
-        cache_key = 'parsed_ode_sympy_' + hashlib.md5(ode_text.encode('utf-8')).hexdigest()
+        cache_key = 'parsed_ode_sympy_' + hashlib.sha256(ode_text.encode('utf-8')).hexdigest()
         parsed = cache.get(cache_key)
         if parsed is None:
             parsed = parse_ode_input(ode_text)

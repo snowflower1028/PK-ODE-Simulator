@@ -29,7 +29,7 @@ from .analyzer import analyze_observed, analyze_simulated, compare_observed, obs
 
 def _parsed_ode(ode_text: str):
     """파싱 결과를 캐시에서 꺼내거나 만들어 둔다."""
-    cache_key = 'parsed_ode_sympy_' + hashlib.md5(ode_text.encode('utf-8')).hexdigest()
+    cache_key = 'parsed_ode_sympy_' + hashlib.sha256(ode_text.encode('utf-8')).hexdigest()
     parsed = cache.get(cache_key)
     if parsed is None:
         parsed = parse_ode_input(ode_text)
@@ -109,6 +109,21 @@ def _check_observed_size(datasets) -> None:
         )
 
 
+# 500 응답에 예외 문자열을 그대로 싣지 않는다.  400 은 사용자가 고칠 수 있는
+# 잘못이라 이유를 말해 주는 것이 맞지만, 500 은 우리 잘못이고 그 메시지는
+# 라이브러리 내부 사정과 서버 절대경로(FileNotFoundError, OSError, sympy/numpy
+# 내부)를 그대로 흘린다.  자세한 것은 로그로 보내고, 응답에는 어디서 났는지만
+# 남긴다 — 사용자가 신고할 때 이 이름이 단서가 된다.
+def _server_error(where: str) -> JsonResponse:
+    traceback.print_exc()
+    return JsonResponse(
+        {"status": "error",
+         "message": f"Something went wrong while {where}. "
+                    f"If it keeps happening, the server log has the details."},
+        status=500,
+    )
+
+
 def _solve_profile(parsed, rhs, init_values, param_values,
                    t_start, t_end, t_steps, doses):
     """한 번 풀고 파생 변수까지 붙인 DataFrame 을 돌려준다."""
@@ -180,9 +195,8 @@ def sweep(request):
             return _scan(ctx, spec)
         return JsonResponse({"status": "error", "message": f"Unknown sweep mode '{mode}'."}, status=400)
 
-    except Exception as e:
-        traceback.print_exc()
-        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+    except Exception:
+        return _server_error("running the sweep")
 
 
 def _run_once(ctx, initials, params, doses):
@@ -428,7 +442,7 @@ def simulate(request):
             t_eval = np.unique(np.concatenate([t_eval, np.asarray(samples, dtype=float)]))
 
         # 2. 캐시에서 파싱된 결과(SymPy 객체) 가져오기
-        cache_key = 'parsed_ode_sympy_' + hashlib.md5(ode_text.encode('utf-8')).hexdigest()
+        cache_key = 'parsed_ode_sympy_' + hashlib.sha256(ode_text.encode('utf-8')).hexdigest()
         parsed = cache.get(cache_key)
 
         if parsed is None:
@@ -549,9 +563,8 @@ def simulate(request):
         # 투여 유형, 길이 0 인 주입)을 거절한다.  그건 서버 잘못이 아니라
         # 요청 잘못이므로 500 이 아니라 400 으로, 이유를 그대로 돌려준다.
         return JsonResponse({"status": "error", "message": str(exc)}, status=400)
-    except Exception as e:
-        traceback.print_exc()
-        return JsonResponse({"status": "error", "message": f"An unexpected error occurred: {str(e)}"}, status=500)
+    except Exception:
+        return _server_error("running the simulation")
 
 @require_POST
 def parse_ode_view(request):
@@ -561,7 +574,7 @@ def parse_ode_view(request):
         
         # 이 view는 순수하게 파싱 결과만 보여주므로, 캐싱을 적용할 수 있지만 필수는 아님
         # 만약 적용한다면 simulate view와 동일한 캐시 키 사용
-        cache_key = 'parsed_ode_sympy_' + hashlib.md5(ode_text.encode('utf-8')).hexdigest()
+        cache_key = 'parsed_ode_sympy_' + hashlib.sha256(ode_text.encode('utf-8')).hexdigest()
         parsed = cache.get(cache_key)
         if parsed is None:
             parsed = parse_ode_input(ode_text)
@@ -606,9 +619,8 @@ def fit(request):
     except ValueError as exc:
         # 솔버의 입력 검증에서 올라온 것 — 요청 잘못이다.
         return JsonResponse({"status": "error", "message": str(exc)}, status=400)
-    except Exception as e:
-        traceback.print_exc()
-        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+    except Exception:
+        return _server_error("fitting the model")
 
 # 개발 중에만 쓰는 정적 파일 버전 문자열.
 _ASSET_FILES = (
@@ -763,9 +775,8 @@ def nca_run(request):
     except ValueError as exc:
         # 알 수 없는 단위·규칙·투여방식은 사용자가 고칠 수 있는 잘못이다.
         return JsonResponse({"status": "error", "message": str(exc)}, status=400)
-    except Exception as exc:
-        traceback.print_exc()
-        return JsonResponse({"status": "error", "message": str(exc)}, status=500)
+    except Exception:
+        return _server_error("computing the NCA results")
 
 
 @require_POST
@@ -823,7 +834,6 @@ def nca_units(request):
 
     except U.UnitError as exc:
         return JsonResponse({"status": "error", "message": str(exc)}, status=400)
-    except Exception as exc:
-        traceback.print_exc()
-        return JsonResponse({"status": "error", "message": str(exc)}, status=500)
+    except Exception:
+        return _server_error("resolving the units")
 
