@@ -65,6 +65,77 @@ def solve_ode_system(
     if doses is None:
         doses = []
 
+    # --- 0. 입력 검증 ---
+    # 예전에는 이 자리에서 아무것도 보지 않았다.  틀린 입력은 예외가 아니라
+    # 그럴듯한 숫자가 되어 나갔다: 값이 빠진 파라미터는 0 으로 채워져
+    # (CL 이 없으면 소실이 없는 약이 되고), 모르는 투여 유형은 조용히
+    # 건너뛰어 무투여 곡선이 되고, 뒤집힌 t_span 은 빈 결과가 됐다.
+    # 사용자가 잘못 넣은 값은 조용한 답이 아니라 오류로 돌려준다.
+    if len(t_span) != 2:
+        raise ValueError(f"t_span must be a pair of times; got {t_span!r}.")
+    try:
+        t_lo, t_hi = float(t_span[0]), float(t_span[1])
+    except (TypeError, ValueError):
+        raise ValueError(f"t_span must be numeric; got {t_span!r}.")
+    if not (np.isfinite(t_lo) and np.isfinite(t_hi)):
+        raise ValueError(f"t_span must be finite; got ({t_span[0]!r}, {t_span[1]!r}).")
+    if t_hi <= t_lo:
+        raise ValueError(
+            f"t_span must run forwards: the end ({t_hi}) has to be later than "
+            f"the start ({t_lo})."
+        )
+
+    missing_params = [
+        name for name in parameters
+        if param_values.get(name, None) is None
+    ]
+    if missing_params:
+        raise ValueError(
+            "Missing parameter value(s): " + ", ".join(sorted(missing_params))
+        )
+    for name in parameters:
+        try:
+            value = float(param_values[name])
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Parameter {name!r} is not a number: {param_values[name]!r}."
+            )
+        if not np.isfinite(value):
+            raise ValueError(f"Parameter {name!r} is not finite: {value!r}.")
+
+    for position, dose_item in enumerate(doses, start=1):
+        typ = dose_item.get("type")
+        if typ not in ("bolus", "infusion"):
+            raise ValueError(
+                f"Unknown dose type {typ!r} in dose #{position}; "
+                f"expected 'bolus' or 'infusion'."
+            )
+        try:
+            amount = float(dose_item.get("amount", 0))
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Dose #{position} has a non-numeric amount: "
+                f"{dose_item.get('amount')!r}."
+            )
+        if not np.isfinite(amount):
+            raise ValueError(f"Dose #{position} has a non-finite amount: {amount!r}.")
+        if typ == "infusion":
+            try:
+                duration = float(dose_item.get("duration", 0) or 0)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"Infusion dose #{position} has a non-numeric duration: "
+                    f"{dose_item.get('duration')!r}."
+                )
+            # 예전에는 duration<=0 인 주입이 이벤트를 하나도 만들지 않아
+            # 투여가 통째로 사라졌다.  속도(amount/duration)가 정의되지 않으니
+            # 조용히 넘길 수 없는 입력이다.
+            if not duration > 0:
+                raise ValueError(
+                    f"Infusion dose #{position} needs a positive duration; "
+                    f"got {duration}."
+                )
+
     # --- 1. 설정 및 변수 초기화 ---
     # dtype 을 명시하지 않으면 numpy 가 입력에서 추론한다.  JSON 의 `0` 은 파이썬
     # int 로 들어오므로 모든 값이 정수면 배열이 int64 가 되고, 그 뒤 `+= 0.25`
@@ -184,15 +255,20 @@ def solve_ode_system(
                 atol=1e-11,
             )
 
+        # 적분 실패는 경고 한 줄로 넘길 일이 아니다.  예전에는 여기서
+        # print 하고 루프를 빠져나갔고, 호출자는 마지막 값이 끝까지 평평하게
+        # 이어진 "성공한" 프로필을 받았다 — 피팅이 그 곡선에 붙으면 실패가
+        # 파라미터 추정치로 둔갑한다.
+        if not getattr(sol_segment, "success", True):
+            raise RuntimeError(
+                f"ODE integration failed at t={t_current}: {sol_segment.message}"
+            )
+
         all_solutions.append(sol_segment.sol)
         segment_spans.append((t_current, float(sol_segment.t[-1])))
 
         t_current = float(sol_segment.t[-1])
         y_current = sol_segment.y[:, -1].copy()
-
-        if sol_segment.status != 0 and sol_segment.status != 1:  # 솔버 실패 시
-            print(f"Warning: ODE solver failed at t={t_current}. Message: {sol_segment.message}")
-            break
 
     # 마지막 시각의 상태.  구간 끝에 놓인 투여는 어떤 적분 구간에도 담기지
     # 않으므로(적분할 길이가 없다) 따로 들고 있어야 한다 — 예전에는 t_end 의

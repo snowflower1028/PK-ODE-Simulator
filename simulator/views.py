@@ -508,6 +508,11 @@ def simulate(request):
 
     except json.JSONDecodeError:
         return JsonResponse({"status": "error", "message": "Invalid JSON format in request body."}, status=400)
+    except ValueError as exc:
+        # 솔버가 이제 잘못된 입력(뒤집힌 t_span, 값이 빠진 파라미터, 모르는
+        # 투여 유형, 길이 0 인 주입)을 거절한다.  그건 서버 잘못이 아니라
+        # 요청 잘못이므로 500 이 아니라 400 으로, 이유를 그대로 돌려준다.
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
     except Exception as e:
         traceback.print_exc()
         return JsonResponse({"status": "error", "message": f"An unexpected error occurred: {str(e)}"}, status=500)
@@ -549,6 +554,9 @@ def fit(request):
         if res.get("status") == "error":
              return JsonResponse(res, status=400)
         return JsonResponse({"status": "ok", "data": res})
+    except ValueError as exc:
+        # 솔버의 입력 검증에서 올라온 것 — 요청 잘못이다.
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
     except Exception as e:
         traceback.print_exc()
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
