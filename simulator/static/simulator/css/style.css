@@ -3417,3 +3417,28 @@ body.is-resizing {
     .home-card { transition: box-shadow 0.2s ease; }
     .home-card:hover { transform: none; }
 }
+
+/* ── PK Variables (변수 의미 선언) ────────────────────────────
+   이름 / 단위 종류 / PK 범위 세 칸. 이름 칸은 고정폭이라 여러 행의
+   드롭다운이 세로로 맞고, 나머지는 사이드바 폭에 따라 함께 줄어든다. */
+.variable-semantics-row {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.variable-semantics-name {
+  font-weight: 600;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 농도가 아닌 변수의 PK 범위 칸. 사라지지 않고 흐려지기만 하는 편이,
+   왜 고를 수 없는지 읽히므로 낫다. */
+.variable-semantics-row select:disabled {
+  opacity: 0.55;
+}

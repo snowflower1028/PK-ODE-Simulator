@@ -188,6 +188,18 @@
               <div class="placeholder-text small">No derived variables found.</div>
           </div>
       </div>
+      <div class="variable-semantics-section mt-3">
+          <h3 class="subsection-title">
+            PK Variables
+            <button type="button" class="pk-info" tabindex="0" aria-label="About PK Variables"
+              data-tip-def="Which model variables are concentrations, and what the PK summary should compute on them."
+              data-tip-formula="Exposure &rarr; Cmax, Tmax, AUC, half-life. Systemic &rarr; the same plus dose-based CL and V."
+              data-tip-note="A name does not give a dimension. Q1 and C1 are both derived, but only C1 is a concentration, so nothing here is guessed for you. The PK Profile Summary stays empty until you declare at least one."></button>
+          </h3>
+          <div id="variable-semantics">
+              <div class="placeholder-text small">Parse ODEs to declare variables.</div>
+          </div>
+      </div>
       </div>
     </section>
 

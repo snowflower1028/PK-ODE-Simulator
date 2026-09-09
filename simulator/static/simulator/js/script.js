@@ -15,6 +15,14 @@ const State = {
   symbolOrder: 'ode',       // 'ode' | 'alpha' — Value Settings 표시 순서
   processedODE: "",         // 기존 window._processedODE 대체
   derivedExpressions: {}, // 기존 window._derivedExpressions 대체
+  // 변수의 물리적 의미. 이름이나 문법으로는 알 수 없으므로 사용자가 선언한다 —
+  // Q1 과 C1 은 둘 다 파생식이지만 농도인 것은 C1 뿐이다. 서버는 여기서
+  // concentration 이라고 선언된 변수에만 NCA 를 돌린다.
+  //   { 변수이름: { quantity_kind, pk_scope } }
+  variableSemantics: {},
+  // 서버가 구조로 분류한 값 (compartment / derived_output / secondary_parameter).
+  // 표시 여부를 정하는 데만 쓴다 — 이것은 단위가 아니라 "값이 어디서 오는가"다.
+  structuralClasses: {},
 
   // 4. 피팅 프로세스 관련 상태
   fitTimer: null,             // 피팅 진행 시간 측정을 위한 타이머 ID
@@ -76,6 +84,7 @@ const DOM = {
     paramValuesContainer: document.getElementById("param-values"),
     symbolOrderRadios: document.querySelectorAll('input[name="symbolOrder"]'),
     derivedValuesContainer: document.getElementById("derived-values"),
+    variableSemanticsContainer: document.getElementById("variable-semantics"),
     doseForm: document.getElementById("dose-form"),
     doseListContainer: document.getElementById("dose-list"),
     doseTypeSelect: document.getElementById("type"),
@@ -534,8 +543,72 @@ const UI = {
         derivedValuesContainer.innerHTML = `<div class="placeholder-text small">No derived variables found.</div>`;
     }
 
+    UI.renderVariableSemantics();
+
     // 뱃지 UI도 함께 업데이트
     UI.updateSelectedBadges();
+  },
+
+  /**
+   * 변수의 물리적 의미 선언표.
+   *
+   * 프로필이 있는 변수 — 컴파트먼트와 derived output — 만 싣는다. 이차
+   * 파라미터(Q1 = fd1*QCO 처럼 시간에 따라 변하지 않는 값)는 곡선이 아니므로
+   * NCA 를 돌릴 대상이 아니다.
+   *
+   * pk_scope 는 quantity_kind 가 concentration 일 때만 열린다. 서버도 같은
+   * 규칙으로 거절하므로(semantics.py), 화면에서 먼저 막아 왕복을 아낀다.
+   */
+  renderVariableSemantics() {
+    const container = DOM.sidebar.variableSemanticsContainer;
+    if (!container) return;
+
+    const names = Object.keys(State.structuralClasses).filter(
+      name => State.structuralClasses[name] !== "secondary_parameter"
+    );
+    // 표시 순서는 Value Settings 의 다른 표와 맞춘다.
+    const ordered = [
+      ...SymbolOrder.compartments().filter(n => names.includes(n)),
+      ...names.filter(n => !State.compartments.includes(n)),
+    ];
+
+    if (ordered.length === 0) {
+      container.innerHTML = `<div class="placeholder-text small">Parse ODEs to declare variables.</div>`;
+      return;
+    }
+
+    const KINDS = ["unknown", "concentration", "amount", "flow", "fraction", "other"];
+    const SCOPES = [
+      ["none", "None"],
+      ["exposure", "Exposure"],
+      ["systemic", "Systemic"],
+    ];
+
+    container.innerHTML = ordered.map(name => {
+      const chosen = State.variableSemantics[name] || {};
+      const kind = chosen.quantity_kind || "unknown";
+      const scope = chosen.pk_scope || "none";
+      const isConcentration = kind === "concentration";
+      const kindOptions = KINDS.map(
+        k => `<option value="${k}"${k === kind ? " selected" : ""}>${k}</option>`
+      ).join("");
+      const scopeOptions = SCOPES.map(
+        ([value, label]) =>
+          `<option value="${value}"${value === scope ? " selected" : ""}>${label}</option>`
+      ).join("");
+      return `
+        <div class="variable-semantics-row" data-variable="${name}">
+          <span class="variable-semantics-name" title="${State.structuralClasses[name]}">${name}</span>
+          <select class="form-select form-select-sm semantics-kind" aria-label="Quantity kind for ${name}">
+            ${kindOptions}
+          </select>
+          <select class="form-select form-select-sm semantics-scope" aria-label="PK scope for ${name}"
+                  ${isConcentration ? "" : "disabled"}
+                  title="${isConcentration ? "" : "Only a concentration can have a PK scope."}">
+            ${scopeOptions}
+          </select>
+        </div>`;
+    }).join("");
   },
 
   /**
@@ -849,7 +922,20 @@ const UI = {
       const dataArray = Array.isArray(pkData) ? pkData : Object.entries(pkData).map(([comp, metrics]) => ({ compartment: comp, ...metrics }));
 
       if (dataArray.length === 0) {
-        pkSummaryContainer.innerHTML = `<div class="placeholder-text">No PK summary data.</div>`;
+        // 여기 비어 있는 이유는 대개 하나다 — 어떤 변수가 농도인지 아직
+        // 아무도 말해 주지 않았다. 이름으로는 알 수 없으므로 추측하지 않고,
+        // 어디서 선언하는지만 알려 준다.
+        const declared = Object.values(State.variableSemantics)
+          .some(v => v && v.quantity_kind === "concentration" && v.pk_scope !== "none");
+        pkSummaryContainer.innerHTML = declared
+          ? `<div class="placeholder-text">No PK summary data.</div>`
+          : `<div class="placeholder-text">
+               Nothing is declared as a concentration yet, so there is nothing to run NCA on.
+               Open <strong>Value Settings &rarr; PK Variables</strong> and set the concentration
+               variable's quantity kind to <code>concentration</code>, then choose a PK scope.
+             </div>`;
+        pkSummaryPlaceholder.style.display = "none";
+        pkSummaryContainer.style.display = "block";
         return;
       }
 
@@ -1711,6 +1797,21 @@ const Handlers = {
         State.processedODE = response.data.processed_ode;
         State.derivedExpressions = response.data.derived_expressions || {};
 
+        // 서버가 준 것은 구조 분류와 기본값(전부 unknown/none)이다. 사용자가
+        // 이미 선언해 둔 것이 있으면, 같은 이름이 여전히 있는 한 지켜 준다 —
+        // ODE 를 조금 고칠 때마다 선언이 날아가면 아무도 쓰지 않는다.
+        const semantics = response.data.variable_semantics || {};
+        State.structuralClasses = {};
+        const kept = {};
+        Object.entries(semantics).forEach(([name, info]) => {
+          State.structuralClasses[name] = info.structural_class;
+          const previous = State.variableSemantics[name];
+          kept[name] = previous
+            ? { quantity_kind: previous.quantity_kind, pk_scope: previous.pk_scope }
+            : { quantity_kind: info.quantity_kind, pk_scope: info.pk_scope };
+        });
+        State.variableSemantics = kept;
+
         // UI 업데이트 요청
         UI.renderSymbolInputs();
         UI.updateSelectedBadges();
@@ -1725,6 +1826,33 @@ const Handlers = {
     }
   },
 
+
+  /**
+   * PK Variables 표의 선택 변경. 표 전체에 위임해 둔다 — 행은 파싱할 때마다
+   * 다시 그려지므로 행마다 리스너를 붙이면 새 행에는 아무것도 붙지 않는다.
+   */
+  handleVariableSemanticsChange(event) {
+    const select = event.target.closest(".semantics-kind, .semantics-scope");
+    if (!select) return;
+    const row = select.closest(".variable-semantics-row");
+    if (!row) return;
+
+    const name = row.dataset.variable;
+    const current = State.variableSemantics[name] || { quantity_kind: "unknown", pk_scope: "none" };
+
+    if (select.classList.contains("semantics-kind")) {
+      current.quantity_kind = select.value;
+      // 농도가 아니면 PK 범위는 뜻이 없다. 서버도 같은 이유로 거절하므로
+      // 화면에서 먼저 되돌려 놓는다 — 잠긴 칸에 옛 선택이 남아 있으면
+      // 사용자는 그것이 아직 적용된다고 읽는다.
+      if (current.quantity_kind !== "concentration") current.pk_scope = "none";
+    } else {
+      current.pk_scope = select.value;
+    }
+
+    State.variableSemantics[name] = current;
+    UI.renderVariableSemantics();
+  },
 
   /**
    * 심볼 편집 모달 내부의 클릭 이벤트를 처리합니다 (이벤트 위임).
@@ -1891,6 +2019,9 @@ const Handlers = {
         t_start: +DOM.toolbar.simStartTime.value,
         t_end: +DOM.toolbar.simEndTime.value,
         t_steps: stepsInput ? +stepsInput.value : 200, // 기본값 200
+        // 어느 변수가 농도인지. 이것이 없으면 서버는 전부 unknown 으로 보고
+        // NCA 를 한 줄도 돌리지 않는다 — PK 요약이 늘 비어 있던 이유다.
+        variable_semantics: State.variableSemantics,
         // 선택된 관찰 데이터도 함께 보내 같은 표에서 NCA 결과를 나란히 본다.
         // 매핑된 열만 의미가 있으므로 매핑과 용량을 함께 싣는다.
         observed: State.observations
@@ -2589,6 +2720,7 @@ const Session = {
       parameters: {},
       doses: State.doseList,
       observations: State.observations,
+      variableSemantics: State.variableSemantics,
       simulationSettings: {
         start: +DOM.toolbar.simStartTime.value,
         end: +DOM.toolbar.simEndTime.value,
@@ -2632,6 +2764,9 @@ const Session = {
     this._restoring = true;
     try {
       DOM.sidebar.odeInput.value = data.ode;
+      // 파싱보다 먼저 넣어 둔다 — handleParseClick 은 같은 이름이 여전히
+      // 있으면 기존 선언을 지켜 주므로, 이렇게 하면 한 번의 파싱으로 복원된다.
+      State.variableSemantics = data.variableSemantics || {};
       await Handlers.handleParseClick();
 
       Object.entries(data.parameters || {}).forEach(([key, value]) => {
@@ -2733,6 +2868,10 @@ const Session = {
 
 
 
+// sensitivity.js 는 별도 IIFE 라 State 를 볼 수 없다. 스윕도 같은 PK 요약을
+// 쓰므로 선언을 함께 보내야 한다 — 창 하나로만 내보낸다.
+window.pkVariableSemantics = () => State.variableSemantics;
+
 const App = {
   /**
    * 애플리케이션을 초기화하는 메인 함수.
@@ -2781,6 +2920,10 @@ const App = {
     DOM.sidebar.doseForm.addEventListener('submit', Handlers.handleDoseFormSubmit);
     DOM.sidebar.doseTypeSelect.addEventListener('change', Handlers.handleDoseTypeChange);
     DOM.sidebar.doseListContainer.addEventListener('click', Handlers.handleDoseListClick);
+    if (DOM.sidebar.variableSemanticsContainer) {
+      DOM.sidebar.variableSemanticsContainer.addEventListener(
+        'change', Handlers.handleVariableSemanticsChange);
+    }
     
     // Dosing 폼의 'Repeat' 토글 스위치 이벤트
     const repeatToggle = document.getElementById('repeat-dose-toggle');
