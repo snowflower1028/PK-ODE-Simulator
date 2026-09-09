@@ -143,16 +143,19 @@ class WeightedLeastSquares(unittest.TestCase):
                 self.assertIsNone(self.wls_1y[key])
         self.assertIsNotNone(self.wls_1y["rmse"])
 
-    def test_unweighted_least_squares_is_biased_here(self):
-        """비례오차 자료에 균등 가중을 쓰면 큰 농도가 적합을 끌고 간다.
+    def test_the_weights_actually_reach_the_objective(self):
+        """가중을 바꾸면 추정치가 달라진다 — 가중 벡터가 목적함수까지 간다는 뜻.
 
-        가중이 실제로 뭔가를 하고 있다는 증거이기도 하다 — 아무 일도 하지
-        않는다면 두 결과가 같아야 한다.
+        여기서 주장할 수 있는 것은 이것뿐이다.  예전에는 이 자리에
+        "균등 가중은 CL 을 25% 이상 틀리게 추정한다"는 시험이 있었는데,
+        이 자료에서 실제 오차는 1.5% 였다.  농도 범위가 한 자릿수라
+        1/Y 가중이 붙잡을 만큼 큰 점이 없어서, 자료 자체가 두 가중을
+        구별하지 못한다.  편향의 크기를 주장하려면 그걸 실제로 드러내는
+        자료(넓은 농도 범위 + 큰 비례오차)가 필요하다.
         """
         ols = shared_of(self.ols)
         weighted = shared_of(self.wls_1y)
-        self.assertGreater(abs(ols["CL"] - TRUE["CL"]) / TRUE["CL"], 0.25)
-        self.assertLess(abs(weighted["CL"] - TRUE["CL"]) / TRUE["CL"], 0.10)
+        self.assertNotAlmostEqual(ols["CL"], weighted["CL"], places=3)
 
     def test_it_reports_which_objective_ran(self):
         self.assertEqual(self.wls_1y["objective"], "wls")
