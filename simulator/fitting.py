@@ -344,6 +344,10 @@ def _standard_errors(func, x, args, dof, scale=1.0):
         return blank
 
 
+# 한 번의 피팅이 추정할 수 있는 파라미터 수의 상한.
+_MAX_ESTIMATED_PARAMS = 60
+
+
 def fit(data: dict) -> dict:
     # --- 1. ODE 파싱 및 lambdify ---
     try:
@@ -438,6 +442,17 @@ def fit(data: dict) -> dict:
         else:
             for g_i in range(n_groups):
                 x0.append(val); bounds.append((lb, ub)); labels.append((key, 'per_group', g_i))
+
+    # 추정 차원의 상한.  L-BFGS-B 는 반복마다 n+1 번, 표준오차용 수치 헤시안은
+    # 쌍마다 4번 목적함수를 부른다 — 헤시안만 O(n²) 이고, 목적함수 한 번이
+    # 그룹 수만큼의 ODE 적분이다.  n=200(파라미터 40 × 그룹 5) 이면 헤시안에만
+    # 8만 번의 적분이 필요해 요청이 워커를 게이트웨이 타임아웃까지 붙잡는다.
+    if len(x0) > _MAX_ESTIMATED_PARAMS:
+        return {"status": "error",
+                "message": (f"This fit would estimate {len(x0)} parameters "
+                            f"({len(fit_keys)} selected across {n_groups} group(s)); "
+                            f"the limit is {_MAX_ESTIMATED_PARAMS}. "
+                            f"Fit fewer parameters, or share more of them across groups.")}
 
     if error_model == 'constant':
         x0.append(0.1); bounds.append((1e-6, np.inf)); labels.append(("Sigma (Additive)", 'error', None))

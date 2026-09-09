@@ -12,6 +12,10 @@ import threading
 # 몰리면 실제로 발생하므로, 적분 구간 전체를 프로세스 단위 락으로 직렬화한다.
 _INTEGRATOR_LOCK = threading.RLock()
 
+# 한 요청이 만들 수 있는 투여 이벤트 수의 상한.  이벤트 하나가 적분 구간
+# 하나이므로, 이 수가 곧 solve_ivp 호출 횟수이자 보간 구간 수다.
+_MAX_DOSE_EVENTS = 5_000
+
 
 def generate_rhs_function(
     equations: Dict[str, Expr],
@@ -103,6 +107,22 @@ def solve_ode_system(
         if not np.isfinite(value):
             raise ValueError(f"Parameter {name!r} is not finite: {value!r}.")
 
+    def _number(dose_item, field, position, default=0.0):
+        """투여 항목의 수치 필드. 문자열이 들어오면 500 이 아니라 400 이 되게."""
+        raw = dose_item.get(field, default)
+        if raw is None or raw == "":
+            return default
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Dose #{position} has a non-numeric {field}: {raw!r}."
+            )
+        if not np.isfinite(value):
+            raise ValueError(f"Dose #{position} has a non-finite {field}: {value!r}.")
+        return value
+
+    normalised_doses = []
     for position, dose_item in enumerate(doses, start=1):
         typ = dose_item.get("type")
         if typ not in ("bolus", "infusion"):
@@ -119,14 +139,27 @@ def solve_ode_system(
             )
         if not np.isfinite(amount):
             raise ValueError(f"Dose #{position} has a non-finite amount: {amount!r}.")
-        if typ == "infusion":
-            try:
-                duration = float(dose_item.get("duration", 0) or 0)
-            except (TypeError, ValueError):
+        start_time = _number(dose_item, "start_time", position)
+        repeat_every = _number(dose_item, "repeat_every", position, default=0.0)
+        repeat_until = _number(dose_item, "repeat_until", position, default=0.0)
+        if repeat_every < 0:
+            raise ValueError(
+                f"Dose #{position} repeats every {repeat_every} — that has to be positive."
+            )
+        # 반복 간격에 하한이 없으면 이벤트 수가 t_end/repeat_every 로 무한정
+        # 늘어난다.  measured: repeat_every=0.002 인 요청 하나가 2분이 넘도록
+        # 끝나지 않았다 — 구간마다 적분을 새로 하기 때문이다.  간격 자체를
+        # 막기보다 만들어질 이벤트 수를 세어 거절한다.
+        if repeat_every > 0:
+            span = min(repeat_until, t_hi) - start_time
+            if span > 0 and span / repeat_every > _MAX_DOSE_EVENTS:
                 raise ValueError(
-                    f"Infusion dose #{position} has a non-numeric duration: "
-                    f"{dose_item.get('duration')!r}."
+                    f"Dose #{position} would repeat about {int(span / repeat_every):,} "
+                    f"times in this time range; the limit is {_MAX_DOSE_EVENTS:,}. "
+                    f"Use a longer interval or a shorter range."
                 )
+        if typ == "infusion":
+            duration = _number(dose_item, "duration", position)
             # 예전에는 duration<=0 인 주입이 이벤트를 하나도 만들지 않아
             # 투여가 통째로 사라졌다.  속도(amount/duration)가 정의되지 않으니
             # 조용히 넘길 수 없는 입력이다.
@@ -135,6 +168,20 @@ def solve_ode_system(
                     f"Infusion dose #{position} needs a positive duration; "
                     f"got {duration}."
                 )
+        else:
+            duration = 0.0
+
+        # 아래 전처리는 이 사본만 본다. 검증만 하고 원본을 그대로 넘기면
+        # 문자열 "12" 가 그대로 흘러가 비교에서 TypeError 로 터졌다.
+        normalised_doses.append({
+            "compartment": dose_item.get("compartment"),
+            "type": typ,
+            "amount": amount,
+            "start_time": start_time,
+            "duration": duration,
+            "repeat_every": repeat_every,
+            "repeat_until": repeat_until,
+        })
 
     # --- 1. 설정 및 변수 초기화 ---
     # dtype 을 명시하지 않으면 numpy 가 입력에서 추론한다.  JSON 의 `0` 은 파이썬
@@ -151,7 +198,7 @@ def solve_ode_system(
 
     # --- 2. 모든 투여 이벤트를 시간순으로 사전 처리 ---
     processed_dose_events = []
-    for dose_item in doses:
+    for dose_item in normalised_doses:
         start_time = dose_item.get("start_time", 0)
         # ... (이전 답변과 동일한 Dose 전처리 로직) ...
         current_t = start_time
@@ -182,6 +229,13 @@ def solve_ode_system(
             else:
                 break
     
+    # 투여 항목 하나씩은 위에서 걸렀지만, 여럿이 합쳐지면 다시 넘칠 수 있다.
+    if len(processed_dose_events) > _MAX_DOSE_EVENTS:
+        raise ValueError(
+            f"These doses produce {len(processed_dose_events):,} dosing events in "
+            f"this time range; the limit is {_MAX_DOSE_EVENTS:,}."
+        )
+
     # 시간순으로 정렬해 두고, 아래에서 포인터로 하나씩 소비한다.
     processed_dose_events.sort(key=lambda x: x["time"])
 

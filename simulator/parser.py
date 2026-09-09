@@ -15,7 +15,7 @@ from typing import Dict, List, Set, Tuple, Any
 
 from sympy import (
     symbols, sqrt, sin, cos, tan, exp, log, Abs,
-    asin, acos, atan, sinh, cosh, tanh, Expr, Float, Integer
+    asin, acos, atan, sinh, cosh, tanh, Expr, Float, Integer, Rational
 )
 
 # ───────────────────────────────────────────────
@@ -138,6 +138,68 @@ def _expression_names(text: str) -> List[str]:
     return names
 
 
+# 거듭제곱 하나가 워커를 죽일 수 있다.  sympy 는 정수 거듭제곱을 그 자리에서
+# 계산하므로 `x = 2**10000` 다음 `y = x**10000` 이면 1억 비트짜리 정수가 되고,
+# 파싱 도중 메모리가 바닥난다.  요청 하나로 서비스가 멈추는 셈이다.
+# 지수만 보는 것으로는 부족하다 — 밑이 이미 거대할 수 있기 때문이다.
+# 그래서 결과의 크기를 비트 수로 미리 어림해 막는다.
+_MAX_RESULT_BITS = 4_096   # 약 1230 자리. 어떤 PK 모델도 이보다 크지 않다.
+
+
+def _check_power(base, exponent) -> None:
+    """`base ** exponent` 를 계산하기 전에 결과 크기를 어림한다."""
+    if not exponent.is_number:
+        return
+    try:
+        exp_value = float(exponent)
+    except (TypeError, ValueError):
+        return
+    if abs(exp_value) > 10_000:
+        raise ValueError("A numeric exponent is too large.")
+    if not base.is_number:
+        return
+    try:
+        base_bits = max(1, int(base.evalf(20)).bit_length())
+    except (TypeError, ValueError, OverflowError):
+        # 무한대나 계산할 수 없는 밑. 크기를 어림할 수 없으니 막는다.
+        raise ValueError("This power is too large to evaluate.")
+    if base_bits * abs(exp_value) > _MAX_RESULT_BITS:
+        raise ValueError(
+            "This power would produce a number too large to work with "
+            f"(about {int(base_bits * abs(exp_value))} bits)."
+        )
+
+
+def _guard_number_size(expr, what: str):
+    """식 안의 수 하나라도 감당 못 할 만큼 크면 거절한다.
+
+    `_check_power` 는 파싱 시점에 판단하는데, 그때 밑은 아직 심볼일 수 있다::
+
+        x1 = 2**1000      # 여기서는 1000비트, 통과
+        x2 = x1**10000    # 밑이 심볼이라 검사할 것이 없다
+
+    치환은 위상 순서로 일어나므로, 값이 정해지는 그 자리에서 다시 잰다.
+    지수가 10000 으로, 밑이 4096비트로 묶여 있으니 한 단계가 만들 수 있는
+    최악은 약 5 MB 다 — 만들어지긴 하지만 곧바로 거절되고 파싱이 멈춘다.
+    """
+    for number in expr.atoms(Integer, Rational, Float):
+        try:
+            if number.is_Integer:
+                bits = int(number).bit_length()
+            elif number.is_Rational:
+                bits = max(abs(number.p).bit_length(), abs(number.q).bit_length())
+            else:
+                continue
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"{what} produces a number too large to work with.")
+        if bits > _MAX_RESULT_BITS:
+            raise ValueError(
+                f"{what} produces a number too large to work with "
+                f"(about {bits} bits)."
+            )
+    return expr
+
+
 def _safe_parse_expr(text: str, symtbl: Dict[str, object]) -> Expr:
     """허용한 수학 문법만 SymPy 식으로 옮긴다.
 
@@ -176,12 +238,7 @@ def _safe_parse_expr(text: str, symtbl: Dict[str, object]) -> Expr:
             if isinstance(node.op, ast.Div):
                 return left / right
             if isinstance(node.op, ast.Pow):
-                if right.is_number:
-                    try:
-                        if abs(float(right)) > 10_000:
-                            raise ValueError("A numeric exponent is too large.")
-                    except TypeError:
-                        pass
+                _check_power(left, right)
                 return left ** right
             raise ValueError(f"Operator '{type(node.op).__name__}' is not allowed.")
 
@@ -283,12 +340,16 @@ def _substitute_odes(ode_rows, parsed_defs, topo_order, symtbl):
     """파생식을 dependency-first 순서로 한 번씩 치환한다."""
     resolved = {}
     for name in topo_order:
-        resolved[symtbl[name]] = parsed_defs[name].xreplace(resolved)
+        resolved[symtbl[name]] = _guard_number_size(
+            parsed_defs[name].xreplace(resolved), f"'{name}'"
+        )
 
     out = []
     equations = {}
     for comp, rhs in ode_rows:
-        expr = _safe_parse_expr(rhs, symtbl).xreplace(resolved)
+        expr = _guard_number_size(
+            _safe_parse_expr(rhs, symtbl).xreplace(resolved), f"'d{comp}dt'"
+        )
         equations[comp] = expr
         out.append(f"d{comp}dt = {expr}")
     return out, equations

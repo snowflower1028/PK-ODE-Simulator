@@ -61,6 +61,54 @@ def _rhs_callable(parsed):
     return equations_callable
 
 
+# 요청 하나가 워커를 통째로 묶어 놓지 못하게 하는 상한.  화면에는 이미
+# max="1000" 같은 제한이 있지만 그건 브라우저에게만 하는 부탁이라,
+# 직접 POST 하면 그냥 지나간다.  측정: t_steps=2,000,000 이면 응답 JSON 만
+# 수백 MB 가 되고, Render 스타터(512MB)에서는 워커가 죽는다.
+#
+# 20,000 은 임의의 수가 아니다. 측정한 응답 시간이 10,000점에서 1.3초,
+# 30,000점에서 8.0초, 60,000점에서 44.9초였다 — NCA 의 종말상 기울기 탐색이
+# 점 수에 대해 제곱으로 늘기 때문이다(nca.py 의 후보 창 순회). 20,000 은
+# 3초 남짓으로, 요청 하나가 워커를 오래 잡지 않는 선이다.
+_MAX_T_STEPS = 20_000
+_MAX_OBSERVED_POINTS = 20_000
+
+
+def _bounded_steps(raw) -> int:
+    """t_steps 를 읽고 범위를 확인한다."""
+    try:
+        steps = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"t_steps must be a whole number; got {raw!r}.")
+    if steps < 2:
+        raise ValueError(f"t_steps must be at least 2; got {steps}.")
+    if steps > _MAX_T_STEPS:
+        raise ValueError(
+            f"t_steps is {steps:,}; the limit is {_MAX_T_STEPS:,}. "
+            f"Use a coarser grid, or a shorter time range."
+        )
+    return steps
+
+
+def _check_observed_size(datasets) -> None:
+    """업로드된 관찰 자료의 점 수. 이 수가 곧 적분 격자에 끼어드는 시각 수다."""
+    total = 0
+    for dataset in datasets or []:
+        data = (dataset or {}).get("data") or {}
+        for column, values in data.items():
+            try:
+                total += len(values)
+            except TypeError:
+                raise ValueError(
+                    f"Observed column {column!r} is not a list of values."
+                )
+    if total > _MAX_OBSERVED_POINTS:
+        raise ValueError(
+            f"The observed data has {total:,} points; the limit is "
+            f"{_MAX_OBSERVED_POINTS:,}."
+        )
+
+
 def _solve_profile(parsed, rhs, init_values, param_values,
                    t_start, t_end, t_steps, doses):
     """한 번 풀고 파생 변수까지 붙인 DataFrame 을 돌려준다."""
@@ -115,7 +163,7 @@ def sweep(request):
             "doses": list(data.get("doses", [])),
             "t_start": float(data.get("t_start", 0)),
             "t_end": float(data.get("t_end", 48)),
-            "t_steps": int(data.get("t_steps", 200)),
+            "t_steps": _bounded_steps(data.get("t_steps", 200)),
         }
         # 그릴 변수 하나만 다룬다. 스윕은 값마다 곡선이 하나씩 늘어나므로
         # 변수까지 여러 개면 화면에서도 응답 크기에서도 감당이 안 된다.
@@ -365,9 +413,10 @@ def simulate(request):
         param_values = data.get("parameters", {})
         t_start = float(data.get("t_start", 0))
         t_end = float(data.get("t_end", 48))
-        t_steps = int(data.get("t_steps", 200))
+        t_steps = _bounded_steps(data.get("t_steps", 200))
         doses = data.get("doses", [])
         observed_datasets = data.get("observed", []) or []
+        _check_observed_size(observed_datasets)
 
         # 채혈 시각을 격자에 끼워 넣는다. 관측값과 예측값을 견주려면 같은
         # 시각의 값이 필요한데, 가장 가까운 격자점을 집는 방식은 흡수상처럼
@@ -526,9 +575,23 @@ def parse_ode_view(request):
             "status": "ok",
             "data": response_data
         })
-    except Exception as e:
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {"status": "error", "message": "Invalid JSON format in request body."},
+            status=400,
+        )
+    except ValueError as exc:
+        # 파서가 올리는 것은 거의 전부 사용자 입력 문제다(문법, 순환 참조,
+        # 감당 못 할 크기의 수). 예전에는 이것도 500 이라, 오타 하나가
+        # 서버 잘못처럼 보고되고 내부 메시지가 그대로 나갔다.
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
+    except Exception:
         traceback.print_exc()
-        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+        return JsonResponse(
+            {"status": "error",
+             "message": "The model could not be parsed. Check the ODE syntax."},
+            status=500,
+        )
 
 @require_POST
 def fit(request):
