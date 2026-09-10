@@ -87,7 +87,6 @@ const DOM = {
     simStartTime: document.getElementById("sim-start-time"),
     simEndTime: document.getElementById("sim-end-time"),
     logScaleCheckbox: document.getElementById("log-scale"),
-    openObsDataBtn: document.querySelector("button[data-bs-target='#obsPanel']"),
     fitBtn: document.getElementById("fit-btn"),
     simulateBtn: document.getElementById("simulate-btn"),
   },
@@ -150,8 +149,7 @@ const DOM = {
       panel: document.getElementById("obsPanel"),
       fileInput: document.getElementById("obs-file"),
       list: document.getElementById("obs-list"),
-      preview: document.getElementById("obs-preview"),
-    }
+      }
   }
 };
 
@@ -697,9 +695,22 @@ const UI = {
     const dataColumns = Object.keys(data).filter(col => col.toLowerCase() !== 'time');
     const modelVariables = [...State.compartments, ...Object.keys(State.derivedExpressions)];
 
-    // 2. 자동 매핑 로직: 데이터 컬럼 이름과 모델 변수 이름이 일치하면 자동으로 매핑
+    // 2-a. 모델에 더 이상 없는 변수를 가리키는 매핑을 버린다.
+    //     예전에는 화면의 select 만 "-- Map to --" 로 돌아가고 State 에는 죽은
+    //     이름이 남아, 그것이 /simulate/ 와 /fit/ 페이로드에 그대로 실렸다.
+    //     화면은 매핑 안 됨이라고 하는데 서버는 유령 이름을 받는 상태였다.
+    Object.keys(mappings).forEach(col => {
+      if (mappings[col] && !modelVariables.includes(mappings[col])) {
+        delete mappings[col];
+      }
+    });
+
+    // 2-b. 이름이 같으면 한 번만 자동으로 이어 준다.
+    //     예전 조건은 `!mappings[col]` 이라, 사용자가 일부러 "-- Map to --" 로
+    //     돌려놓아 "" 가 되면 falsy 라서 다음 렌더에 다시 이어 붙었다. 해제가
+    //     되지 않는 셈이다. 키가 아예 없을 때만 자동 매핑한다.
     dataColumns.forEach(col => {
-      if (!mappings[col] && modelVariables.includes(col)) {
+      if (!(col in mappings) && modelVariables.includes(col)) {
         mappings[col] = col;
       }
     });
@@ -1515,11 +1526,16 @@ const UI = {
       consoleOutput += `Final Unweighted SSR: ${typeof resultData.ssr_total === 'number' ? resultData.ssr_total.toPrecision(6) : 'N/A'}`;
       progressConsole.textContent = consoleOutput;
 
+      // `undefined !== null` 은 참이라, stderr 가 아예 없는 응답에서
+      // NaN% 가 찍혔다. 같은 자료를 그리는 아래 카드(renderFitSummary)는
+      // 이미 유한성 검사를 하고 있어 N/A 로 나오는데, 이 모달만 어긋났다.
+      const finite = v => typeof v === "number" && Number.isFinite(v);
       const rows = resultData.params.map(p => {
-        const cvText = (p.stderr !== null && p.value !== 0) 
-          ? `${((p.stderr / p.value) * 100).toFixed(2)}%` 
+        const cvText = (finite(p.stderr) && finite(p.value) && p.value !== 0)
+          ? `${Math.abs((p.stderr / p.value) * 100).toFixed(2)}%`
           : 'N/A';
-        return `<tr><td>${p.name}</td><td>${p.value.toPrecision(6)}</td><td>${cvText}</td></tr>`;
+        const valueText = finite(p.value) ? p.value.toPrecision(6) : 'N/A';
+        return `<tr><td>${p.name}</td><td>${valueText}</td><td>${cvText}</td></tr>`;
       }).join("");
 
       progressResult.innerHTML = `
@@ -1670,8 +1686,15 @@ const Handlers = {
     const value = event.target.value;
     if (value !== 'ode' && value !== 'alpha') return;
 
-    // 현재 입력값 보존
+    // 현재 입력값 보존.
+    // 값만이 아니라 선택도 지켜야 한다 — renderSymbolInputs 는 Plot 체크박스를
+    // 전부 checked 로 다시 그리고 투여 구획 select 도 새로 만든다. 그래서 순서만
+    // 바꾸는 이 버튼이 "C1 만 그리기" 선택을 통째로 되돌려 놓았다.
     const keep = { init: {}, param: {} };
+    const keepPlotted = [...DOM.simulation.compartmentsMenu
+      .querySelectorAll('.sim-comp-checkbox:checked')].map(cb => cb.value);
+    const doseCompartment = DOM.sidebar.doseForm.querySelector('#compartment');
+    const keepDoseCompartment = doseCompartment ? doseCompartment.value : null;
     State.compartments.forEach(c => {
       const el = DOM.sidebar.initValuesContainer.querySelector(`#init_${c}`);
       if (el) keep.init[c] = el.value;
@@ -1693,6 +1716,13 @@ const Handlers = {
       const el = DOM.sidebar.paramValuesContainer.querySelector(`#param_${pn}`);
       if (el) el.value = v;
     });
+    DOM.simulation.compartmentsMenu.querySelectorAll('.sim-comp-checkbox')
+      .forEach(cb => { cb.checked = keepPlotted.includes(cb.value); });
+    const newDoseCompartment = DOM.sidebar.doseForm.querySelector('#compartment');
+    if (newDoseCompartment && keepDoseCompartment
+        && [...newDoseCompartment.options].some(o => o.value === keepDoseCompartment)) {
+      newDoseCompartment.value = keepDoseCompartment;
+    }
 
     UI.updateSelectedBadges();
   },
@@ -1725,12 +1755,14 @@ const Handlers = {
         UI.updateSelectedBadges();
 
         DOM.sidebar.editSymbolsBtn.disabled = false; // 심볼 편집 버튼 활성화
-      } else {
-        alert("Parse failed: " + (response.message || "Unknown error"));
       }
     } catch (error) {
-      // API.js에서 던진 에러를 여기서 처리 (이미 alert는 API.js에서 처리됨)
+      // 예전에는 여기서 콘솔에만 적고 끝냈다. 주석은 "API 모듈이 이미
+      // alert 를 띄웠다"고 했지만 그런 적이 없다 — 서버는 실패를 400/500
+      // 으로 돌려주므로 위의 else 가지는 아예 닿지 않는 죽은 코드였고,
+      // 사용자는 아무 일도 일어나지 않은 화면을 봤다.
       console.error("Parse failed:", error);
+      alert("Parse failed: " + (error.message || "Unknown error"));
     }
   },
 
@@ -1808,9 +1840,19 @@ const Handlers = {
       amount: +formData.get("amount"),
       start_time: +formData.get("start_time"),
       duration: formData.get("type") === "infusion" ? (+formData.get("duration") || 0) : 0,
-      repeat_every: +formData.get("repeat_every") || null,
-      repeat_until: +formData.get("repeat_until") || null
     };
+
+    // 반복 입력칸은 토글이 꺼져도 폼 안에 그대로 남아 있어 FormData 에 실린다.
+    // 그래서 "12시간마다"를 입력했다가 마음을 바꿔 스위치를 내려도 반복 투여로
+    // 등록됐다 — 화면의 스위치는 꺼져 있는데. 스위치를 진실로 삼는다.
+    const repeatOn = document.getElementById('repeat-dose-toggle');
+    if (repeatOn && repeatOn.checked) {
+      d.repeat_every = +formData.get("repeat_every") || null;
+      d.repeat_until = +formData.get("repeat_until") || null;
+    } else {
+      d.repeat_every = null;
+      d.repeat_until = null;
+    }
 
     // 유효성 검사
     if (!d.amount || d.amount <= 0) return alert("Please enter a valid amount.");
@@ -1845,6 +1887,10 @@ const Handlers = {
         State.doseList.splice(index, 1);
         // UI 업데이트
         UI.renderDoses();
+        // 자동저장은 document 의 input/change 로만 걸려 있다. 클릭으로 State 를
+        // 바꾸는 이 자리는 직접 알려 줘야 한다 — 안 그러면 새로고침에 지운
+        // 투여가 되살아난다.
+        Session.saveSoon();
       }
     }
   },
@@ -1928,8 +1974,10 @@ const Handlers = {
         window.dispatchEvent(new Event('pk:result'));
       }
     } catch (error) {
-       // API 모듈에서 이미 alert를 띄웠으므로, 콘솔에만 에러 기록
-       console.error("Simulation failed:", error);
+      // 실패를 조용히 삼키면 이전 그래프와 이전 요약이 그대로 남아, 방금
+      // 것이 성공한 것처럼 보인다. 연구용 도구에서 가장 위험한 실패 방식이다.
+      console.error("Simulation failed:", error);
+      alert("Simulation failed: " + (error.message || "Unknown error"));
     } finally {
       State.isSimulating = false;
       UI.setLoading(DOM.toolbar.simulateBtn, false);
@@ -2094,7 +2142,16 @@ const Handlers = {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const ok = await Session.restore(JSON.parse(e.target.result));
+        const loaded = JSON.parse(e.target.result);
+        // localStorage 복원은 버전을 확인하는데(Session.load) 파일 열기는
+        // 하지 않았다. 옛 형식을 반쯤 이해한 채 되살리면 화면이 조용히
+        // 어긋난다 — 버전 상수를 둔 이유가 바로 그것이다.
+        if (loaded && loaded.version !== undefined && loaded.version !== Session.VERSION) {
+          throw new Error(
+            `This session file was saved by an older version of the app `
+            + `(format ${loaded.version}, this app reads ${Session.VERSION}).`);
+        }
+        const ok = await Session.restore(loaded);
         if (!ok) throw new Error("The file does not contain a model.");
         Session.save();
         alert('Session loaded successfully!');
@@ -2185,6 +2242,8 @@ async handleStartFittingClick() {
 
   const startBtn = DOM.modals.fittingSettings.startBtn;
   const progressSection = DOM.modals.fittingSettings.progressSection;
+  // try 밖에 둔다 — 안에서 선언하면 finally 가 이 타이머를 볼 수 없다.
+  let progressInterval = null;
 
   try {
     State.isFitting = true;
@@ -2346,16 +2405,18 @@ async handleStartFittingClick() {
 
     // --- 6. API 호출 ---
     // progress bar 애니메이션을 위해 가짜 타이머 시작 (선택 사항)
+    // 타이머 ID 를 try 밖에서 잡아 둔다 — 안에서 선언하면 finally 가 볼 수
+    // 없어, 피팅이 실패할 때마다 타이머가 하나씩 살아남는다. 그러면
+    // displayFitError 가 막대를 빨갛게 칠한 0.5초 뒤 살아 있는 타이머가
+    // 다시 90% 로 되돌려, 실패한 피팅이 계속 진행 중인 것처럼 보였다.
     let fakeProgress = 0;
-    const progressInterval = setInterval(() => {
+    progressInterval = setInterval(() => {
         fakeProgress = Math.min(fakeProgress + 5, 90);
         const bar = DOM.modals.fittingSettings.progressBar;
         if(bar) bar.style.width = `${fakeProgress}%`;
     }, 500);
 
     const response = await API.fit(payload);
-    
-    clearInterval(progressInterval); // API 응답 오면 타이머 중지
 
     // --- 7. 결과 처리 ---
     if (response.status === "ok") {
@@ -2375,6 +2436,7 @@ async handleStartFittingClick() {
   } catch (err) {
     UI.displayFitError(err.message);
   } finally {
+    if (progressInterval !== null) clearInterval(progressInterval);
     State.isFitting = false;
     UI.setLoading(startBtn, false);
   }
@@ -2443,6 +2505,7 @@ async handleStartFittingClick() {
       if (obsData && confirm(`Are you sure you want to remove "${obsData.name}"?`)) {
         State.observations.splice(index, 1);
         UI.renderObsList(); // 목록과 상세 보기를 다시 렌더링
+        Session.saveSoon();  // 클릭으로 지운 것도 저장돼야 한다
       }
       return;
     }
@@ -2605,6 +2668,9 @@ const Session = {
         steps: stepsInput ? +stepsInput.value : 200,
         logScale: DOM.toolbar.logScaleCheckbox.checked,
         symbolOrder: State.symbolOrder,
+        // 저장만 하고 되돌리지 않던 값 두 개. 남의 세션을 열면 표시 순서가
+        // 그 사람의 것이 아니라 내 로컬 설정을 따랐고, 임계값은 아예 사라졌다.
+        threshold: (document.getElementById('dropdown-sim-threshold') || {}).value,
         selectedCompartments: [...DOM.simulation.compartmentsMenu.querySelectorAll('.sim-comp-checkbox:checked')].map(e => e.value),
       },
       results: {
@@ -2642,9 +2708,14 @@ const Session = {
     this._restoring = true;
     try {
       DOM.sidebar.odeInput.value = data.ode;
-      // 파싱보다 먼저 넣어 둔다 — handleParseClick 은 같은 이름이 여전히
-      // 있으면 기존 선언을 지켜 주므로, 이렇게 하면 한 번의 파싱으로 복원된다.
       await Handlers.handleParseClick();
+      // handleParseClick 은 예외를 삼키므로, 파싱이 실패해도 여기까지 온다.
+      // 그대로 두면 입력칸이 하나도 만들어지지 않은 채 아래 복원 루프가 조용히
+      // 헛돌고, restore 는 true 를 돌려준다. 그리고 다음 키 입력 한 번에
+      // 자동저장이 빈 State 로 백업을 덮어썼다 — 사용자의 값이 사라지는 경로다.
+      if (State.compartments.length === 0 && State.parameters.length === 0) {
+        throw new Error("The saved model could not be parsed, so nothing was restored.");
+      }
 
       Object.entries(data.parameters || {}).forEach(([key, value]) => {
         const el = DOM.sidebar.paramValuesContainer.querySelector(`#param_${key}`);
@@ -2668,6 +2739,16 @@ const Session = {
         document.getElementById('dropdown-sim-steps').value = settings.steps ?? 200;
       }
       DOM.toolbar.logScaleCheckbox.checked = !!settings.logScale;
+      if (settings.symbolOrder === 'ode' || settings.symbolOrder === 'alpha') {
+        SymbolOrder.save(settings.symbolOrder);
+        DOM.sidebar.symbolOrderRadios.forEach(r => { r.checked = (r.value === settings.symbolOrder); });
+        UI.renderSymbolInputs();
+      }
+      const thresholdInput = document.getElementById('dropdown-sim-threshold');
+      if (thresholdInput && settings.threshold !== undefined && settings.threshold !== null
+          && settings.threshold !== '') {
+        thresholdInput.value = settings.threshold;
+      }
 
       const selected = settings.selectedCompartments || State.compartments;
       DOM.simulation.compartmentsMenu.querySelectorAll('.sim-comp-checkbox').forEach(cb => {
@@ -2800,6 +2881,11 @@ const App = {
     if(repeatToggle && repeatFields) {
         repeatToggle.addEventListener('change', (event) => {
             repeatFields.style.display = event.target.checked ? 'block' : 'none';
+            // 숨기면서 비운다. 남겨 두면 다시 켰을 때 예전 값이 되살아나고,
+            // 무엇보다 화면에 없는 값이 폼에 남아 있는 상태가 사라진다.
+            if (!event.target.checked) {
+                repeatFields.querySelectorAll('input').forEach(el => { el.value = ''; });
+            }
         });
     }
 

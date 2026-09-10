@@ -532,8 +532,13 @@
       headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
       body: JSON.stringify(payload),
     });
-    const result = await response.json();
-    if (result.status !== "ok") throw new Error(result.message || "Sweep failed.");
+    // response.ok 를 보지 않고 바로 json() 을 부르면, 프록시나 게이트웨이가
+    // HTML 오류 페이지를 돌려줄 때 사용자에게 "Unexpected token '<'" 가 뜬다.
+    // 서버가 무엇을 말했는지가 아니라 파서가 어디서 걸렸는지를 보여 주는 셈이다.
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.status !== "ok") {
+      throw new Error(result.message || `Sweep failed (HTTP ${response.status}).`);
+    }
     return result.data;
   }
 
