@@ -69,11 +69,13 @@ def _finite(value) -> Optional[float]:
     return value if np.isfinite(value) else None
 
 
-def _pair(observed, predicted, times) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _pair(observed, predicted, times) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     """길이를 맞추고 결측을 걷어 낸다."""
     obs = np.asarray(observed, dtype=float)
     pred = np.asarray(predicted, dtype=float)
-    n = min(obs.size, pred.size)
+    # 길이는 셋 중 가장 짧은 것에 맞춘다. 예전에는 times 를 빼고 재서, times 가
+    # 더 짧으면 잘라 낸 마스크가 t 에 맞지 않아 IndexError 로 터졌다.
+    n = min(obs.size, pred.size) if times is None else min(obs.size, pred.size, len(times))
     obs, pred = obs[:n], pred[:n]
 
     if times is None:
@@ -82,7 +84,7 @@ def _pair(observed, predicted, times) -> Tuple[np.ndarray, np.ndarray, np.ndarra
         t = np.asarray(times, dtype=float)[:n]
 
     keep = np.isfinite(obs) & np.isfinite(pred)
-    return obs[keep], pred[keep], t[keep]
+    return obs[keep], pred[keep], t[keep], int(n - int(np.count_nonzero(keep)))
 
 
 def prediction_error(
@@ -101,11 +103,21 @@ def prediction_error(
     취하므로 0 이하인 점을 뺄 수밖에 없는데, 몇 개를 뺐는지 함께 돌려준다 —
     조용히 빼 버리면 남은 숫자를 믿을 근거가 없다.
     """
-    obs, pred, t = _pair(observed, predicted, times)
+    obs, pred, t, n_nonfinite = _pair(observed, predicted, times)
     result = PredictionError()
+
+    # 유한하지 않은 점은 _pair 가 이미 걷어 냈다. 그 수를 여기서 세어 두지
+    # 않으면 아무 말 없이 사라진다 — 예측이 inf 인 점 하나를 버리고 RMSE 0.0 을
+    # 경고 없이 내놓을 수 있었다. 아래에서 n_excluded 에 합산한다.
+    if n_nonfinite:
+        result.warnings.append(
+            f"{n_nonfinite} point(s) had a missing or non-finite value and were dropped "
+            "before anything was computed."
+        )
 
     if obs.size == 0:
         result.warnings.append("No paired points — check the column mapping and the time range.")
+        result.n_excluded = n_nonfinite
         return result
 
     residual = pred - obs
@@ -114,11 +126,12 @@ def prediction_error(
     # 로그를 취할 수 있는 점만 배수 지표에 쓴다.
     usable = (obs > 0) & (pred > 0)
     result.n = int(np.count_nonzero(usable))
-    result.n_excluded = int(obs.size - result.n)
+    n_nonpositive = int(obs.size - result.n)
+    result.n_excluded = n_nonpositive + n_nonfinite
 
-    if result.n_excluded:
+    if n_nonpositive:
         result.warnings.append(
-            f"{result.n_excluded} of {obs.size} points are at or below zero and are left out of "
+            f"{n_nonpositive} of {obs.size} points are at or below zero and are left out of "
             "the fold-error metrics, which need a logarithm."
         )
 

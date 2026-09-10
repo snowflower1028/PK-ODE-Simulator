@@ -193,3 +193,108 @@ class MaximumLikelihood(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MultipleGroups(unittest.TestCase):
+    """그룹 하나가 자료를 못 받으면, 그 그룹의 파라미터는 추정되지 않는다.
+
+    `_predict_pairs` 는 쓸 수 없는 그룹을 조용히 건너뛴다.  예전 관문은
+    "어디엔가 쌍이 하나라도 있으면" 통과라, 그룹 하나만 죽어 있으면 그 그룹의
+    per_group 파라미터가 사용자의 초기값 그대로 `converged: True` 와 함께
+    "추정치"로 돌아왔다.  결과에서 그것이 추정인지 짐작인지 구별할 방법은
+    `stderr: None` 뿐이었다.
+    """
+
+    GROUP = {
+        "doses": [{"compartment": "Ag", "type": "bolus", "amount": DOSE, "start_time": 0}],
+        "observed": OBSERVED,
+        "mappings": {"Plasma": "C1"},
+    }
+
+    def two_groups(self, second):
+        return fit_request(
+            param_scopes={"CL": "per_group", "V": "shared", "ka": "shared"},
+            fitting_groups=[self.GROUP, second],
+            objective="mle", error_model="proportional",
+        )
+
+    def test_a_group_whose_column_is_all_missing_is_refused(self):
+        dead = {**self.GROUP, "observed": {**OBSERVED, "Plasma": [None] * 13}}
+        result = self.two_groups(dead)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("group 2", result["message"])
+
+    def test_a_mistyped_mapping_is_refused_and_names_the_symbol(self):
+        typo = {**self.GROUP, "mappings": {"Plasma": "C_typo"}}
+        result = self.two_groups(typo)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("C_typo", result["message"])
+
+    def test_two_usable_groups_still_fit(self):
+        result = self.two_groups(self.GROUP)
+        self.assertEqual(result["status"], "ok")
+        per_group = [p for p in result["params"] if p["base_name"] == "CL"]
+        self.assertEqual(len(per_group), 2)
+        for p in per_group:
+            with self.subTest(parameter=p["name"]):
+                self.assertLess(abs(p["value"] - TRUE["CL"]) / TRUE["CL"], 0.10)
+
+
+class DegreesOfFreedom(unittest.TestCase):
+    """가중치 0 인 관측은 자유도를 늘리지 않는다.
+
+    1/Y 가중에서 농도 0 인 점은 목적함수에 아무것도 보태지 않는데, 예전에는
+    그것도 n_obs 에 들어가 잔차분산을 너무 작게 만들었다 — 추정치는 소수점
+    넷째 자리까지 그대로인데 표준오차만 12% 줄었다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.clean = fit_request(objective="wls", weighting="1/Y")
+        blq = {
+            "Time": OBSERVED["Time"] + [48.0, 60.0, 72.0],
+            "Plasma": OBSERVED["Plasma"] + [0.0, 0.0, 0.0],
+        }
+        cls.with_zeros = fit_request(
+            objective="wls", weighting="1/Y",
+            fitting_groups=[{**MultipleGroups.GROUP, "observed": blq}],
+        )
+
+    @staticmethod
+    def _cl(result):
+        return next(p for p in result["params"] if p["base_name"] == "CL")
+
+    def test_zero_observations_do_not_shrink_the_standard_error(self):
+        clean, padded = self._cl(self.clean), self._cl(self.with_zeros)
+        # 점 추정이 사실상 같다는 것이 먼저다 — 0 은 정보를 주지 않았다.
+        self.assertAlmostEqual(clean["value"], padded["value"], places=3)
+        self.assertAlmostEqual(clean["stderr"], padded["stderr"], places=3)
+
+
+class ReportedStatistics(unittest.TestCase):
+    def test_aic_is_consistent_with_the_reported_nll(self):
+        """예전에는 nll 이 상수항을 뺀 값, aic 는 더한 값이라 서로 어긋났다."""
+        result = fit_request(objective="mle", error_model="constant")
+        k = len(result["params"])
+        self.assertAlmostEqual(result["aic"], 2 * k + 2 * result["nll"], places=6)
+        self.assertAlmostEqual(
+            result["bic"], k * math.log(result["n_obs"]) + 2 * result["nll"], places=6
+        )
+
+    def test_a_parameter_pinned_at_a_bound_gets_no_wald_interval(self):
+        """경계에 붙으면 대칭 구간이 허용 범위를 넘어간다 — 표준편차에서는 음수 하한.
+
+        combined 오차모형을 비례오차 자료에 맞추면 Sigma(Additive) 가 하한
+        1e-6 으로 내려간다. 예전에는 그 자리에서 (-0.02384, +0.02385) 를
+        보고했다.
+        """
+        result = fit_request(objective="mle", error_model="combined")
+        pinned = [p for p in result["params"] if p.get("at_bound")]
+        self.assertTrue(pinned, "경계에 붙은 파라미터가 있어야 하는 설정이다")
+        for p in pinned:
+            with self.subTest(parameter=p["name"]):
+                self.assertIsNone(p["ci_lower"])
+                self.assertIsNone(p["stderr"])
+        # 경계에 붙지 않은 것들은 그대로 나와야 한다.
+        free = [p for p in result["params"] if not p.get("at_bound")]
+        self.assertTrue(all(p["stderr"] is not None for p in free))

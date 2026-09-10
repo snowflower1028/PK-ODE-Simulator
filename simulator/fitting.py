@@ -49,6 +49,57 @@ def _unpack_x(x, fit_keys, param_scopes, error_model, n_groups):
     return param_map, sigma_add, sigma_prop
 
 
+def _groups_with_nothing_to_fit(fitting_groups, comps, derived_expressions):
+    """목적함수에 아무것도 기여하지 못하는 그룹을 찾아 이유와 함께 돌려준다.
+
+    `_predict_pairs` 는 쓸 수 없는 그룹을 조용히 `continue` 로 건너뛴다.  전체
+    쌍이 하나도 없으면 위쪽 관문이 잡지만, 그 관문은 "어디엔가 하나라도 있으면"
+    통과다.  그래서 그룹 하나만 죽어 있으면 그 그룹에 속한 per_group 파라미터는
+    목적함수가 한 번도 건드리지 않고, 사용자가 넣은 초기값이 그대로 "추정치"로
+    돌아온다 — `converged: True` 와 함께.  결과에서 그것이 추정인지 짐작인지
+    구별할 방법은 `stderr: None` 뿐이다.
+
+    시뮬레이션 없이 판단할 수 있다.  필요한 것은 시각축, 그리고 모델이 실제로
+    만들어 내는 변수에 걸린 매핑, 그리고 그 열에 수가 하나라도 있는가다.
+    """
+    producible = set(comps) | set(derived_expressions or {})
+    problems = []
+
+    for index, group in enumerate(fitting_groups, start=1):
+        observed = group.get('observed') or {}
+        columns = set(observed)
+        if not any(c.lower() == "time" for c in columns):
+            problems.append((index, "it has no Time column"))
+            continue
+
+        mappings = group.get('mappings') or {}
+        if not mappings:
+            problems.append((index, "no column is mapped to a model variable"))
+            continue
+
+        unknown = sorted({v for v in mappings.values() if v and v not in producible})
+        usable = False
+        for data_col, model_var in mappings.items():
+            if model_var not in producible or data_col not in columns:
+                continue
+            values = observed.get(data_col) or []
+            if any(v is not None and v == v for v in values):   # NaN 은 자기 자신과 다르다
+                usable = True
+                break
+
+        if not usable:
+            if unknown:
+                problems.append((
+                    index,
+                    f"it is mapped to {', '.join(repr(u) for u in unknown)}, "
+                    f"which the model does not produce",
+                ))
+            else:
+                problems.append((index, "its mapped columns contain no usable numbers"))
+
+    return problems
+
+
 def _predict_pairs(x, fit_keys, fixed_param, equations_callable, all_parameters,
                    comps, initials, fitting_groups, param_scopes, error_model,
                    derived_expressions):
@@ -327,7 +378,15 @@ def _standard_errors(func, x, args, dof, scale=1.0):
         H = _numeric_hessian(func, x, args)
         if not np.all(np.isfinite(H)):
             return blank
-        cov = np.linalg.inv(H) * scale
+        # 방향 하나가 식별되지 않으면 inv 가 통째로 실패하고, 잘 결정된
+        # 파라미터들의 표준오차까지 함께 사라졌다 — 그룹 하나가 자료를 못 받아
+        # 그 그룹의 CL 만 못 정할 때 CL·V·ka·sigma 다섯 개가 전부 None 이 됐다.
+        # 유사역행렬로 물러나 나머지는 살린다. 정말 못 정하는 방향은 아래
+        # `v <= 0` 검사에서 그 항목만 비워진다.
+        try:
+            cov = np.linalg.inv(H) * scale
+        except np.linalg.LinAlgError:
+            cov = np.linalg.pinv(H) * scale
         var = np.diag(cov)
         tcrit = float(stats.t.ppf(0.975, dof)) if dof and dof > 0 else 1.96
 
@@ -481,6 +540,22 @@ def fit(data: dict) -> dict:
     except Exception as e:
         return {"status": "error", "message": f"Could not evaluate the model at the initial values: {e}"}
 
+    # 전체가 비었는지만 보면 그룹 하나가 죽어 있는 경우를 놓친다. 그 그룹의
+    # per_group 파라미터는 초기값 그대로 돌아오면서 "추정치"라고 불린다.
+    dead_groups = _groups_with_nothing_to_fit(
+        fitting_groups, all_compartments, derived_expressions
+    )
+    if dead_groups:
+        detail = "; ".join(f"group {i} — {why}" for i, why in dead_groups)
+        return {
+            "status": "error",
+            "message": (
+                f"These groups contribute no data to the fit, so any parameter "
+                f"estimated only from them would come back as the number you "
+                f"typed in: {detail}. Fix the mapping or remove the group."
+            ),
+        }
+
     if not initial_pairs:
         mapped = sorted({
             var
@@ -547,12 +622,28 @@ def fit(data: dict) -> dict:
     ssr_total = float(np.sum(residuals ** 2)) if n_obs else None
     rmse = float(np.sqrt(ssr_total / n_obs)) if n_obs else None
     n_est = len(x_hat)
-    dof = max(n_obs - n_est, 0)
+
+    # 자유도는 목적함수에 실제로 기여한 관측의 수로 센다.  1/Y 가중에서
+    # 농도 0 인 점은 가중치가 0 이라 아무 정보도 주지 않는데, 예전에는 그것도
+    # n_obs 에 들어가 잔차분산 s² = 2·wssr/dof 를 너무 작게 만들었다 —
+    # BLQ 3점을 0 으로 기록해 넣었더니 추정치는 소수점 넷째 자리까지 그대로인데
+    # SE(CL) 이 0.2326 에서 0.2040 으로 12% 줄고 신뢰구간이 15% 좁아졌다.
+    # 정확히 sqrt(10/13) 배다.
+    if objective == "wls" and pairs:
+        informative = int(sum(
+            int(np.count_nonzero(_weights(y_obs, weighting))) for y_obs, _ in pairs
+        ))
+    else:
+        informative = n_obs
+    dof = max(informative - n_est, 0)
 
     if objective == "mle":
-        nll = float(result.fun)
-        # NLL은 상수항 0.5*n*log(2*pi)를 생략한 값이므로 AIC/BIC 계산 시 더해준다.
-        full_nll = nll + 0.5 * n_obs * math.log(2.0 * math.pi) if n_obs else nll
+        # 최적화가 최소화한 값은 상수항 0.5*n*log(2*pi) 를 뺀 것이다. 예전에는
+        # 그 값을 `nll` 로 내보내면서 AIC 는 상수항을 더한 값으로 계산해,
+        # 응답 안에서 aic != 2k + 2*nll 이었다(보고값 nll=-4.729, aic=22.434).
+        # 두 수가 같은 것을 가리키도록 상수항을 포함한 값을 내보낸다.
+        nll = float(result.fun) + (0.5 * n_obs * math.log(2.0 * math.pi) if n_obs else 0.0)
+        full_nll = nll
         aic = 2.0 * n_est + 2.0 * full_nll
         bic = (n_est * math.log(n_obs) + 2.0 * full_nll) if n_obs > 0 else None
         se_scale = 1.0
@@ -579,6 +670,23 @@ def fit(data: dict) -> dict:
 
         se, ci_lo, ci_hi = se_ci[i] if i < len(se_ci) else (None, None, None)
         value = float(x_hat[i])
+
+        # 추정치가 경계에 붙어 있으면 Wald 구간은 뜻이 없다.  대칭 구간을
+        # 그대로 내보내면 허용 범위 밖으로 넘어가고, 표준편차 파라미터에서는
+        # 음수 하한이 나온다 — combined 오차모형에서 Sigma(Additive) 가
+        # 하한 1e-6 에 붙었을 때 구간이 (-0.02384, +0.02385) 로 보고됐다.
+        # 수치 헤시안의 미분 간격 자체도 경계 밖 지점을 밟는다.
+        lo_bound, hi_bound = bounds[i] if i < len(bounds) else (None, None)
+        at_bound = False
+        for edge in (lo_bound, hi_bound):
+            if edge is None or not np.isfinite(edge):
+                continue
+            if abs(value - edge) <= max(abs(edge), 1.0) * 1e-6:
+                at_bound = True
+                break
+        if at_bound:
+            se = ci_lo = ci_hi = None
+
         cv_pct = float(abs(se / value) * 100.0) if (se is not None and value != 0) else None
 
         params_summary.append({
@@ -591,6 +699,8 @@ def fit(data: dict) -> dict:
             "cv_pct": cv_pct,
             "ci_lower": ci_lo,
             "ci_upper": ci_hi,
+            #: 경계에 붙어 표준오차를 낼 수 없었다는 표시.
+            "at_bound": at_bound,
         })
 
     try:
