@@ -9,6 +9,7 @@
 """
 
 import json
+import math
 import os
 
 import pandas as pd
@@ -116,3 +117,60 @@ class SimulateEndpoint(SimpleTestCase):
 
     def test_nothing_failed(self):
         self.assertEqual(self._run()["derived_failures"], [])
+
+
+class OnlyMathGetsThrough(SimpleTestCase):
+    """파생식은 파이썬 문법이 아니라 수학 문법으로만 해석된다.
+
+    처음 구현은 `pd.eval(expr, local_dict=env, engine="python")` 이었다.
+    engine 이름이 안전해 보이지만 문법을 제한하는 것은 engine 이 아니라
+    parser 이고, 기본 parser 는 속성 접근을 명시적으로 허용한다 — 확인해
+    보면 `pd.compat.os.system(...)` 이 실제로 실행된다.  오늘 그것이 터지지
+    않은 유일한 이유는 여기 들어오는 문자열이 전부 파서의 화이트리스트를
+    이미 통과했다는 것뿐이었다.  이제는 텍스트를 파이썬으로 다시 해석하지
+    않고, 같은 화이트리스트로 SymPy 식을 만들어 수치 함수로 평가한다.
+    """
+
+    def setUp(self):
+        self.df = pd.DataFrame({"Time": [0.0, 1.0], "A1": [100.0, 50.0]})
+
+    def test_python_escapes_are_refused(self):
+        for expression in (
+            "pd",
+            'pd.compat.os.system("id")',
+            '__import__("os")',
+            "A1.__class__",
+            "A1[0]",
+            "(lambda: 1)()",
+            'eval("1")',
+            "globals()",
+            "A1 if A1 else A1",
+        ):
+            with self.subTest(expression=expression):
+                df, failures = attach_derived(self.df.copy(), {"x": expression}, {})
+                self.assertNotIn("x", df.columns)
+                self.assertEqual(len(failures), 1)
+
+    def test_the_documented_functions_still_work(self):
+        """내장 함수 이름은 인자가 아니다 — 걸러 내지 않으면 멀쩡한 식이 죽는다."""
+        cases = {
+            "sqrt(A1)": 10.0,
+            "exp(0)*A1": 100.0,
+            "log(A1)": math.log(100.0),
+            "abs(-A1)": 100.0,
+            "A1**0.5": 10.0,
+        }
+        for expression, want in cases.items():
+            with self.subTest(expression=expression):
+                df, failures = attach_derived(self.df.copy(), {"x": expression}, {})
+                self.assertEqual(failures, [])
+                self.assertAlmostEqual(float(df["x"].iloc[0]), want)
+
+    def test_a_scalar_expression_becomes_a_full_column(self):
+        """Q1 = fd1*QCO 처럼 시간에 의존하지 않는 값도 행마다 있어야 한다."""
+        df, failures = attach_derived(
+            self.df.copy(), {"Q1": "fd1*QCO"}, {"QCO": 5.0, "fd1": 0.4}
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(len(df["Q1"]), len(self.df))
+        self.assertTrue(all(abs(v - 2.0) < 1e-12 for v in df["Q1"]))
