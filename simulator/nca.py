@@ -491,9 +491,22 @@ def back_extrapolate_c0(
     if positive.size < 2:
         return None
 
-    i, j = int(positive[0]), int(positive[1])
+    i = int(positive[0])
     if t[i] <= 0:
         return None      # 0시점에 이미 양수 농도가 있다. 되돌릴 것이 없다.
+
+    # 두 번째 점은 시각이 *다른* 첫 점이어야 한다. 반복 측정이나 여러 개체를
+    # 모아 붙인 자료에서는 같은 시각이 두 번 나오는데, 예전에는 t[j]-t[i] 가
+    # 0 이 되어 k 가 무한대, C0 도 무한대가 됐다. 그 무한대는 배열 맨 앞에
+    # 끼워졌다가 _clean 에서 조용히 걸러져, 0-t_first 쐐기가 통째로 사라진
+    # AUC 가 경고 한 줄 없이 나왔다(측정: auc_last 19.858, 참값 약 24.49).
+    j = None
+    for candidate in positive[1:]:
+        if t[int(candidate)] > t[i]:
+            j = int(candidate)
+            break
+    if j is None:
+        return None
     if not (c[j] < c[i]):
         return None      # 늘어나고 있으면 볼루스의 말기가 아니다.
 
@@ -546,7 +559,21 @@ def partial_auc(
     if t.size < 2 or not (t_end > t_start):
         return float("nan")
 
-    last = float(t[-1])
+    # 외삽은 마지막 *정량* 점(Tlast, Clast)에서 시작한다.  예전에는 배열의
+    # 마지막 원소를 그냥 썼는데, 꼬리에 BLQ 를 0 으로 적어 둔 프로파일에서는
+    # 그 0 이 실측처럼 다뤄졌다.  결과가 두 가지로 틀어졌다:
+    #   · c_last == 0 이라 "말기 기울기가 없다"며 NaN 을 돌려줬다 — λz 는
+    #     멀쩡히 추정돼 있는데도.  경고 문구도 사실과 달랐다.
+    #   · 0 까지 사다리꼴로 이어 붙여 AUC(0-48) 이 auc_all 과 같아졌다.
+    # auc_last / auc_all 을 가르는 것과 같은 규칙을 여기서도 쓴다.
+    quantifiable = np.flatnonzero(c > 0)
+    if quantifiable.size:
+        last = float(t[int(quantifiable[-1])])
+        c_last = float(c[int(quantifiable[-1])])
+    else:
+        last = float(t[-1])
+        c_last = float(c[-1])
+
     inner_end = min(t_end, last)
     total = 0.0
 
@@ -565,7 +592,6 @@ def partial_auc(
     if t_end > last:
         if not lambda_z or lambda_z <= 0:
             return float("nan")
-        c_last = float(c[-1])
         if c_last <= 0:
             return float("nan")
         total += c_last * (1.0 - np.exp(-lambda_z * (t_end - last))) / lambda_z
@@ -696,6 +722,19 @@ def nca(
     if t.size < 2:
         res.warnings.append("Not enough points to analyse.")
         return res
+
+    # 음수 농도는 있을 수 없는 값이다.  분석 대상에서 빼지는 않는다 — 어떤
+    # 규칙으로 뺄지는 자료를 만든 사람이 정할 일이고, 여기서 조용히 손대면
+    # 사다리꼴의 뜻이 달라진다.  다만 말은 해야 한다.  예전에는 아무 표시
+    # 없이 음의 넓이가 AUC 에 더해졌고(측정: c=[10,5,-1,2,1] 에서 auc_last
+    # 15.984), λz 후보 창이 물리적으로 불가능한 점을 건너뛰며 잡혔다.
+    negative = int(np.count_nonzero(c < 0))
+    if negative:
+        res.warnings.append(
+            f"{negative} concentration(s) are below zero. They are integrated as "
+            f"they stand, so AUC and the terminal slope are only as meaningful as "
+            f"those values are."
+        )
 
     # 관측값 그 자체는 따로 붙들어 둔다. 아래에서 t=0 을 세워 넣는데, 그렇게
     # 만든 값이 Cmax 로 새어 나가면 안 되기 때문이다 — Cmax 는 잰 값이다.
@@ -840,10 +879,28 @@ def nca(
             return value - infusion_duration / 2.0
         return value
 
+    # 체류시간은 음수가 될 수 없다.  주입 길이가 관측된 AUMC/AUC 보다 길면
+    # 뺀 결과가 음수가 되는데, 예전에는 그대로 게시했다 — 4시간짜리 자료에
+    # 20시간 주입을 붙이면 MRT −7.44, Vss −302.8 이 나왔다.  아래 `if res.mrt`
+    # 는 음수도 참이라 Vss 까지 따라 나갔다.  뺄 것이 남지 않는다는 것은
+    # 자료가 주입을 다 담지 못했다는 뜻이므로, 비우고 그렇게 말한다.
+    def _residence_time(raw: float) -> Optional[float]:
+        corrected = _corrected(raw)
+        if corrected <= 0:
+            note = (
+                "Mean residence time came out at or below zero after subtracting "
+                "half the infusion length, which means the profile does not cover "
+                "enough of the infusion to support it."
+            )
+            if note not in res.warnings:   # MRT 와 MRTlast 가 같은 말을 두 번 하지 않게
+                res.warnings.append(note)
+            return None
+        return _f(corrected)
+
     if res.aumc_inf is not None and res.auc_inf_obs:
-        res.mrt = _f(_corrected(res.aumc_inf / res.auc_inf_obs))
+        res.mrt = _residence_time(res.aumc_inf / res.auc_inf_obs)
     if res.aumc_last is not None and res.auc_last:
-        res.mrt_last = _f(_corrected(res.aumc_last / res.auc_last))
+        res.mrt_last = _residence_time(res.aumc_last / res.auc_last)
 
     # --- 용량이 필요한 항목 ------------------------------------------------
     if dose and dose > 0:
@@ -890,8 +947,11 @@ def _limit_from_inside(
 
     투여 간격의 경계는 투여 시각이라 농도가 불연속일 수 있다. 그런데 격자에
     그 시각의 점이 있어도 그것이 투여 직전 값인지 직후 값인지는 배열만 봐서는
-    알 수 없다 — 이 앱의 솔버는 직전 값을 넣고, 손으로 만든 배열은 직후 값을
-    넣기도 한다. 어느 쪽을 집어도 절반은 틀린다.
+    알 수 없다. 이 앱의 솔버는 우연속이라 직후 값을 넣지만, 손으로 만든
+    배열이나 실측 자료는 직전 값(저점)을 넣기도 한다. 어느 쪽을 집어도
+    절반은 틀린다 — 실제로 끝 경계의 점을 그대로 쓰도록 바꿔 봤다가,
+    우연속 격자에서 다음 투여의 도약분이 이 구간의 저점으로 들어가
+    AUCτ 가 3.125 만큼 부풀었다.
 
     그래서 경계값을 바깥에서 가져오지 않고 안쪽에서 뻗어 만든다. 시작 경계는
     투여 직후 값이, 끝 경계는 다음 투여 직전 값이 나오는데 둘 다 이 구간에
@@ -937,7 +997,14 @@ def clip_interval(
     eps = 1e-9 * max(abs(t0), abs(t1), 1.0)
     inside = (t > t0 + eps) & (t < t1 - eps)
     t_in, c_in = t[inside], c[inside]
-    if t_in.size == 0:
+
+    # 안쪽 점이 하나뿐이면 뻗을 기울기가 없다.  예전에는 그 한 점의 값을
+    # 양 끝에 그대로 복사해 구간 전체를 평평한 직사각형으로 만들었다 —
+    # t=[0,6,...,36], c=[0,4,2,6,3,7,3.5] 의 24-36 구간에서 AUCτ 84.0,
+    # c_min=c_max=c_trough=7.0, 변동폭 0% 라는 답이 나왔다.  자료가 그렇게
+    # 말한 적이 없다.  모르면 만들어 내지 말고 비운다 — 부르는 쪽은
+    # "구간을 떼어 낼 수 없었다"고 알린다.
+    if t_in.size < 2:
         return np.empty(0), np.empty(0)
 
     out_t = np.concatenate(([t0], t_in, [t1]))
@@ -1041,6 +1108,13 @@ def nca_steady_state(
         t0 = first_dose_time + k * tau
         if t0 + tau > t[-1] + 1e-9:
             break
+        # 마지막 투여 뒤에는 투여 간격이 없다.  예전에는 자료 끝까지 세어서,
+        # 세척 구간까지 "완전한 투여 간격"으로 셌다 — q12h 12회(마지막 132h)
+        # 를 180h 까지 모의하면 n_intervals 가 12 가 아니라 15 였고,
+        # last_dose_time 을 주지 않으면 starts[-1] 이 약이 하나도 들어오지
+        # 않은 168-180 구간이 되어 CL,ss 가 터무니없이 커졌다.
+        if last_dose_time is not None and t0 > last_dose_time + 1e-9:
+            break
         if t0 >= t[0] - 1e-9:
             starts.append(t0)
         k += 1
@@ -1063,6 +1137,15 @@ def nca_steady_state(
             if abs(t0 - last_dose_time) < 1e-9:
                 chosen = t0
                 break
+    else:
+        # 마지막 투여 시각을 모르면 고른 구간이 정말 투여 간격인지 확인할
+        # 방법이 없다. 자료가 세척까지 이어져 있으면 약이 하나도 들어오지
+        # 않은 구간을 고를 수 있다.
+        res.warnings.append(
+            f"No last dose time was given, so the interval starting at "
+            f"{chosen:g} was assumed to follow a dose. If dosing had already "
+            f"stopped by then, the values below are not steady-state values."
+        )
 
     def interval_auc(t0: float) -> float:
         it, ic = clip_interval(t, c, t0, t0 + tau)
