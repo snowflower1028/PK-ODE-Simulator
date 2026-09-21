@@ -1068,6 +1068,41 @@ h5 .bi, h4 .bi, h3 .bi, .sidebar-section-title .bi, .subsection-title .bi { /* �
     margin-top: 1rem;
 }
 
+/* 파생 변수가 많을 때(> 5, UI.DERIVED_PREVIEW_LIMIT) 나머지를 접는 토글. 목록 바로 아래에 붙는 텍스트 버튼. */
+.derived-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.4rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--apple-system-blue);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.derived-toggle:hover {
+    background-color: var(--apple-background-secondary);
+    color: var(--apple-system-blue-hover);
+}
+.derived-toggle:focus-visible {
+    outline: 2px solid var(--apple-system-blue);
+    outline-offset: 1px;
+}
+.derived-toggle .bi {
+    display: inline-block;
+    font-size: 0.75rem;
+    line-height: 1;
+    transition: transform 0.18s ease-in-out;
+}
+.derived-toggle[aria-expanded="true"] .bi {
+    transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+    .derived-toggle .bi { transition: none; }
+}
+
 
 /* ============================================================ */
 /* 11. Help & About Modals                                      */
