@@ -16,7 +16,7 @@ import traceback
 from sympy import symbols, lambdify
 
 from .parser import parse_ode_input
-from .solver import solve_ode_system
+from .solver import finite_number, solve_ode_system
 from .derived import attach_derived, describe_failures
 from .analyzer import analyze_observed, analyze_simulated, compare_observed, observed_times
 
@@ -76,10 +76,11 @@ _MAX_OBSERVED_POINTS = 20_000
 
 def _bounded_steps(raw) -> int:
     """t_steps 를 읽고 범위를 확인한다."""
-    try:
-        steps = int(raw)
-    except (TypeError, ValueError):
+    # int() 는 11.7 을 말없이 11 로, True 를 1 로 만든다.  둘 다 거절한다.
+    value = finite_number(raw, "t_steps")
+    if value != int(value):
         raise ValueError(f"t_steps must be a whole number; got {raw!r}.")
+    steps = int(value)
     if steps < 2:
         raise ValueError(f"t_steps must be at least 2; got {steps}.")
     if steps > _MAX_T_STEPS:
@@ -176,8 +177,8 @@ def sweep(request):
             "params": dict(data.get("parameters", {})),
             "initials": dict(data.get("initials", {})),
             "doses": list(data.get("doses", [])),
-            "t_start": float(data.get("t_start", 0)),
-            "t_end": float(data.get("t_end", 48)),
+            "t_start": finite_number(data.get("t_start", 0), "The start time"),
+            "t_end": finite_number(data.get("t_end", 48), "The end time"),
             "t_steps": _bounded_steps(data.get("t_steps", 200)),
         }
         # 그릴 변수 하나만 다룬다. 스윕은 값마다 곡선이 하나씩 늘어나므로
@@ -195,6 +196,10 @@ def sweep(request):
             return _scan(ctx, spec)
         return JsonResponse({"status": "error", "message": f"Unknown sweep mode '{mode}'."}, status=400)
 
+    except ValueError as exc:
+        # 예전에는 이 분기가 없어 잘못된 t_steps, 빠진 파라미터 같은 요청
+        # 잘못이 전부 "server error" 500 이 됐다 — 이유가 사용자에게 가지 않았다.
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
     except Exception:
         return _server_error("running the sweep")
 
@@ -290,7 +295,7 @@ def _scan(ctx, spec):
     variable = ctx["variable"]
     runs = []
     for raw in values:
-        value = float(raw)
+        value = finite_number(raw, "A sweep value")
         df, pk = _run_once(ctx, *apply(value))
         if df is None:
             continue
@@ -350,7 +355,7 @@ def _tornado(ctx, spec):
     """
     # `or` 로 기본값을 주면 0 을 보냈을 때 말없이 10% 가 되어 버린다.
     raw_delta = spec.get("delta")
-    delta = 0.1 if raw_delta is None else float(raw_delta)
+    delta = 0.1 if raw_delta is None else finite_number(raw_delta, "The perturbation")
     if not 0 < delta < 1:
         return JsonResponse(
             {"status": "error", "message": "The perturbation must be between 0 and 100%."}, status=400)
@@ -425,8 +430,8 @@ def simulate(request):
 
         init_values = data.get("initials", {})
         param_values = data.get("parameters", {})
-        t_start = float(data.get("t_start", 0))
-        t_end = float(data.get("t_end", 48))
+        t_start = finite_number(data.get("t_start", 0), "The start time")
+        t_end = finite_number(data.get("t_end", 48), "The end time")
         t_steps = _bounded_steps(data.get("t_steps", 200))
         doses = data.get("doses", [])
         observed_datasets = data.get("observed", []) or []

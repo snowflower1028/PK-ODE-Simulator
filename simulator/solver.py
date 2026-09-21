@@ -56,6 +56,27 @@ def _absolute_tolerances(y0: np.ndarray, doses, comp_map_idx) -> np.ndarray:
     return np.maximum(np.minimum(_BASE_ATOL, scale * _BASE_ATOL), _MIN_ATOL)
 
 
+def finite_number(value, what: str) -> float:
+    """요청에서 온 값 하나를 유한한 실수로 읽는다.  아니면 ValueError.
+
+    JSON 의 `true`/`false` 는 파이썬 bool 이고 bool 은 int 의 하위형이라
+    `float(True) == 1.0` 이 된다.  예전에는 그래서 `k=true` 가 k=1 로,
+    `t_start=true` 가 관찰 창 시작 1 h 로 조용히 계산됐다(HTTP 200).
+    숫자 문자열("12")은 예전처럼 받는다 — 폼 입력이 문자열로 올 수 있다.
+    """
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{what} must be a number, not {str(value).lower()}.")
+    if value is None or value == "":
+        raise ValueError(f"{what} is missing.")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{what} is not a number: {value!r}.")
+    if not np.isfinite(number):
+        raise ValueError(f"{what} is not finite: {value!r}.")
+    return number
+
+
 def generate_rhs_function(
     equations: Dict[str, Expr],
     compartments: List[str],
@@ -116,12 +137,8 @@ def solve_ode_system(
     # 사용자가 잘못 넣은 값은 조용한 답이 아니라 오류로 돌려준다.
     if len(t_span) != 2:
         raise ValueError(f"t_span must be a pair of times; got {t_span!r}.")
-    try:
-        t_lo, t_hi = float(t_span[0]), float(t_span[1])
-    except (TypeError, ValueError):
-        raise ValueError(f"t_span must be numeric; got {t_span!r}.")
-    if not (np.isfinite(t_lo) and np.isfinite(t_hi)):
-        raise ValueError(f"t_span must be finite; got ({t_span[0]!r}, {t_span[1]!r}).")
+    t_lo = finite_number(t_span[0], "The start time")
+    t_hi = finite_number(t_span[1], "The end time")
     if t_hi <= t_lo:
         raise ValueError(
             f"t_span must run forwards: the end ({t_hi}) has to be later than "
@@ -136,21 +153,30 @@ def solve_ode_system(
         raise ValueError(
             "Missing parameter value(s): " + ", ".join(sorted(missing_params))
         )
-    for name in parameters:
-        try:
-            value = float(param_values[name])
-        except (TypeError, ValueError):
-            raise ValueError(
-                f"Parameter {name!r} is not a number: {param_values[name]!r}."
-            )
-        if not np.isfinite(value):
-            raise ValueError(f"Parameter {name!r} is not finite: {value!r}.")
+    checked_params = {
+        name: finite_number(param_values[name], f"Parameter {name!r}")
+        for name in parameters
+    }
+
+    # 초기값.  빠진 구획은 0 에서 시작한다(예전과 같다).  예전에는 여기서
+    # 아무것도 보지 않아 `true` 는 1 로 통과했고, 'abc' 나 null 은 numpy·scipy
+    # 내부 메시지("could not convert string to float", "y0 must be finite")로
+    # 돌아왔다.
+    checked_initials = {
+        comp: finite_number(init_values[comp], f"The initial value of {comp!r}")
+        for comp in compartments
+        if comp in init_values
+    }
 
     def _number(dose_item, field, position, default=0.0):
         """투여 항목의 수치 필드. 문자열이 들어오면 500 이 아니라 400 이 되게."""
         raw = dose_item.get(field, default)
         if raw is None or raw == "":
             return default
+        if isinstance(raw, (bool, np.bool_)):
+            raise ValueError(
+                f"Dose #{position} has a {field} of {str(raw).lower()}; it must be a number."
+            )
         try:
             value = float(raw)
         except (TypeError, ValueError):
@@ -169,15 +195,7 @@ def solve_ode_system(
                 f"Unknown dose type {typ!r} in dose #{position}; "
                 f"expected 'bolus' or 'infusion'."
             )
-        try:
-            amount = float(dose_item.get("amount", 0))
-        except (TypeError, ValueError):
-            raise ValueError(
-                f"Dose #{position} has a non-numeric amount: "
-                f"{dose_item.get('amount')!r}."
-            )
-        if not np.isfinite(amount):
-            raise ValueError(f"Dose #{position} has a non-finite amount: {amount!r}.")
+        amount = finite_number(dose_item.get("amount", 0), f"The amount of dose #{position}")
         start_time = _number(dose_item, "start_time", position)
         repeat_every = _number(dose_item, "repeat_every", position, default=0.0)
         repeat_until = _number(dose_item, "repeat_until", position, default=0.0)
@@ -207,6 +225,16 @@ def solve_ode_system(
                     f"Infusion dose #{position} needs a positive duration; "
                     f"got {duration}."
                 )
+            # 속도 = 양/시간 이 넘치면 inf 가 되고, 적분은 nan 을 만든 뒤
+            # RuntimeWarning 한 줄만 남기고 A=0.0 인 "성공한" 곡선을 돌려줬다
+            # (amount=1e308, duration=1e-300).  duration=5e-324 도 같았다.
+            with np.errstate(over="ignore", divide="ignore"):
+                rate = amount / duration
+            if not np.isfinite(rate):
+                raise ValueError(
+                    f"Infusion dose #{position} has a rate (amount / duration) that "
+                    f"is too large to represent: {amount:g} / {duration:g}."
+                )
         else:
             duration = 0.0
 
@@ -227,9 +255,9 @@ def solve_ode_system(
     # int 로 들어오므로 모든 값이 정수면 배열이 int64 가 되고, 그 뒤 `+= 0.25`
     # 같은 소수 용량이 0 으로 잘려 투여가 통째로 사라진다.  예외도 경고도 없이
     # 전 구간이 0 이 되므로, 항상 float 으로 고정한다.
-    p_values_arr = np.array([param_values.get(p_name, 0) for p_name in parameters], dtype=float)
+    p_values_arr = np.array([checked_params[p_name] for p_name in parameters], dtype=float)
     comp_map_idx = {name: i for i, name in enumerate(compartments)}
-    y_current = np.array([init_values.get(c, 0) for c in compartments], dtype=float)
+    y_current = np.array([checked_initials.get(c, 0.0) for c in compartments], dtype=float)
     t_current = t_span[0]
     
     # 현재 활성화된 infusion rate 저장 배열
@@ -257,6 +285,16 @@ def solve_ode_system(
                 processed_dose_events.append({"time": current_t, "type": "bolus", "comp_idx": comp_idx, "value": amount})
             elif typ == "infusion" and duration > 0:
                 infusion_end_time = current_t + duration
+                # 시각이 크면 짧은 주입의 끝이 시작과 같은 부동소수점 값이 된다
+                # (1e17 + 1 == 1e17).  그러면 시작·끝 이벤트가 같은 시각에 함께
+                # 소비돼 유입이 0 이 되고, 투여가 통째로 사라진 곡선이 200 으로
+                # 나갔다.  반복 투여의 뒤쪽 회차에서도 생길 수 있어 여기서 본다.
+                if not infusion_end_time > current_t:
+                    raise ValueError(
+                        f"An infusion to {comp_name!r} starting at t={current_t:g} "
+                        f"lasts {duration:g}, which is too short to separate from "
+                        f"its start at that time scale."
+                    )
                 rate = amount / duration
                 processed_dose_events.append({"time": current_t, "type": "infusion_start", "comp_idx": comp_idx, "value": rate})
                 if infusion_end_time <= t_span[1] + 1e-9:
