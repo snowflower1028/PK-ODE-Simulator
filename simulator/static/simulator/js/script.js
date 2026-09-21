@@ -15,6 +15,7 @@ const State = {
   symbolOrder: 'ode',       // 'ode' | 'alpha' — Value Settings 표시 순서
   processedODE: "",         // 기존 window._processedODE 대체
   derivedExpressions: {}, // 기존 window._derivedExpressions 대체
+  derivedExpanded: false,  // Derived Variables 목록을 전부 펼쳤는가 (표시 전용)
 
   // 4. 피팅 프로세스 관련 상태
   fitTimer: null,             // 피팅 진행 시간 측정을 위한 타이머 ID
@@ -456,6 +457,26 @@ const UI = {
   /**
    * 파싱된 심볼(구획, 파라미터)에 대한 입력 필드와 메뉴를 렌더링합니다.
    */
+  /** Derived Variables 가 이 개수를 넘으면 앞의 이 개수만 보이고 나머지를 접는다. */
+  DERIVED_PREVIEW_LIMIT: 5,
+
+  /**
+   * Derived Variables 의 접힌 항목 표시와 토글 버튼 문구를 State.derivedExpanded 에 맞춘다.
+   * 다시 그리지 않고 hidden 만 바꾼다 — renderSymbolInputs 는 입력값과 Plot 선택을
+   * 초기화하므로, 목록을 펼치는 것만으로 그런 부작용이 생기면 안 된다.
+   */
+  syncDerivedToggle() {
+    const container = DOM.sidebar.derivedValuesContainer;
+    const btn = container.querySelector('.derived-toggle');
+    if (!btn) return;
+    const expanded = State.derivedExpanded;
+    container.querySelectorAll('.derived-box-overflow').forEach(el => { el.hidden = !expanded; });
+    btn.setAttribute('aria-expanded', String(expanded));
+    btn.querySelector('.derived-toggle-label').textContent = expanded
+      ? 'Show less'
+      : `Show ${btn.dataset.hiddenCount} more`;
+  },
+
   renderSymbolInputs() {
     const { derivedExpressions } = State;
     // 표시 순서만 바꾼 목록 (계산용 State 배열은 그대로 둔다)
@@ -519,15 +540,31 @@ const UI = {
     }
    
     // 파생 변수(derived expressions) 렌더링
+    // 개수가 DERIVED_PREVIEW_LIMIT 를 넘으면 앞부분만 보이고 나머지는 접는다.
+    // 접힌 항목도 DOM 에는 남겨 둔다 — sensitivity.js 가 `.derived-box strong`
+    // 으로 파생 변수 이름을 읽어 가므로, 아예 그리지 않으면 그쪽이 깨진다.
     const derivedEntries = Object.entries(derivedExpressions);
     
     if (derivedEntries.length > 0) {
-        derivedValuesContainer.innerHTML = derivedEntries.map(([key, expr]) => `
-            <div class="derived-box">
+        const limit = UI.DERIVED_PREVIEW_LIMIT;
+        const collapsible = derivedEntries.length > limit;
+        const expanded = collapsible && State.derivedExpanded;
+        const boxes = derivedEntries.map(([key, expr], i) => {
+            const overflow = collapsible && i >= limit;
+            return `
+            <div class="derived-box${overflow ? " derived-box-overflow" : ""}"${overflow && !expanded ? " hidden" : ""}>
                 <i class="bi bi-calculator me-1"></i>
                 <strong>${key}</strong> = ${expr.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
-            </div>
-        `).join("");
+            </div>`;
+        }).join("");
+        const toggle = collapsible ? `
+            <button type="button" class="derived-toggle" aria-expanded="${expanded}"
+                    data-hidden-count="${derivedEntries.length - limit}">
+                <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                <span class="derived-toggle-label"></span>
+            </button>` : "";
+        derivedValuesContainer.innerHTML = boxes + toggle;
+        if (collapsible) UI.syncDerivedToggle();
     } else {
         derivedValuesContainer.innerHTML = `<div class="placeholder-text small">No derived variables found.</div>`;
     }
@@ -1745,6 +1782,7 @@ const Handlers = {
         State.parametersOdeOrder = response.data.parameters_ode_order || [];
         State.processedODE = response.data.processed_ode;
         State.derivedExpressions = response.data.derived_expressions || {};
+        State.derivedExpanded = false; // 새 모델은 접힌 상태로 시작
 
         // 서버가 준 것은 구조 분류와 기본값(전부 unknown/none)이다. 사용자가
         // 이미 선언해 둔 것이 있으면, 같은 이름이 여전히 있는 한 지켜 준다 —
@@ -2874,6 +2912,12 @@ const App = {
     DOM.sidebar.doseForm.addEventListener('submit', Handlers.handleDoseFormSubmit);
     DOM.sidebar.doseTypeSelect.addEventListener('change', Handlers.handleDoseTypeChange);
     DOM.sidebar.doseListContainer.addEventListener('click', Handlers.handleDoseListClick);
+    // Derived Variables 더 보기/접기. 버튼은 renderSymbolInputs 가 매번 새로 만들므로 위임한다.
+    DOM.sidebar.derivedValuesContainer.addEventListener('click', (event) => {
+      if (!event.target.closest('.derived-toggle')) return;
+      State.derivedExpanded = !State.derivedExpanded;
+      UI.syncDerivedToggle();
+    });
     
     // Dosing 폼의 'Repeat' 토글 스위치 이벤트
     const repeatToggle = document.getElementById('repeat-dose-toggle');
