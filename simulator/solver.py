@@ -16,6 +16,45 @@ _INTEGRATOR_LOCK = threading.RLock()
 # 하나이므로, 이 수가 곧 solve_ivp 호출 횟수이자 보간 구간 수다.
 _MAX_DOSE_EVENTS = 5_000
 
+# 절대 허용오차의 기준값.  예전에는 이 값 하나를 모든 구획에 그대로 썼다.
+# 상태가 O(1)~O(1e12) 일 때는 rtol 이 오차를 지배하므로 문제가 없지만, 상태가
+# 1e-9 규모(nmol, µg/L 로 모델을 쓴 경우)면 atol 이 상태보다 커져 솔버가
+# "이미 충분히 0 에 가깝다"고 보고 곡선을 대충 따라간다.  같은 1구획 소실을
+# 단위만 바꿔 풀면 C(t)/C(0) 의 상대오차가 1e0 규모 4.7e-08 에서 1e-09 규모
+# 4.6e-02 로, 10 반감기 꼬리에서는 4.8e+04 로 무너졌다.
+_BASE_ATOL = 1e-11
+#: atol 이 subnormal 로 내려가지 않게 하는 바닥.
+_MIN_ATOL = 1e-300
+
+
+def _absolute_tolerances(y0: np.ndarray, doses, comp_map_idx) -> np.ndarray:
+    """구획마다 atol 을 상태의 규모에 맞춘다.  **오늘보다 느슨해지는 일은 없다.**
+
+        scale_i = max(|초기값_i|, 구획 i 로 들어가는 투여 한 번의 양)
+        atol_i  = min(_BASE_ATOL, scale_i * _BASE_ATOL)
+
+    `min` 이 핵심이다.  규모가 1 이상인 구획은 예전과 똑같이 1e-11 을 쓰므로,
+    지금 맞는 결과가 이 변경으로 움직일 경로가 없다.  작은 규모만 조인다.
+
+    초기값도 직접 투여도 없는 구획(경구 모델의 중심 구획, 대사물 pool)은
+    규모를 미리 알 수 없다.  이 구획에 1e-11 을 주면 흡수 구획만 조여지고
+    정작 관측하는 곡선은 여전히 무너지므로, 시스템에서 알려진 가장 작은
+    규모를 물려준다(가장 보수적인 선택).  아무 정보도 없으면 1e-11 이다.
+    """
+    scale = np.abs(np.asarray(y0, dtype=float)).copy()
+    for dose in doses:
+        idx = comp_map_idx.get(dose.get("compartment"))
+        if idx is None:
+            continue
+        amount = abs(float(dose.get("amount") or 0.0))
+        if np.isfinite(amount):
+            scale[idx] = max(scale[idx], amount)
+
+    known = scale[(scale > 0) & np.isfinite(scale)]
+    fallback = float(known.min()) if known.size else 1.0
+    scale = np.where((scale > 0) & np.isfinite(scale), scale, fallback)
+    return np.maximum(np.minimum(_BASE_ATOL, scale * _BASE_ATOL), _MIN_ATOL)
+
 
 def generate_rhs_function(
     equations: Dict[str, Expr],
@@ -258,6 +297,9 @@ def solve_ode_system(
         base_dy = equations_callable(t, y_arr, p_values_arr)
         return np.array(base_dy) + active_infusion_rates
 
+    # 구획별 절대 허용오차 — 투여가 적용되기 전의 초기값과 투여량으로 정한다.
+    atol = _absolute_tolerances(y_current, normalised_doses, comp_map_idx)
+
     # --- 4. 이벤트 기반 시뮬레이션 루프 ---
     t_start, t_end = float(t_span[0]), float(t_span[1])
     cursor = 0
@@ -306,7 +348,7 @@ def solve_ode_system(
                 # 아무리 촘촘히 해도 0.1% 아래로 내려가지 않는다.
                 # 값은 요청당 1-comp +3ms, 2-comp 는 차이 없음.
                 rtol=1e-8,
-                atol=1e-11,
+                atol=atol,   # 구획별, `_absolute_tolerances` 참고
             )
 
         # 적분 실패는 경고 한 줄로 넘길 일이 아니다.  예전에는 여기서
