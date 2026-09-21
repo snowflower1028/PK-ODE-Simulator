@@ -14,7 +14,7 @@ from collections import defaultdict, deque
 from typing import Dict, List, Set, Tuple, Any
 
 from sympy import (
-    symbols, sqrt, sin, cos, tan, exp, log, Abs,
+    S, symbols, sqrt, sin, cos, tan, exp, log, Abs,
     asin, acos, atan, sinh, cosh, tanh, Expr, Float, Integer, Rational
 )
 
@@ -57,16 +57,18 @@ def _preprocess(text: str) -> List[str]:
 
     clean = []
     for line_no, raw in enumerate(text.splitlines(), start=1):
-        ln = raw.translate(_UNICODE_TRANSLATION)
+        # 주석을 먼저 잘라 낸다.  예전에는 문자 검사를 먼저 해서 `# 1구획 모델`
+        # 같은 한국어 주석이 "Unsupported character U+AD6C" 로 통째로 거절됐다.
+        # 주석은 계산에 들어가지 않으므로 어떤 문자든 괜찮다.  문자열 리터럴은
+        # 수식 문법에서 허용하지 않으므로 '#' 뒤를 자르는 데 모호함이 없다.
+        ln = raw.split("#", 1)[0]
+        ln = ln.translate(_UNICODE_TRANSLATION)
         unsupported = next((ch for ch in ln if ord(ch) > 127), None)
         if unsupported is not None:
             raise ValueError(
                 f"Unsupported character U+{ord(unsupported):04X} on line {line_no}; "
-                "use ASCII names and operators."
+                "use ASCII names and operators (comments after '#' may use any text)."
             )
-        # 간단한 끝줄 주석은 허용한다. 문자열 리터럴은 수식 문법에서 허용하지
-        # 않으므로 '#' 뒤를 자르는 데 모호함이 없다.
-        ln = ln.split("#", 1)[0]
         ln = ln.strip()
         if ln:
             clean.append(ln.replace("^", "**"))
@@ -197,6 +199,33 @@ def _guard_number_size(expr, what: str):
                 f"{what} produces a number too large to work with "
                 f"(about {bits} bits)."
             )
+    return expr
+
+
+#: 식 안에 남아 있으면 안 되는 SymPy 상수.  `-k*A/0` 은 `zoo*A*k`,
+#: `sqrt(-1)` 은 `I`, 리터럴 `1e400` 은 `oo` 가 된다.  예전에는 이것들이 파싱을
+#: 그대로 통과해 lambdify 까지 내려갔고, 적분이 nan/inf 나 복소수를 만났다.
+_NON_FINITE_OR_COMPLEX = {
+    S.ComplexInfinity: "division by zero or another undefined value (zoo)",
+    S.Infinity: "an infinite value",
+    S.NegativeInfinity: "an infinite value",
+    S.NaN: "an undefined value (nan)",
+    S.ImaginaryUnit: "an imaginary number",
+}
+
+
+def _guard_finite_real(expr, what: str):
+    """식에 무한대·정의되지 않은 값·허수가 **상수로** 들어 있으면 거절한다.
+
+    심볼이 섞인 `sqrt(k)` 나 `CL/V` 처럼 값에 따라 달라지는 식은 여기서 판단할
+    수 없고, 판단하지도 않는다 — 파라미터 값이 정해진 뒤의 일이다.  여기서
+    잡는 것은 어떤 파라미터 값을 넣어도 이미 망가진 식뿐이다.
+
+    `I` 라는 이름의 파라미터는 심볼 `Symbol('I')` 라서 허수 단위와 다르다.
+    """
+    for bad, reason in _NON_FINITE_OR_COMPLEX.items():
+        if expr.has(bad):
+            raise ValueError(f"{what} contains {reason}.")
     return expr
 
 
@@ -340,15 +369,19 @@ def _substitute_odes(ode_rows, parsed_defs, topo_order, symtbl):
     """파생식을 dependency-first 순서로 한 번씩 치환한다."""
     resolved = {}
     for name in topo_order:
-        resolved[symtbl[name]] = _guard_number_size(
-            parsed_defs[name].xreplace(resolved), f"'{name}'"
+        resolved[symtbl[name]] = _guard_finite_real(
+            _guard_number_size(parsed_defs[name].xreplace(resolved), f"'{name}'"),
+            f"'{name}'",
         )
 
     out = []
     equations = {}
     for comp, rhs in ode_rows:
-        expr = _guard_number_size(
-            _safe_parse_expr(rhs, symtbl).xreplace(resolved), f"'d{comp}dt'"
+        expr = _guard_finite_real(
+            _guard_number_size(
+                _safe_parse_expr(rhs, symtbl).xreplace(resolved), f"'d{comp}dt'"
+            ),
+            f"'d{comp}dt'",
         )
         equations[comp] = expr
         out.append(f"d{comp}dt = {expr}")
