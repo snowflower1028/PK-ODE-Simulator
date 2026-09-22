@@ -31,6 +31,11 @@ ODE_PAT   = re.compile(r"^d([A-Za-z_][\w]*)dt$")
 PNAME_PAT = re.compile(r"^[A-Za-z_][\w]*$")
 _RESERVED = {"t", "Time"}
 _MAX_TEXT_LENGTH = 50_000
+#: 한 줄(주석을 뺀 식 부분)의 최대 길이. 화면의 입력란 아래에 같은 수를 적어 둔다.
+#: 이 길이 근처에서 Python 의 ast.parse 가 중첩 한도(약 2,970 단계)에 닿는다 —
+#: 단항 `-` 를 겹치면 2,981 자, `k+k+…` 는 5,953 자에서 RecursionError 였다.
+#: 정상적인 모델의 한 줄은 이보다 훨씬 짧다(노드 1,000 개 상한이 먼저 걸린다).
+_MAX_LINE_LENGTH = 3_000
 _MAX_EXPR_NODES = 1_000
 _UNICODE_TRANSLATION = str.maketrans({
     "−": "-",  # mathematical minus
@@ -62,6 +67,12 @@ def _preprocess(text: str) -> List[str]:
         # 주석은 계산에 들어가지 않으므로 어떤 문자든 괜찮다.  문자열 리터럴은
         # 수식 문법에서 허용하지 않으므로 '#' 뒤를 자르는 데 모호함이 없다.
         ln = raw.split("#", 1)[0]
+        if len(ln.strip()) > _MAX_LINE_LENGTH:
+            raise ValueError(
+                f"Line {line_no} is {len(ln.strip()):,} characters long; the limit is "
+                f"{_MAX_LINE_LENGTH:,} characters per line (comments after '#' are not "
+                "counted). Split the expression into derived variables."
+            )
         ln = ln.translate(_UNICODE_TRANSLATION)
         unsupported = next((ch for ch in ln if ord(ch) > 127), None)
         if unsupported is not None:
@@ -122,6 +133,13 @@ def _expression_tree(text: str) -> ast.Expression:
         tree = ast.parse(text, mode="eval")
     except SyntaxError as exc:
         raise ValueError(f"Invalid expression '{text}': {exc.msg}.") from exc
+    except (RecursionError, MemoryError) as exc:
+        # 줄 길이 상한 안에서도 깊게 겹친 식(단항 - 2,971 겹 = 2,981 자)은 여기에
+        # 닿는다. CPython 파서는 너무 깊은 중첩을 MemoryError 로도 알린다(실제로
+        # 메모리를 쓰지는 않는다). 예전에는 둘 다 500 이었다.
+        raise ValueError(
+            "Expression is nested too deeply to parse — split it into derived variables."
+        ) from exc
     if sum(1 for _ in ast.walk(tree)) > _MAX_EXPR_NODES:
         raise ValueError(f"Expression is too complex (maximum {_MAX_EXPR_NODES} syntax nodes).")
     return tree

@@ -20,6 +20,19 @@ class 관리자_경로는_없다(SimpleTestCase):
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 404)
 
+    def test_입력란의_길이_안내가_서버_상한과_같다(self):
+        from simulator.parser import _MAX_LINE_LENGTH, _MAX_TEXT_LENGTH
+        page = self.client.get("/simulator/").content.decode()
+        self.assertIn(f"Up to {_MAX_LINE_LENGTH:,} characters per line", page)
+        self.assertIn(f"{_MAX_TEXT_LENGTH:,} in total", page)
+
+    def test_parse_는_긴_줄을_400_으로(self):
+        import json
+        r = self.client.post("/parse/", json.dumps({"text": "dAdt = -(" + "+".join(["k"] * 3000) + ")*A"}),
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("characters per line", r.json()["message"])
+
     def test_앱_페이지는_그대로(self):
         for url in ("/", "/simulator/", "/nca/"):
             with self.subTest(url=url):

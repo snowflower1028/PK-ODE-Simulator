@@ -94,5 +94,34 @@ class 값에_따라_달라지는_식은_통과(unittest.TestCase):
         self.assertEqual(p["parameters"], ["I"])
 
 
+class 줄_길이와_중첩(unittest.TestCase):
+    """한 줄 3,000 자 상한과, 그 안에서도 깊게 겹친 식 (UI 에 적힌 수와 같다).
+
+    예전: `k+k+…` 3,000 항(6,011 자)과 단항 `-` 2,971 겹(2,981 자)이 ast.parse
+    의 재귀 한도에 닿아 500 이었다. 거듭제곱 2,972 겹은 MemoryError 였다.
+    """
+
+    def test_3000자를_넘는_줄은_이유와_함께_거절(self):
+        with self.assertRaisesRegex(ValueError, r"Line 1 is 6,011 characters.*3,000 characters per line"):
+            parse_ode_input("dAdt = -(" + "+".join(["k"] * 3000) + ")*A")
+
+    def test_주석은_세지_않는다(self):
+        p = parse_ode_input("dAdt = -k*A  # " + "설명" * 2000)
+        self.assertEqual(p["compartments"], ["A"])
+
+    def test_상한_안의_깊은_중첩도_400_감(self):
+        for text in ("dAdt = " + "-" * 2971 + "k*A",
+                     "dAdt = -A*" + "**".join(["k"] * 990)):
+            with self.subTest(length=len(text)):
+                self.assertLessEqual(len(text), 3000)
+                with self.assertRaisesRegex(ValueError, "nested too deeply|too complex"):
+                    parse_ode_input(text)
+
+    def test_정상_길이의_긴_줄은_그대로(self):
+        terms = "+".join(f"Q{i}*C{i}" for i in range(40))
+        p = parse_ode_input(f"dAdt = -({terms})*A")
+        self.assertEqual(len(p["parameters"]), 80)
+
+
 if __name__ == "__main__":
     unittest.main()
