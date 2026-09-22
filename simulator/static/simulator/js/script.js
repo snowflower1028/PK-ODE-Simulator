@@ -16,6 +16,11 @@ const State = {
   processedODE: "",         // 기존 window._processedODE 대체
   derivedExpressions: {}, // 기존 window._derivedExpressions 대체
   derivedExpanded: false,  // Derived Variables 목록을 전부 펼쳤는가 (표시 전용)
+  // Output/Plot 선택 메뉴에 올릴 derived 변수 이름 집합. 서버가 의존성 그래프로
+  // 계산해 보내준다 — compartment 를 직접/간접(체인)으로 포함하는 것만 담긴다.
+  // 순수 파라미터로만 이루어진 상수성 derived(예: Q_lung = cardiac_output*f_lung)
+  // 는 여기 없다. Derived Variables 패널(전체 나열)에는 영향 없음.
+  derivedOutputEligible: new Set(),
 
   // 4. 피팅 프로세스 관련 상태
   fitTimer: null,             // 피팅 진행 시간 측정을 위한 타이머 ID
@@ -513,7 +518,12 @@ const UI = {
           : `<option value="" disabled selected>No compartments defined</option>`;
 
       // 시뮬레이션 구획 선택 메뉴(체크박스) 렌더링
-      const plottableVariables = [...compartments, ...Object.keys(derivedExpressions)];
+      // Output 으로 삼는 것: 모든 compartment + compartment 요소를 (직접 또는
+      // 다른 derived 를 거쳐 간접적으로) 포함하는 derived 변수. 순수 파라미터로만
+      // 이루어진 derived(시간에 따라 변하지 않는 상수)는 제외한다 — 서버가
+      // derived_output_eligible 로 미리 걸러 보내준다.
+      const plottableVariables = [...compartments,
+        ...Object.keys(derivedExpressions).filter(name => State.derivedOutputEligible.has(name))];
       compartmentsMenu.innerHTML = plottableVariables.map(variable => `
         <li>
           <label class="dropdown-item py-1">
@@ -1782,6 +1792,7 @@ const Handlers = {
         State.parametersOdeOrder = response.data.parameters_ode_order || [];
         State.processedODE = response.data.processed_ode;
         State.derivedExpressions = response.data.derived_expressions || {};
+        State.derivedOutputEligible = new Set(response.data.derived_output_eligible || []);
         State.derivedExpanded = false; // 새 모델은 접힌 상태로 시작
 
         // 서버가 준 것은 구조 분류와 기본값(전부 unknown/none)이다. 사용자가
