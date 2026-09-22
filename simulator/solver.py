@@ -26,6 +26,60 @@ _BASE_ATOL = 1e-11
 #: atol 이 subnormal 로 내려가지 않게 하는 바닥.
 _MIN_ATOL = 1e-300
 
+# 적분 한 번이 할 수 있는 일의 상한.  유입 속도가 약 1e145 를 넘으면(투여든
+# `dAdt = -k*A + R`, R=1e150 같은 파라미터든) LSODA 의 걸음 폭이 t=0 에서
+# 정확히 0 이 되어 시간이 전혀 나아가지 않은 채 RHS 만 초당 13만 번 부른다 —
+# 끝나지 않는다.  Render 의 gunicorn --timeout 180 이 워커를 죽일 때까지 요청
+# 하나가 서비스를 붙잡았다.  입력 값의 상한만으로는 막을 수 없다(식이 값을
+# 키울 수 있다).  그래서 원인이 아니라 증상을 본다.
+#
+# 측정한 정상 부하의 최대 평가 수 (solve_ode_system 한 번):
+#   stiff 2구획(k=1e4 / 1e-3) 5000회 투여   1,630,010   19.6 s
+#   PBPK 14구획 5000회 투여                   756,957   40.8 s
+#   2구획 주입 이벤트 5000                    330,184    4.1 s
+#: 시간이 나아가지 않은 채 이만큼 평가하면 멈춘 것으로 본다.  정상 적분은
+#: 한 걸음에 수~수십 번(야코비안 추정이 구획 수+1 번) 평가하므로 닿지 않는다.
+_STALL_EVALS = 100_000
+#: 전체 평가 수 상한 — 멈춤 판정을 피해 가는 경우의 마지막 방어선.
+#: 정상 최대의 약 6배, 멈춘 경우의 평가 속도로 약 75 초.
+_MAX_RHS_EVALS = 10_000_000
+
+
+class IntegrationStalled(ValueError):
+    """적분이 진행하지 못하거나 예산을 넘었다.  요청 잘못이므로 400 이다."""
+
+
+class _RhsBudget:
+    """RHS 평가를 세며 멈춤과 과다 평가를 잡는다."""
+
+    __slots__ = ("calls", "best_t", "since_progress")
+
+    def __init__(self):
+        self.calls = 0
+        self.best_t = -np.inf
+        self.since_progress = 0
+
+    def tick(self, t: float) -> None:
+        self.calls += 1
+        if t > self.best_t:
+            self.best_t = t
+            self.since_progress = 0
+        else:
+            self.since_progress += 1
+            if self.since_progress > _STALL_EVALS:
+                raise IntegrationStalled(
+                    f"The integration stopped advancing at t={self.best_t:g}: the "
+                    f"solver's step size shrank to zero. This usually means a rate "
+                    f"in the model is far too large (for example above ~1e145); "
+                    f"check the parameter values and doses."
+                )
+        if self.calls > _MAX_RHS_EVALS:
+            raise IntegrationStalled(
+                f"The integration needed more than {_MAX_RHS_EVALS:,} model "
+                f"evaluations and was stopped (reached t={self.best_t:g}). Use "
+                f"fewer doses, a shorter time range, or check for extreme values."
+            )
+
 
 def _absolute_tolerances(y0: np.ndarray, doses, comp_map_idx) -> np.ndarray:
     """구획마다 atol 을 상태의 규모에 맞춘다.  **오늘보다 느슨해지는 일은 없다.**
@@ -331,7 +385,10 @@ def solve_ode_system(
             active_infusion_rates[idx] = max(0.0, active_infusion_rates[idx] - event["value"])
 
     # --- 3. RHS 함수 정의 (Infusion 포함) ---
+    budget = _RhsBudget()   # 구간 전체에 걸쳐 센다 — 요청 하나의 총량이다
+
     def effective_rhs(t, y_arr):
+        budget.tick(t)
         base_dy = equations_callable(t, y_arr, p_values_arr)
         return np.array(base_dy) + active_infusion_rates
 
