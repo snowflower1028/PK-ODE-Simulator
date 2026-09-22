@@ -14,13 +14,14 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    # /admin/ 은 두지 않는다. 이 앱은 모델도 관리자 계정도 없어 쓸 데가 없는데,
+    # 열어 두면 누구나 로그인 폼을 두드릴 수 있고 시도마다 PBKDF2 해시(수십 ms)를
+    # 계산하게 된다 — 워커 2개짜리 서비스에서는 그 자체로 부하가 된다.
     path('', include('simulator.urls')),
 ]
 
