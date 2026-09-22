@@ -397,35 +397,104 @@ def best_fit_lambda_z(
     if idx.size < min_points:
         return LambdaZ()
 
+    fast = _best_window_incremental(t, c, idx, min_points)
+    if fast is None:
+        return LambdaZ()
+    # 보고하는 값은 예전과 같은 두 단계 최소제곱으로 다시 계산한다. 창을 고르는
+    # 데 쓴 누적 합은 반올림이 조금 다를 수 있으므로, 숫자 자체는 예전 코드가
+    # 내던 것과 비트 단위로 같게 한다. 다시 계산한 창이 후보 조건을 벗어나는
+    # 병적인 경우(기울기 부호가 0 근처에서 뒤집히는 등)에는 예전 탐색을 그대로
+    # 돌린다 — 어떤 경우에도 예전보다 나쁜 답을 내지 않는다.
+    exact = _window_candidate(t, c, idx[-fast:])
+    if exact is None:
+        return _best_fit_quadratic(t, c, idx, min_points)
+    return exact
+
+
+def _window_candidate(t: np.ndarray, c: np.ndarray, sel: np.ndarray) -> Optional[LambdaZ]:
+    """창 하나를 두 단계 최소제곱으로 맞춘 후보. 말기 조건을 못 맞추면 None."""
+    n = sel.size
+    ts, cs = t[sel], c[sel]
+    slope, intercept, r2 = _ols_log_linear(ts, cs)
+    if not np.isfinite(slope) or slope >= 0:
+        return None  # 올라가는 구간은 말기가 아니다
+    if n <= 2 or not np.isfinite(r2):
+        return None
+    adj = 1.0 - (1.0 - r2) * (n - 1) / (n - 2)
+    return LambdaZ(
+        value=-slope,
+        intercept=intercept,
+        n_points=n,
+        t_first=float(ts[0]),
+        t_last=float(ts[-1]),
+        r_squared=r2,
+        adj_r_squared=adj,
+        # 기울기가 음수인 후보만 여기까지 오므로 상관계수도 음수다.
+        corr_xy=float(-np.sqrt(r2)) if np.isfinite(r2) and r2 >= 0 else None,
+    )
+
+
+def _better(adj: float, n: int, best_adj: Optional[float], best_n: int) -> bool:
+    """고르는 규칙 — 조정 결정계수가 1e-4 넘게 크면, 그 안이면 점이 많은 쪽."""
+    if best_adj is None:
+        return True
+    if adj > best_adj + 1e-4:
+        return True
+    return abs(adj - best_adj) <= 1e-4 and n > best_n
+
+
+def _best_fit_quadratic(t, c, idx, min_points) -> LambdaZ:
+    """예전 탐색 그대로. 창마다 처음부터 다시 맞추므로 O(n²) 이다."""
     best: Optional[LambdaZ] = None
-    # 마지막 점은 항상 포함한다. 뒤에서부터 n 개씩 늘려 간다.
     for n in range(min_points, idx.size + 1):
-        sel = idx[-n:]
-        ts, cs = t[sel], c[sel]
-        slope, intercept, r2 = _ols_log_linear(ts, cs)
-        if not np.isfinite(slope) or slope >= 0:
-            continue  # 올라가는 구간은 말기가 아니다
-        if n <= 2 or not np.isfinite(r2):
+        cand = _window_candidate(t, c, idx[-n:])
+        if cand is None:
             continue
-
-        adj = 1.0 - (1.0 - r2) * (n - 1) / (n - 2)
-        candidate = LambdaZ(
-            value=-slope,
-            intercept=intercept,
-            n_points=n,
-            t_first=float(ts[0]),
-            t_last=float(ts[-1]),
-            r_squared=r2,
-            adj_r_squared=adj,
-            # 기울기가 음수인 후보만 여기까지 오므로 상관계수도 음수다.
-            corr_xy=float(-np.sqrt(r2)) if np.isfinite(r2) and r2 >= 0 else None,
-        )
-        if best is None or adj > (best.adj_r_squared or -np.inf) + 1e-4:
-            best = candidate
-        elif abs(adj - (best.adj_r_squared or -np.inf)) <= 1e-4 and n > best.n_points:
-            best = candidate
-
+        if _better(cand.adj_r_squared, n,
+                   None if best is None else best.adj_r_squared,
+                   0 if best is None else best.n_points):
+            best = cand
     return best or LambdaZ()
+
+
+def _best_window_incremental(t, c, idx, min_points) -> Optional[int]:
+    """어느 창이 가장 좋은지 — 점 수만 돌려준다. O(n).
+
+    예전에는 창을 넓힐 때마다 처음부터 다시 맞춰 O(n²) 였다. 시뮬레이션 격자
+    위의 곡선은 수천~수만 점이라 20,000 점에서 이 탐색 하나가 2.1 초였고,
+    그래서 t_steps 상한을 20,000 으로 묶어야 했다.
+
+    뒤에서부터 한 점씩 더하며 평균과 중심화된 제곱합을 Welford 방식으로 갱신한다.
+    원시 합(Σt, Σt²)을 쓰면 t 가 크고 간격이 좁을 때 자릿수 상쇄로 R² 가 망가지지만,
+    중심화된 갱신은 두 단계 계산과 같은 정도로 안정하다. 고르는 규칙은 위와 같다.
+    """
+    y_all = np.log(c)
+    n = 0
+    mt = my = ctt = cty = cyy = 0.0
+    best_adj: Optional[float] = None
+    best_n = 0
+    for k in range(1, idx.size + 1):
+        x = float(t[idx[-k]]); y = float(y_all[idx[-k]])
+        n += 1
+        dx = x - mt; mt += dx / n
+        dy = y - my; my += dy / n
+        ctt += dx * (x - mt)
+        cty += dx * (y - my)
+        cyy += dy * (y - my)
+        if n < min_points or n <= 2 or ctt == 0.0:
+            continue
+        slope = cty / ctt
+        if not np.isfinite(slope) or slope >= 0:
+            continue
+        if not cyy > 0:
+            continue
+        r2 = (cty * cty) / (ctt * cyy)
+        if not np.isfinite(r2):
+            continue
+        adj = 1.0 - (1.0 - r2) * (n - 1) / (n - 2)
+        if _better(adj, n, best_adj, best_n):
+            best_adj, best_n = adj, n
+    return best_n or None
 
 
 def lambda_z_at_times(
