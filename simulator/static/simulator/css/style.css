@@ -3453,3 +3453,209 @@ body.is-resizing {
     .home-card:hover { transform: none; }
 }
 
+
+
+/* ============================================================ */
+/* 36. Plot — Output picker                                     */
+/* ============================================================ */
+/* Output 이 수십 개(PBPK)여도 설정 줄은 한 줄을 넘지 않는다.
+   뱃지 줄은 남은 폭을 모두 쓰되 한 줄 높이로 묶이고, 넘치는 것은
+   script.js 의 OutputPicker.fitBadges 가 "+N" 으로 접는다. */
+.sim-field-outputs {
+    flex: 1 1 22rem;
+    flex-wrap: nowrap;
+    min-width: 0;
+}
+.sim-field-outputs .dropdown { flex: 0 0 auto; }
+
+.output-toggle { white-space: nowrap; }
+.output-count {
+    margin-left: 0.2rem;
+    font-size: 0.75em;
+    font-variant-numeric: tabular-nums;
+    color: var(--apple-text-secondary);
+}
+.output-count:empty { display: none; }
+.output-toggle.show .output-count,
+.output-toggle:hover .output-count { color: inherit; opacity: 0.85; }
+
+.sim-field .output-strip {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 0.25rem;
+    /* 한 줄 = 뱃지 하나 높이(13px 글자 + 위아래 4px = 24px)에 여유 2px.
+       두 번째 줄은 24 + 간격 4 = 28px 에서 시작하므로 보이지 않는다.
+       rem 으로 잡았더니 이 앱의 기본 글자 크기에서 22px 가 되어 뱃지 아래가 잘렸다. */
+    max-height: 26px;
+    overflow: hidden;
+}
+
+/* 색은 예전 뱃지처럼 text-bg-secondary 가 정한다. 여기서는 모양과 × 만. */
+#selected-comp-badges .output-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1rem;
+    border: 0;
+    line-height: 1.2;
+    padding: 4px 5px 4px 9px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+#selected-comp-badges .output-badge .bi { color: inherit; opacity: 0.6; font-size: 1.05em; }
+#selected-comp-badges .output-badge:hover .bi,
+#selected-comp-badges .output-badge:focus-visible .bi { opacity: 1; }
+
+.output-more,
+.output-clear {
+    border: 0;
+    background: none;
+    padding: 0.1rem 0.35rem;
+    line-height: 1.2;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    color: var(--apple-text-secondary);
+    border-radius: 0.375rem;
+}
+.output-more {
+    font-weight: 600;
+    background: var(--apple-control-background);
+    font-variant-numeric: tabular-nums;
+}
+.output-more:hover { color: var(--apple-text-primary); background: var(--apple-separator-color); }
+.output-clear { font-size: 0.9rem; padding: 0 0.2rem; }
+.output-clear:hover { color: #d70015; }
+
+/* --- 메뉴 --- */
+.output-menu {
+    width: min(34rem, calc(100vw - 2rem));
+    padding: 0;
+    overflow: hidden;
+}
+.output-menu-head {
+    padding: 0.6rem 0.75rem 0.35rem;
+    border-bottom: 1px solid var(--apple-card-border);
+    background: var(--apple-background-secondary);
+}
+.output-search {
+    position: relative;
+}
+.output-search .bi {
+    position: absolute;
+    left: 0.6rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.8rem;
+    color: var(--apple-text-tertiary);
+    pointer-events: none;
+}
+.output-search .form-control {
+    width: 100%;
+    padding-left: 1.8rem;
+    text-align: left;
+}
+
+.output-prefixes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.5rem;
+}
+.output-prefix {
+    border: 1px solid var(--apple-control-border);
+    background: var(--apple-background-primary);
+    border-radius: 999px;
+    padding: 0.05rem 0.55rem;
+    font-size: 0.75rem;
+    font-family: var(--bs-font-monospace);
+    color: var(--apple-text-primary);
+}
+.output-prefix span {
+    margin-left: 0.3rem;
+    font-family: var(--bs-body-font-family);
+    color: var(--apple-text-secondary);
+}
+.output-prefix:hover { border-color: var(--apple-system-blue); }
+.output-prefix[aria-pressed="true"] {
+    background: var(--apple-system-blue);
+    border-color: var(--apple-system-blue);
+    color: #fff;
+}
+.output-prefix[aria-pressed="true"] span { color: rgba(255, 255, 255, 0.8); }
+
+.output-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+}
+.output-actions .btn-link {
+    padding: 0.15rem 0.3rem;
+    font-size: 0.8rem;
+    text-decoration: none;
+}
+.output-actions .btn-link:disabled { color: var(--apple-text-tertiary); }
+.output-menu-status {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--apple-text-secondary);
+}
+
+/* 목록은 여러 열로 흐르고 높이는 묶는다 — 41개도 한 화면 안에. */
+.output-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0.5rem 0.5rem;
+    max-height: min(52vh, 24rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+    column-gap: 0.25rem;
+    align-content: start;
+}
+.output-list .output-group-head {
+    grid-column: 1 / -1;
+    position: sticky;
+    top: -0.25rem;
+    z-index: 1;
+    background: var(--bs-dropdown-bg, #fff);
+    padding: 0.45rem 0.25rem 0.2rem;
+    margin-top: 0.15rem;
+}
+.output-group-label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--apple-text-secondary);
+    cursor: pointer;
+    margin: 0;
+}
+.output-group-label .form-check-input { margin: 0; }
+.output-group-count {
+    margin-left: auto;
+    font-weight: 500;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    text-transform: none;
+}
+.output-item-label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.375rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.output-item-label .form-check-input { margin: 0; flex: 0 0 auto; }
+.output-item-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

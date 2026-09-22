@@ -100,6 +100,12 @@ const DOM = {
   simulation: {
     compartmentsMenu: document.getElementById("sim-compartments-menu"),
     selectedCompBadges: document.getElementById("selected-comp-badges"),
+    outputMenu: document.getElementById("output-menu"),
+    outputToggle: document.getElementById("output-menu-toggle"),
+    outputCount: document.getElementById("output-count"),
+    outputFilter: document.getElementById("output-filter"),
+    outputPrefixes: document.getElementById("output-prefixes"),
+    outputStatus: document.getElementById("output-menu-status"),
   },
 
   results: {
@@ -423,6 +429,226 @@ const COMPARISON_COLUMNS = [
 
 
 
+/**
+ * Plot 의 Output 선택기.
+ *
+ * 체크박스(.sim-comp-checkbox)가 유일한 진실이다 — 그리기·세션·순서 바꾸기가
+ * 전부 그것을 읽는다. 여기서는 보여 주는 방식과 한꺼번에 고르는 방법만 더한다.
+ *
+ * PBPK 처럼 Output 이 수십 개면(예: 구획 13 + 파생 28 = 41) 뱃지가 네 줄로
+ * 넘쳐 설정 줄이 239px 까지 늘었고, 메뉴는 1,395px 로 화면 아래로 빠졌다.
+ *   - 뱃지는 한 줄에 들어가는 만큼만 보이고 나머지는 "+N" 으로 접는다.
+ *   - 메뉴는 높이를 묶고 여러 열로, 위에 검색·접두어 칩·전체 선택/해제.
+ *   - 구획 / 파생 머리글의 체크박스로 묶음째 켜고 끈다.
+ */
+const OutputPicker = {
+  GROUPS: [
+    { key: "comp", label: "Compartments" },
+    { key: "derived", label: "Derived" },
+  ],
+  /** 접두어 칩을 만들 최소 인원. 둘뿐인 묶음은 칩으로 만들 가치가 없다. */
+  PREFIX_MIN: 3,
+
+  boxes() {
+    return [...DOM.simulation.compartmentsMenu.querySelectorAll(".sim-comp-checkbox")];
+  },
+
+  /**
+   * 파생 Output 을 사용자가 ODE 에 적은 줄 순서로.
+   * 서버가 주는 순서는 의존성(위상) 순서라 서버를 다시 띄울 때마다 바뀌었다 —
+   * 메뉴의 자리와 접두어 칩 순서가 매번 달라져서 손에 익지 않았다.
+   */
+  inTextOrder(names) {
+    const text = DOM.sidebar.odeInput ? DOM.sidebar.odeInput.value : "";
+    const at = name => {
+      const m = new RegExp(`^[ \\t]*${name}[ \\t]*=`, "m").exec(text);
+      return m ? m.index : Infinity;
+    };
+    return [...names].sort((a, b) => (at(a) - at(b)) || a.localeCompare(b));
+  },
+
+  visibleBoxes() {
+    return this.boxes().filter(cb => !cb.closest("li").hidden);
+  },
+
+  filterText() {
+    return (DOM.simulation.outputFilter?.value || "").trim().toLowerCase();
+  },
+
+  /** 목록 HTML. 구획과 파생을 나눠 머리글을 단다. */
+  renderList(compartments, derived) {
+    const members = { comp: compartments, derived };
+    return this.GROUPS.filter(g => members[g.key].length > 0).map(g => `
+      <li class="output-group-head" data-group="${g.key}">
+        <label class="output-group-label">
+          <input type="checkbox" class="form-check-input output-group-toggle" data-group="${g.key}" checked>
+          <span>${g.label}</span>
+          <span class="output-group-count" data-group-count="${g.key}"></span>
+        </label>
+      </li>
+      ${members[g.key].map(name => `
+      <li class="output-item" data-group="${g.key}">
+        <label class="dropdown-item output-item-label" title="${name}">
+          <input type="checkbox" class="form-check-input sim-comp-checkbox" value="${name}" data-group="${g.key}" checked>
+          <span class="output-item-name">${name}</span>
+        </label>
+      </li>`).join("")}`).join("");
+  },
+
+  /** 이름의 첫 '_' 앞부분으로 묶는다(C_, Xin_, Xout_ …). 묶음이 둘 이상일 때만. */
+  renderPrefixes() {
+    const box = DOM.simulation.outputPrefixes;
+    if (!box) return;
+    const counts = new Map();
+    this.boxes().forEach(cb => {
+      const i = cb.value.indexOf("_");
+      if (i > 0) counts.set(cb.value.slice(0, i + 1), (counts.get(cb.value.slice(0, i + 1)) || 0) + 1);
+    });
+    const chips = [...counts].filter(([, n]) => n >= this.PREFIX_MIN);
+    box.hidden = chips.length < 2;
+    box.innerHTML = box.hidden ? "" : chips.map(([prefix, n]) => `
+      <button type="button" class="output-prefix" data-prefix="${prefix}" aria-pressed="false"
+              title="Show only outputs starting with ${prefix}">${prefix}<span>${n}</span></button>`).join("");
+  },
+
+  applyFilter(text) {
+    const needle = (text ?? this.filterText()).toLowerCase();
+    const menu = DOM.simulation.compartmentsMenu;
+    menu.querySelectorAll("li.output-item").forEach(li => {
+      const name = li.querySelector(".sim-comp-checkbox").value.toLowerCase();
+      li.hidden = needle !== "" && !name.includes(needle);
+    });
+    menu.querySelectorAll("li.output-group-head").forEach(head => {
+      head.hidden = !menu.querySelector(`li.output-item[data-group="${head.dataset.group}"]:not([hidden])`);
+    });
+    DOM.simulation.outputPrefixes?.querySelectorAll(".output-prefix").forEach(chip => {
+      chip.setAttribute("aria-pressed", String(needle === chip.dataset.prefix.toLowerCase()));
+    });
+    this.sync();
+  },
+
+  /** 체크박스를 바꾼 뒤에는 change 를 한 번 쏜다 — 뱃지 갱신과 세션 저장이 거기에 걸려 있다. */
+  setChecked(boxes, value) {
+    boxes.forEach(cb => { cb.checked = value; });
+    DOM.simulation.compartmentsMenu.dispatchEvent(new Event("change", { bubbles: true }));
+  },
+
+  /** 머리글 체크박스(전부/일부/없음), 버튼의 개수, 일괄 버튼 문구. */
+  sync() {
+    const all = this.boxes();
+    const checked = all.filter(cb => cb.checked).length;
+    const { outputCount, outputStatus, outputMenu } = DOM.simulation;
+    if (outputCount) outputCount.textContent = all.length ? `${checked}/${all.length}` : "";
+
+    // 머리글은 지금 보이는 것 기준 — 검색 중에는 그 묶음 가운데 보이는 것만
+    // 켜고 끄므로, 상태와 개수도 같은 범위를 보여 줘야 헷갈리지 않는다.
+    const visible = new Set(this.visibleBoxes());
+    this.GROUPS.forEach(g => {
+      const members = all.filter(cb => cb.dataset.group === g.key && visible.has(cb));
+      const on = members.filter(cb => cb.checked).length;
+      const toggle = DOM.simulation.compartmentsMenu.querySelector(`.output-group-toggle[data-group="${g.key}"]`);
+      if (toggle) {
+        toggle.checked = members.length > 0 && on === members.length;
+        toggle.indeterminate = on > 0 && on < members.length;
+      }
+      const label = DOM.simulation.compartmentsMenu.querySelector(`[data-group-count="${g.key}"]`);
+      if (label) label.textContent = `${on}/${members.length}`;
+    });
+
+    const filtered = this.filterText() !== "";
+    const shown = this.visibleBoxes();
+    outputMenu?.querySelectorAll("[data-output-action]").forEach(btn => {
+      const select = btn.dataset.outputAction === "select";
+      btn.textContent = filtered ? (select ? `Select shown (${shown.length})` : "Clear shown")
+                                 : (select ? "Select all" : "Clear all");
+      btn.disabled = select ? shown.every(cb => cb.checked) : !shown.some(cb => cb.checked);
+    });
+    if (outputStatus) {
+      outputStatus.textContent = filtered ? `${shown.length} of ${all.length} shown` : "";
+    }
+  },
+
+  /** 뱃지를 한 줄에 들어가는 만큼만 남기고 나머지는 "+N" 으로 접는다. */
+  fitBadges() {
+    const strip = DOM.simulation.selectedCompBadges;
+    if (!strip) return;
+    const badges = [...strip.querySelectorAll(".output-badge")];
+    const more = strip.querySelector(".output-more");
+    const clear = strip.querySelector(".output-clear");
+    if (!more) return;
+    badges.forEach(b => { b.hidden = false; });
+    more.hidden = true;
+    if (badges.length === 0) return;
+    // "다음 줄로 넘어갔다" = 첫 뱃지의 아래 끝보다 아래에서 시작한다. 윗변끼리
+    // 비교하면 세로 가운데 정렬 때문에 키가 작은 "+N" 이 몇 px 아래에 놓여
+    // 늘 넘친 것으로 보이고, 뱃지를 하나도 남기지 않았다.
+    const firstBottom = badges[0].getBoundingClientRect().bottom;
+    const wrapped = el => !!el && el.getBoundingClientRect().top >= firstBottom - 1;
+    // 줄 끝의 "+N" 과 전체 해제(×)까지 한 줄에 들어가야 한다.
+    const tailWrapped = () => wrapped(more) || wrapped(clear);
+    const firstWrapped = badges.findIndex(wrapped);
+    if (firstWrapped === -1 && !wrapped(clear)) return;
+    const show = n => {
+      badges.forEach((b, i) => { b.hidden = i >= n; });
+      more.hidden = n === badges.length;
+      more.textContent = `+${badges.length - n}`;
+      more.title = `${badges.length - n} more selected — open the list`;
+    };
+    let keep = firstWrapped === -1 ? badges.length : firstWrapped;
+    show(keep);
+    while (keep > 0 && tailWrapped()) show(--keep);
+  },
+
+  openMenu() {
+    bootstrap.Dropdown.getOrCreateInstance(DOM.simulation.outputToggle).show();
+  },
+
+  bind() {
+    const { outputMenu, outputFilter, outputPrefixes, outputToggle, selectedCompBadges } = DOM.simulation;
+    if (!outputMenu) return;
+
+    outputFilter.addEventListener("input", () => this.applyFilter());
+    // Esc 는 검색어부터 지운다(메뉴는 연 채로). 한 번 더 누르면 닫힌다.
+    // Bootstrap 은 드롭다운 키 처리를 document 의 capture 단계에 건다 — 메뉴나
+    // 입력란에 건 리스너보다 먼저 돌아 메뉴를 닫아 버린다. 그래서 그보다 앞인
+    // window 의 capture 단계에서, 이 메뉴 안이고 검색어가 있을 때만 가로챈다.
+    window.addEventListener("keydown", event => {
+      if (event.key !== "Escape" || !outputFilter.value) return;
+      if (!outputMenu.contains(event.target)) return;
+      outputFilter.value = "";
+      this.applyFilter();
+      outputFilter.focus({ preventScroll: true });
+      event.stopPropagation();
+    }, true);
+
+    outputPrefixes.addEventListener("click", event => {
+      const chip = event.target.closest(".output-prefix");
+      if (!chip) return;
+      const same = outputFilter.value === chip.dataset.prefix;
+      outputFilter.value = same ? "" : chip.dataset.prefix;   // 다시 누르면 해제
+      this.applyFilter();
+    });
+
+    outputMenu.addEventListener("click", event => {
+      const btn = event.target.closest("[data-output-action]");
+      if (!btn) return;
+      this.setChecked(this.visibleBoxes(), btn.dataset.outputAction === "select");
+      // 누른 버튼은 곧 비활성이 된다(더 고를 것이 없으므로). 그러면 초점이 문서
+      // 밖으로 떨어져 Esc·타이핑이 먹지 않았다 — 검색란으로 돌려놓는다.
+      outputFilter.focus({ preventScroll: true });
+    });
+
+    // 메뉴를 열면 검색란에 바로 쓸 수 있게.
+    // preventScroll: 그냥 focus() 하면 브라우저가 메뉴 속 입력란을 보이게 하려고
+    // 결과 영역을 가로로 밀었다(1024px 에서 화면 전체가 왼쪽으로 150px 쯤).
+    outputToggle.addEventListener("shown.bs.dropdown", () => outputFilter.focus({ preventScroll: true }));
+
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => this.fitBadges()).observe(selectedCompBadges);
+    }
+  },
+};
+
 const UI = {
   // --- 공용 및 일반 UI ---
 
@@ -452,11 +678,17 @@ const UI = {
     const checkedCheckboxes = [...DOM.simulation.compartmentsMenu.querySelectorAll(".sim-comp-checkbox:checked")];
     if (State.compartments.length > 0) {
       container.innerHTML = checkedCheckboxes.length > 0
-        ? checkedCheckboxes.map(cb => `<span class="badge text-bg-secondary me-1">${cb.value}</span>`).join("")
-        : `<span class="placeholder-badge-area">No compartments selected.</span>`;
+        ? checkedCheckboxes.map(cb => `
+            <button type="button" class="badge text-bg-secondary output-badge" data-value="${cb.value}"
+                    title="Remove ${cb.value} from the plot">${cb.value}<i class="bi bi-x" aria-hidden="true"></i></button>`).join("")
+          + `<button type="button" class="output-more" hidden></button>`
+          + `<button type="button" class="output-clear" title="Clear all outputs" aria-label="Clear all outputs"><i class="bi bi-x-circle" aria-hidden="true"></i></button>`
+        : `<span class="placeholder-badge-area">No outputs selected.</span>`;
     } else {
-      container.innerHTML = `<span class="placeholder-badge-area">Parse ODEs to select compartments.</span>`;
+      container.innerHTML = `<span class="placeholder-badge-area">Parse ODEs to select outputs.</span>`;
     }
+    OutputPicker.sync();
+    OutputPicker.fitBadges();
   },
 
   /**
@@ -524,13 +756,11 @@ const UI = {
       // derived_output_eligible 로 미리 걸러 보내준다.
       const plottableVariables = [...compartments,
         ...Object.keys(derivedExpressions).filter(name => State.derivedOutputEligible.has(name))];
-      compartmentsMenu.innerHTML = plottableVariables.map(variable => `
-        <li>
-          <label class="dropdown-item py-1">
-            <input type="checkbox" class="form-check-input me-2 sim-comp-checkbox" value="${variable}" checked>
-            ${variable}
-          </label>
-        </li>`).join("");
+      compartmentsMenu.innerHTML = OutputPicker.renderList(
+        compartments, OutputPicker.inTextOrder(plottableVariables.slice(compartments.length)));
+      if (DOM.simulation.outputFilter) DOM.simulation.outputFilter.value = "";
+      OutputPicker.renderPrefixes();
+      OutputPicker.applyFilter("");
 
     } else {
       initValuesContainer.innerHTML = `<div class="placeholder-text">Parse ODEs to set initial values.</div>`;
@@ -1950,26 +2180,15 @@ const Handlers = {
    * @param {Event} event - 클릭 이벤트 객체
    */
   handleBadgeClick(event) {
-    // 1. 클릭된 요소가 '뱃지'가 맞는지 확인합니다.
-    const clickedBadge = event.target.closest('.badge');
-    if (!clickedBadge) {
-      return; // 뱃지가 아니면 아무 작업도 하지 않음
-    }
+    if (event.target.closest('.output-more')) return OutputPicker.openMenu();
+    if (event.target.closest('.output-clear')) return OutputPicker.setChecked(OutputPicker.boxes(), false);
 
-    // 2. 클릭된 배지에서 구획(compartment) 이름을 가져옵니다.
-    const compName = clickedBadge.textContent.trim();
-    if (!compName) return;
-
-    // 3. 뱃지 이름과 일치하는 시뮬레이션 구획 선택 메뉴의 체크박스를 찾습니다.
-    const checkboxToUncheck = DOM.simulation.compartmentsMenu.querySelector(`.sim-comp-checkbox[value="${compName}"]`);
-
-    // 4. 체크박스를 찾았다면, 선택을 해제합니다.
-    if (checkboxToUncheck) {
-      checkboxToUncheck.checked = false;
-      
-      // 5. 체크박스 상태가 변경되었으므로, 뱃지 UI를 다시 렌더링하여 화면에 반영합니다.
-      UI.updateSelectedBadges();
-    }
+    // 뱃지 하나를 누르면 그 Output 만 뺀다. 예전에는 체크박스를 직접 바꾸고
+    // 뱃지만 다시 그려서 change 가 나지 않았다 — 세션에 저장되지 않았다.
+    const badge = event.target.closest('.output-badge');
+    if (!badge) return;
+    const box = DOM.simulation.compartmentsMenu.querySelector(`.sim-comp-checkbox[value="${badge.dataset.value}"]`);
+    if (box) OutputPicker.setChecked([box], false);
   },
 
   /**
@@ -2510,7 +2729,14 @@ async handleStartFittingClick() {
   /**
    * 시뮬레이션 구획 선택 메뉴의 변경을 처리합니다.
    */
-  handleSimCompMenuChange() {
+  handleSimCompMenuChange(event) {
+    // 머리글 체크박스는 그 묶음(구획/파생) 가운데 지금 보이는 것 전체를 켜고 끈다.
+    const toggle = event && event.target.closest && event.target.closest('.output-group-toggle');
+    if (toggle) {
+      OutputPicker.visibleBoxes()
+        .filter(cb => cb.dataset.group === toggle.dataset.group)
+        .forEach(cb => { cb.checked = toggle.checked; });
+    }
     UI.updateSelectedBadges();
   },
 
@@ -2956,6 +3182,7 @@ const App = {
     // --- 시뮬레이션 구획 선택 이벤트 바인딩 ---
     DOM.simulation.compartmentsMenu.addEventListener('change', Handlers.handleSimCompMenuChange);
     DOM.simulation.selectedCompBadges.addEventListener('click', Handlers.handleBadgeClick);
+    OutputPicker.bind();
 
     // --- 관찰 데이터(Offcanvas) 이벤트 바인딩 ---
     DOM.modals.obsData.fileInput.addEventListener('change', Handlers.handleObsFileChange);

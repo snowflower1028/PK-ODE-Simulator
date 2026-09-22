@@ -33,6 +33,16 @@ class 관리자_경로는_없다(SimpleTestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("characters per line", r.json()["message"])
 
+    def test_Output_선택기의_조작부가_있다(self):
+        """Output 이 많을 때 쓰는 검색·전체 선택/해제. 목록(#sim-compartments-menu)은
+        sensitivity.js 도 읽으므로 이름이 그대로여야 한다."""
+        page = self.client.get("/simulator/").content.decode()
+        for needle in ('id="output-filter"', 'data-output-action="select"',
+                       'data-output-action="clear"', 'id="sim-compartments-menu"',
+                       'id="selected-comp-badges"', 'id="output-count"'):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, page)
+
     def test_앱_페이지는_그대로(self):
         for url in ("/", "/simulator/", "/nca/"):
             with self.subTest(url=url):

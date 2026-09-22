@@ -312,17 +312,35 @@
           <input id="sim-end-time" type="number" class="form-control form-control-sm" value="48" step="0.1" aria-label="Simulation end time">
         </div>
 
-        <div class="sim-field sim-field-grow">
+        <div class="sim-field sim-field-grow sim-field-outputs">
           <span class="sim-label">Plot</span>
           <div class="dropdown">
-            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-              Compartments
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle output-toggle" type="button" id="output-menu-toggle"
+                    data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+              Outputs <span class="output-count" id="output-count"></span>
             </button>
-            <ul class="dropdown-menu" id="sim-compartments-menu">
-            </ul>
-          </div>
-          <div id="selected-comp-badges" class="selected-badges-container">
+            <!-- 목록(#sim-compartments-menu)은 파싱할 때마다 다시 그린다. 검색·일괄 선택은
+                 그 바깥에 두어야 다시 그려도 남는다. -->
+            <div class="dropdown-menu output-menu" id="output-menu">
+              <div class="output-menu-head">
+                <div class="output-search">
+                  <i class="bi bi-search" aria-hidden="true"></i>
+                  <input type="search" class="form-control form-control-sm" id="output-filter"
+                         placeholder="Filter outputs" aria-label="Filter outputs" autocomplete="off">
+                </div>
+                <div class="output-prefixes" id="output-prefixes" hidden></div>
+                <div class="output-actions">
+                  <button type="button" class="btn btn-sm btn-link" data-output-action="select">Select all</button>
+                  <button type="button" class="btn btn-sm btn-link" data-output-action="clear">Clear all</button>
+                  <span class="output-menu-status" id="output-menu-status"></span>
+                </div>
+              </div>
+              <ul class="output-list" id="sim-compartments-menu">
+              </ul>
             </div>
+          </div>
+          <div id="selected-comp-badges" class="selected-badges-container output-strip" aria-label="Selected outputs">
+          </div>
         </div>
 
         <div class="form-check form-switch sim-logy mb-0" title="Use log scale for Y-axis">
