@@ -190,5 +190,29 @@ class 배수_기준(unittest.TestCase):
                     prediction_error([1.0], [1.0], fold=fold)
 
 
+class 극단적인_값의_로그(unittest.TestCase):
+    """비율을 먼저 나누면 넘치거나 아래로 새서 로그가 ±inf 가 됐다."""
+
+    def test_반대_방향으로_넘치면_AFE_는_1(self):
+        """예전: AFE None. 1e300/1e-300=inf, 1e-300/1e300=0 이 섞여 평균이 nan."""
+        r = prediction_error([1e-300, 1e300], [1e300, 1e-300])
+        self.assertAlmostEqual(r.afe, 1.0, places=12)
+        self.assertIsNone(r.aafe)  # 10**600 은 float 로 표현할 수 없다
+
+    def test_아래로_새는_비율도_정확(self):
+        """예전: 1e-160/1e160 이 subnormal 이 되어 AFE 가 9.99994e-161 (5.6e-6 틀림)."""
+        r = prediction_error([1e160, 1.0], [1e-160, 1.0])
+        self.assertAlmostEqual(r.afe / 1e-160, 1.0, places=12)
+
+    def test_보통_값은_비트까지_예전과_같다(self):
+        """정상 범위의 비율은 예전처럼 log10(p/o) 로 계산한다."""
+        obs = np.array([1.3, 7.9, 0.042, 250.0, 3.3e-5])
+        pred = np.array([1.1, 9.4, 0.051, 199.0, 2.9e-5])
+        r = prediction_error(obs, pred)
+        log_ratio = np.log10(pred / obs)
+        self.assertEqual(r.afe, float(10.0 ** np.mean(log_ratio)))
+        self.assertEqual(r.aafe, float(10.0 ** np.mean(np.abs(log_ratio))))
+
+
 if __name__ == "__main__":
     unittest.main()

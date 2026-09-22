@@ -132,6 +132,24 @@ def _fold_threshold(fold) -> float:
     return value
 
 
+def _log10_ratio(pred: np.ndarray, obs: np.ndarray) -> np.ndarray:
+    """log10(pred / obs). 비율이 float 를 벗어나는 점만 로그의 차로 구한다.
+
+    비율을 먼저 나누면 1e300/1e-300 은 inf, 1e-300/1e300 은 0 이 되어 로그가
+    ±inf 가 되고, 그 둘이 섞이면 평균이 nan 이 되어 AFE 가 사라졌다(참값 1).
+    모든 점을 로그의 차로 바꾸면 되지만 그러면 보통 값의 마지막 비트까지 바뀐다.
+    그래서 비율이 정상 범위의 수일 때는 예전 그대로 두고, 넘치거나 아래로
+    새는(subnormal·0) 점만 바꾼다.
+    """
+    with np.errstate(over="ignore", under="ignore", divide="ignore", invalid="ignore"):
+        ratio = pred / obs
+        out = np.log10(ratio)
+    bad = ~np.isfinite(ratio) | (ratio < np.finfo(float).tiny)
+    if np.any(bad):
+        out[bad] = np.log10(pred[bad]) - np.log10(obs[bad])
+    return out
+
+
 def prediction_error(
     observed: Sequence[float],
     predicted: Sequence[float],
@@ -185,7 +203,7 @@ def prediction_error(
         result.warnings.append("No positive pairs — fold-error metrics need both values above zero.")
         return result
 
-    log_ratio = np.log10(pred[usable] / obs[usable])
+    log_ratio = _log10_ratio(pred[usable], obs[usable])
     result.afe = _finite(10.0 ** np.mean(log_ratio))
     result.aafe = _finite(10.0 ** np.mean(np.abs(log_ratio)))
 
