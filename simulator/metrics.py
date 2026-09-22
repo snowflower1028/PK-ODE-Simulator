@@ -69,22 +69,67 @@ def _finite(value) -> Optional[float]:
     return value if np.isfinite(value) else None
 
 
-def _pair(observed, predicted, times) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-    """길이를 맞추고 결측을 걷어 낸다."""
-    obs = np.asarray(observed, dtype=float)
-    pred = np.asarray(predicted, dtype=float)
-    # 길이는 셋 중 가장 짧은 것에 맞춘다. 예전에는 times 를 빼고 재서, times 가
-    # 더 짧으면 잘라 낸 마스크가 t 에 맞지 않아 IndexError 로 터졌다.
-    n = min(obs.size, pred.size) if times is None else min(obs.size, pred.size, len(times))
+def _one_dimensional(values, what: str) -> np.ndarray:
+    """스칼라는 한 점으로, 2차원 이상은 거절. 예전에는 스칼라가 TypeError,
+    2차원이 IndexError 로 터졌다."""
+    array = np.atleast_1d(np.asarray(values, dtype=float))
+    if array.ndim != 1:
+        raise ValueError(f"{what} must be one-dimensional; got shape {array.shape}.")
+    return array
+
+
+def _pair(observed, predicted, times, warnings: List[str]
+          ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """짝을 짓고 결측을 걷어 낸다.
+
+    짝은 **값**끼리 짓는다. 시각은 가장 크게 어긋난 점이 언제인지 알려 주는
+    부가 정보일 뿐이다. 예전에는 셋 중 가장 짧은 길이에 맞췄기 때문에, 시각이
+    하나뿐이면 값 세 쌍 중 두 쌍이 경고 없이 버려졌다. 이제 시각이 모자라면
+    그 점의 시각을 모른다고 두고, 남으면 버린다 — 어느 쪽이든 경고한다.
+    """
+    obs = _one_dimensional(observed, "observed")
+    pred = _one_dimensional(predicted, "predicted")
+    n = min(obs.size, pred.size)
+    if obs.size != pred.size:
+        warnings.append(
+            f"The observed and predicted lengths differ ({obs.size} vs {pred.size}); "
+            f"only the first {n} pairs were compared."
+        )
     obs, pred = obs[:n], pred[:n]
 
-    if times is None:
-        t = np.full(n, np.nan)
-    else:
-        t = np.asarray(times, dtype=float)[:n]
+    t = np.full(n, np.nan)
+    if times is not None:
+        given = _one_dimensional(times, "times")
+        if given.size < n:
+            warnings.append(
+                f"Only {given.size} time values for {n} pairs; the time of the "
+                "worst point may be unknown."
+            )
+        elif given.size > n:
+            warnings.append(f"{given.size - n} extra time value(s) were ignored.")
+        m = min(given.size, n)
+        t[:m] = given[:m]
 
     keep = np.isfinite(obs) & np.isfinite(pred)
     return obs[keep], pred[keep], t[keep], int(n - int(np.count_nonzero(keep)))
+
+
+def _fold_threshold(fold) -> float:
+    """배수 기준. 1 이상의 유한한 수여야 한다.
+
+    예전에는 검사가 없어 0·음수·nan 은 조용히 0 %, inf·True 는 100 %,
+    문자열·None 은 TypeError 였다. 1 보다 작은 배수는 "그 배수 이내"라는
+    말 자체가 성립하지 않는다.
+    """
+    if isinstance(fold, bool):
+        raise ValueError(f"The fold threshold must be a number, not {str(fold).lower()}.")
+    try:
+        value = float(fold)
+    except (TypeError, ValueError):
+        raise ValueError(f"The fold threshold is not a number: {fold!r}.")
+    if not np.isfinite(value) or value < 1:
+        raise ValueError(f"The fold threshold must be a finite number of at least 1; got {fold!r}.")
+    return value
 
 
 def prediction_error(
@@ -103,8 +148,9 @@ def prediction_error(
     취하므로 0 이하인 점을 뺄 수밖에 없는데, 몇 개를 뺐는지 함께 돌려준다 —
     조용히 빼 버리면 남은 숫자를 믿을 근거가 없다.
     """
-    obs, pred, t, n_nonfinite = _pair(observed, predicted, times)
+    fold = _fold_threshold(fold)
     result = PredictionError()
+    obs, pred, t, n_nonfinite = _pair(observed, predicted, times, result.warnings)
 
     # 유한하지 않은 점은 _pair 가 이미 걷어 냈다. 그 수를 여기서 세어 두지
     # 않으면 아무 말 없이 사라진다 — 예측이 inf 인 점 하나를 버리고 RMSE 0.0 을

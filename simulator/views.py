@@ -808,10 +808,15 @@ def nca_units(request):
         conc = U.parse_unit(data.get("conc") or "ng/mL")
         time = U.parse_unit(data.get("time") or "h")
         dose = U.parse_unit(data.get("dose") or "mg")
+        U.check_nca_input_units(conc, time, dose)
+        # 빈 칸은 "모른다"이고, 적었다면 쓸 수 있는 값이어야 한다. 예전에는
+        # float() 만 해서 true 가 1 로, 'nan' 이 nan 으로 들어가 응답 JSON 에
+        # NaN 이 실렸다 — 브라우저가 읽지 못한다. 여기서 막으면 display_options
+        # 가 선택지를 조용히 비우는 대신 이유를 말할 수 있다.
         mw = data.get("mw")
-        mw = float(mw) if mw not in (None, "") else None
+        mw = U.bridge_value(mw, "molecular weight") if mw not in (None, "") else None
         bw = data.get("bw")
-        bw = float(bw) if bw not in (None, "") else None
+        bw = U.bridge_value(bw, "body weight") if bw not in (None, "") else None
 
         out = {}
         for field in U.FIELD_UNITS:

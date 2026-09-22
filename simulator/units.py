@@ -33,6 +33,7 @@ NCA 가 내놓는 값은 하나도 빠짐없이 세 단위의 곱이다. 농도(
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -345,6 +346,24 @@ def _label(shape: Composed, conc: Unit, time: Unit, dose: Unit) -> str:
 # ---------------------------------------------------------------------------
 # 환산
 # ---------------------------------------------------------------------------
+def bridge_value(value, what: str) -> float:
+    """분자량·체중 하나를 양의 유한한 실수로 읽는다.
+
+    예전에는 `not mw or mw <= 0` 만 봤다. 그래서 nan 은 두 검사를 모두 빠져나가
+    배율이 nan 이 되고, inf 는 배율 0 이 되어 Cmax 가 nmol/L 로 0 으로 보였고,
+    `True` 는 1 로 읽혔다.
+    """
+    if isinstance(value, bool):
+        raise UnitError(f"The {what} must be a number, not {str(value).lower()}.")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise UnitError(f"The {what} is not a number: {value!r}.")
+    if not math.isfinite(number) or number <= 0:
+        raise UnitError(f"The {what} must be a positive, finite number; got {value!r}.")
+    return number
+
+
 def scale_factor(frm: Unit, to: Unit, mw: Optional[float] = None,
                  bw: Optional[float] = None) -> float:
     """frm 으로 잰 값에 곱하면 to 로 잰 값이 되는 수.
@@ -363,12 +382,12 @@ def scale_factor(frm: Unit, to: Unit, mw: Optional[float] = None,
 
     # 체중당 ↔ 절대량. CL(L/h) = CL(L/h/kg) × 체중.
     if gap.bw:
-        if not bw or bw <= 0:
+        if bw is None or bw == "":
             raise UnitError(
                 f"Converting {frm.label} to {to.label} crosses body weight, "
                 "which needs a body weight."
             )
-        factor *= float(bw) ** (-gap.bw)
+        factor *= _power(bridge_value(bw, "body weight"), -gap.bw)
 
     # 질량 ↔ 몰. 기준 질량은 mg, 기준 몰은 µmol.  1 mg = (1e3 / MW) µmol
     if gap.mass or gap.mole:
@@ -376,14 +395,54 @@ def scale_factor(frm: Unit, to: Unit, mw: Optional[float] = None,
             raise UnitError(
                 f"{frm.label} and {to.label} are not the same kind of quantity."
             )
-        if not mw or mw <= 0:
+        if mw is None or mw == "":
             raise UnitError(
                 f"Converting {frm.label} to {to.label} crosses mass and moles, "
                 "which needs a molecular weight."
             )
-        factor *= (1e3 / float(mw)) ** gap.mass
+        factor *= _power(1e3 / bridge_value(mw, "molecular weight"), gap.mass)
 
+    # 분자량·체중이 극단적이면 배율이 float 를 넘친다. mw=1e-308 이면 inf 가
+    # 되어 JSON 에 `Infinity` 로 실렸고 브라우저가 응답을 읽지 못했다.
+    # bw=1e-320 은 OverflowError 로 500 이었다. 반대쪽은 0 이 되어 모든 값을
+    # 0 으로 보여 준다. 셋 다 틀린 숫자이므로 거절한다.
+    if not math.isfinite(factor) or factor == 0:
+        raise UnitError(
+            f"Converting {frm.label} to {to.label} gives an unrepresentable scale "
+            "factor — check the molecular weight and body weight."
+        )
     return factor
+
+
+def _power(base: float, exponent: int) -> float:
+    """넘치면 inf 로 — 판정은 호출한 쪽이 한 번에 한다."""
+    try:
+        return base ** exponent
+    except OverflowError:
+        return math.inf
+
+
+#: 입력 자리마다 허용하는 차원. 용량은 체중당(mg/kg)도 받는다 — 전임상에서는
+#: 그쪽이 기본이다.
+def _is_amount(dim: Dimension) -> bool:
+    return (dim.mass, dim.mole) in ((1, 0), (0, 1))
+
+
+def check_nca_input_units(conc: Unit, time: Unit, dose: Unit) -> None:
+    """NCA 입력 단위가 제 자리에 맞는 종류인지. 아니면 UnitError.
+
+    예전에는 어느 자리에 무엇이 와도 받았다. 농도 자리에 mg 을 넣으면 CL 이
+    mg/(mg·h) — 실제로는 1/h — 라는 이름으로 조용히 나왔다.
+    """
+    d = conc.dim
+    if not (_is_amount(d) and d.volume == -1 and d.time == 0 and d.bw == 0):
+        raise UnitError(f"{conc.label} is not a concentration unit (amount per volume).")
+    d = time.dim
+    if d != TIME:
+        raise UnitError(f"{time.label} is not a time unit.")
+    d = dose.dim
+    if not (_is_amount(d) and d.volume == 0 and d.time == 0 and d.bw in (0, -1)):
+        raise UnitError(f"{dose.label} is not a dose unit (an amount, or an amount per body weight).")
 
 
 def convert(value: Optional[float], frm: Unit, to: Unit,
