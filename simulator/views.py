@@ -505,6 +505,14 @@ def simulate(request):
             print(f"Warning: could not evaluate derived expression '{line}'")
         
         # 5. 사용자가 선택한 플로팅 변수 목록 가져오기
+        # 이 폴백은 "이 요청에 대해 무엇을 계산·반환할 수 있는가" 이지 Output
+        # UI 의 기본 선택과는 별개의 질문이다 — 프론트엔드는 항상 compartments
+        # 를 명시해서 보내므로 여기가 실제로 쓰이는 것은 그 필드를 생략하는
+        # 외부 호출자(그리고 test_derived.py 의 SimulateEndpoint 처럼 연쇄
+        # 파생식이 끝까지 계산되는지 보는 시험)뿐이다. derived_output_eligible
+        # 로 좁히면 그런 호출에서 Q1/Q2/fd2 같은 값이 조용히 빠져, "계산이
+        # 됐는지"와 "Output 으로 기본 선택할지"가 뒤섞인다. 그래서 되돌린다 —
+        # 이 폴백은 항상 전부(구획 + 모든 derived) 를 대상으로 한다.
         all_plottable_vars = all_compartments + list(derived_expressions.keys())
         selected_vars_raw = data.get("compartments", all_plottable_vars)
         

@@ -362,6 +362,32 @@ def _categorize(param_rows, topo_order, parsed_defs,
     base = all_syms - defined_syms
     return base, derived
 
+
+def _derived_output_eligibility(topo_order, parsed_defs, comps) -> List[str]:
+    """Output(Plot 선택 메뉴)에 올릴 derived 변수만 골라낸다.
+
+    "이 변수가 농도인가"는 판단하지 않는다(그건 AI_HANDOFF 가 금지한
+    variable_semantics 다). 대신 순수하게 구조적으로: 이 식이 compartment
+    (상태 변수)에 직접 또는 다른 derived 변수를 거쳐 간접적으로 의존하는가만
+    본다. cardiac_output*f_lung 처럼 파라미터로만 이루어진 식은 시간에 따라
+    변하지 않는 상수이므로 제외한다 — compartment 를 참조하는 다른 derived
+    변수를 거치면(체인) 그 결과는 다시 포함된다.
+
+    topo_order 가 이미 의존성 우선(dependency-first) 순서이므로 한 번의
+    순회로 체인 전체를 판단할 수 있다 — 각 이름을 볼 때 그보다 먼저 오는
+    이름들의 depends 값은 이미 확정돼 있다.
+    """
+    depends: Dict[str, bool] = {}
+    eligible: List[str] = []
+    for name in topo_order:
+        free = {str(s) for s in parsed_defs[name].free_symbols}
+        direct = bool(free & comps)
+        transitive = any(depends.get(s, False) for s in free)
+        depends[name] = direct or transitive
+        if depends[name]:
+            eligible.append(name)
+    return eligible
+
 # ───────────────────────────────────────────────
 # 5. ODE 치환 & SymPy 방정식
 # ───────────────────────────────────────────────
@@ -401,6 +427,9 @@ def parse_ode_input(text: str) -> Dict[str, Any]:
     base_params, derived_exprs = _categorize(
         param_rows, topo_order, parsed_defs, symtbl, comps
     )
+    derived_output_eligible = _derived_output_eligibility(
+        topo_order, parsed_defs, comps
+    )
 
     proc_lines, equations = _substitute_odes(
         ode_rows, parsed_defs, topo_order, symtbl
@@ -425,6 +454,10 @@ def parse_ode_input(text: str) -> Dict[str, Any]:
         "compartments_ode_order": comp_order,
         "parameters_ode_order"  : param_order,
         "derived_expressions" : derived_exprs,
+        # compartment 를 직접 또는 간접(체인)으로 포함하는 derived 변수만.
+        # Output/Plot 선택 메뉴의 기본 목록이 이 값을 쓴다 — 순수 파라미터로만
+        # 이루어진 상수성 derived(예: Q_lung = cardiac_output*f_lung)는 빠진다.
+        "derived_output_eligible": derived_output_eligible,
         "processed_ode"       : "\n".join(proc_lines),
         "equations"           : equations,
     }
